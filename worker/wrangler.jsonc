@@ -1,0 +1,52 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pixel-health",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  // Placeholder ids: replace with the output of `wrangler d1 create` and `wrangler kv namespace create`.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pixel-health",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+    },
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "REPLACE_WITH_KV_NAMESPACE_ID",
+    },
+  ],
+  "env": {
+    "staging": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "pixel-health-staging",
+          "database_id": "REPLACE_WITH_STAGING_D1_DATABASE_ID",
+        },
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "OAUTH_KV",
+          "id": "REPLACE_WITH_STAGING_KV_NAMESPACE_ID",
+        },
+      ],
+    },
+    "production": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "pixel-health-production",
+          "database_id": "REPLACE_WITH_PRODUCTION_D1_DATABASE_ID",
+        },
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "OAUTH_KV",
+          "id": "REPLACE_WITH_PRODUCTION_KV_NAMESPACE_ID",
+        },
+      ],
+    },
+  },
+}
