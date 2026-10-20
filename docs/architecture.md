@@ -13,7 +13,7 @@ flowchart LR
     subgraph CF[Cloudflare]
         K[Worker - TypeScript]
         D[(D1 - SQLite)]
-        V[(KV - OAuth state)]
+        V[(KV - access-token cache)]
         K <--> D
         K <--> V
     end
@@ -34,15 +34,15 @@ Freshness is bounded by how fast the watch syncs to the Google Health app, not b
 | Component | Location | Role |
 |---|---|---|
 | Worker | `worker/` | Webhook receiver, sync cron, daily summaries, OAuth provider and MCP server |
-| D1 | Cloudflare | Metrics, sleep, workouts, sync queue, daily summaries, tracker events, audit log |
-| KV | Cloudflare | OAuth state |
+| D1 | Cloudflare | Metrics, sleep, workouts, sync queue, daily summaries, tracker events, audit log, Google OAuth state and encrypted refresh token |
+| KV | Cloudflare | Google access-token cache |
 | Offline tooling | `py/` | Historical backfill, export and statistics; reads and writes D1 through the Cloudflare API |
 
 The Worker and the offline tooling do not import each other. They share data only through D1 and the public Worker API.
 
 ## Storage
 
-- Schema lives in `worker/migrations/0001_init.sql`. Times are epoch seconds UTC plus `tz_offset_min` per row; `local_date` is derived from both.
+- Schema lives in `worker/migrations/`; `0002_oauth_state.sql` adds Google consent state. Times are epoch seconds UTC plus `tz_offset_min` per row; `local_date` is derived from both.
 - A sleep session is dated by its wake day. Behaviour on day D is compared with the night D to D+1 (`nightOf`).
 - `worker/src/lib/time.ts` converts Google `physicalTime` and `utcOffset` and rejects malformed input.
 - `worker/src/lib/d1.ts` `upsertRows` writes with `ON CONFLICT DO UPDATE`, so replays are idempotent. It binds at most 100 parameters per statement and sends all chunks in one `DB.batch`.
@@ -64,9 +64,17 @@ The handler validates every notification before writing through `upsertRows` to 
 
 ## Google client
 
-`worker/src/google/client.ts` is the only code that talks to Google (token refresh, `list`, heart-rate `rollUp`, `pairedDevices`); callers never build URLs.
+`worker/src/google/client.ts` handles Google API requests (token refresh, `list`, heart-rate `rollUp`, `pairedDevices`); callers never build API URLs. The Google connect handler separately exchanges consent codes.
 
 - The access token is cached in one KV key with a TTL of `min(expires_in - 60, 3000)` s. Tokens with `expires_in < 120` are used but not cached; KV write errors are ignored.
 - 429 and 5xx are retried up to 3 times per request, waiting `Retry-After` seconds or `500 * 2^n` ms. A 401 drops the cached token and throws. Only 403 `ACCESS_TOKEN_SCOPE_INSUFFICIENT` becomes `MissingScopeError`.
 - `rollUpHeartRate` rejects locally (`RangeError`) a range over 14 days or a window that is not a multiple of 60 s.
 - `watchLastSync` ignores devices whose `deviceVersion` lacks "Watch" (the phone).
+
+## Google connect
+
+`worker/src/auth/googleHealthConnect.ts` starts consent with the four read-only Google Health scopes plus `openid email`, offline access and PKCE S256. D1 `oauth_state` holds a random state and verifier for 10 minutes. The callback atomically deletes a valid state before checking the code or exchanging it, so failed and concurrent callbacks cannot replay it. Routing is wired in T9.
+
+The ID token is read only from Google's TLS token response; its signature is not checked separately (OIDC §3.1.3.7). Issuer, audience, expiry and the verified, case-insensitive owner email must match before storage. Missing refresh tokens and rejected identities preserve any existing token.
+
+`worker/src/lib/crypto.ts` encrypts the refresh token with AES-256-GCM using a fresh 12-byte IV and `TOKEN_ENC_KEY` (base64 of exactly 32 bytes). The awaited `upsertRows` replaces only `secret_blob.google_refresh_token`. The loader returns null when absent and throws on decryption failure. Responses contain only fixed text; the connect flow logs no tokens or secrets and never uses KV, preserving the client's access-token cache.
