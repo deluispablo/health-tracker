@@ -176,8 +176,8 @@ describe("AC3 heart-rate rollUp", () => {
     const c = client(fetch);
     expect(await c.rollUpHeartRate("2026-10-20T18:00:00Z", "2026-10-20T21:00:00Z", 300)).toEqual([]);
     expect(await c.rollUpHeartRate("2026-10-20T18:00:00Z", "2026-10-20T21:00:00Z", 3600)).toEqual([]);
-    expect(JSON.parse(calls[1]?.body ?? "").windowSize).toBe("300s");
-    expect(JSON.parse(calls[2]?.body ?? "").windowSize).toBe("3600s");
+    expect((JSON.parse(calls[1]?.body ?? "") as { windowSize: string }).windowSize).toBe("300s");
+    expect((JSON.parse(calls[2]?.body ?? "") as { windowSize: string }).windowSize).toBe("3600s");
   });
 
   it("accepts exactly 14 days and rejects more, or bad windows, without calling Google", async () => {
@@ -190,9 +190,10 @@ describe("AC3 heart-rate rollUp", () => {
     await expect(c.rollUpHeartRate("2026-10-01T00:00:00Z", "2026-10-01T03:00:00Z", 0)).rejects.toThrow(RangeError);
     await expect(c.rollUpHeartRate("2026-10-02T00:00:00Z", "2026-10-01T00:00:00Z", 60)).rejects.toThrow(RangeError);
     await expect(c.rollUpHeartRate("2026-10-01T00:00:00Z", "2026-10-01T00:00:00Z", 60)).rejects.toThrow(RangeError);
-    for (const [a, b] of [["not-a-date", "2026-10-01T03:00:00Z"], ["2026-10-01", "2026-10-01T03:00:00Z"],
-      ["2026-02-30T00:00:00Z", "2026-03-01T03:00:00Z"], ["2026-10-01T00:00:00Z", "2026-10-01T25:00:00Z"]]) {
-      await expect(c.rollUpHeartRate(a ?? "", b ?? "", 60)).rejects.toThrow(RangeError);
+    const bad: [string, string][] = [["not-a-date", "2026-10-01T03:00:00Z"], ["2026-10-01", "2026-10-01T03:00:00Z"],
+      ["2026-02-30T00:00:00Z", "2026-03-01T03:00:00Z"], ["2026-10-01T00:00:00Z", "2026-10-01T25:00:00Z"]];
+    for (const [a, b] of bad) {
+      await expect(c.rollUpHeartRate(a, b, 60)).rejects.toThrow(RangeError);
     }
     for (const w of [-60, Number.NaN, Number.POSITIVE_INFINITY, 60.5]) {
       await expect(c.rollUpHeartRate("2026-10-01T00:00:00Z", "2026-10-01T03:00:00Z", w)).rejects.toThrow(RangeError);
