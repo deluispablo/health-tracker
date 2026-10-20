@@ -29,6 +29,6 @@ jobs:
         working-directory: py
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
       - run: uv run ruff check .
       - run: uv run pytest -q
