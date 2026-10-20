@@ -53,3 +53,12 @@ The Worker and the offline tooling do not import each other. They share data onl
 - Google tokens never leave the Worker. The refresh token is stored encrypted.
 - The webhook checks the authorization header and the ECDSA signature before it parses the body.
 - Only one allowlisted account can sign in. MCP tools are read-only, except an insert-only event logger.
+
+## Google client
+
+`worker/src/google/client.ts` is the only code that talks to Google (token refresh, `list`, heart-rate `rollUp`, `pairedDevices`); callers never build URLs.
+
+- The access token is cached in one KV key with a TTL of `min(expires_in - 60, 3000)` s. Tokens with `expires_in < 120` are used but not cached; KV write errors are ignored.
+- 429 and 5xx are retried up to 3 times per request, waiting `Retry-After` seconds or `500 * 2^n` ms. A 401 drops the cached token and throws. Only 403 `ACCESS_TOKEN_SCOPE_INSUFFICIENT` becomes `MissingScopeError`.
+- `rollUpHeartRate` rejects locally (`RangeError`) a range over 14 days or a window that is not a multiple of 60 s.
+- `watchLastSync` ignores devices whose `deviceVersion` lacks "Watch" (the phone).
