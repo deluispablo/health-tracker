@@ -56,7 +56,7 @@ describe("AC1 token cache", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]?.value).toBe("at-1");
     const ttl = (entries[0]?.expiration ?? 0) - Date.now() / 1000;
-    expect(ttl).toBeGreaterThan(60);
+    expect(ttl).toBeGreaterThan(3000 - 5);
     expect(ttl).toBeLessThanOrEqual(3000 + 1);
   });
 
@@ -73,7 +73,8 @@ describe("AC1 token cache", () => {
     const first = scripted(token("at-short", 600), devices());
     await client(first.fetch).watchLastSync();
     const ttl = ((await kvEntries())[0]?.expiration ?? 0) - Date.now() / 1000;
-    expect(ttl).toBeLessThanOrEqual(600 - 60 + 1);
+    expect(ttl).toBeGreaterThan(540 - 5);
+    expect(ttl).toBeLessThanOrEqual(540 + 1);
     await env.OAUTH_KV.delete((await kvEntries())[0]?.name ?? "");
     const second = scripted(token("at-2"), devices());
     await client(second.fetch).watchLastSync();
@@ -83,9 +84,15 @@ describe("AC1 token cache", () => {
 });
 
 describe("AC1 token cache edges", () => {
-  it("does not cache a token that expires within 120 s", async () => {
-    const { fetch } = scripted(token("at-brief", 90), devices());
-    await client(fetch).watchLastSync();
+  it("caches from expires_in 120 (TTL 60) but not below", async () => {
+    const at120 = scripted(token("at-120", 120), devices());
+    await client(at120.fetch).watchLastSync();
+    const ttl = ((await kvEntries())[0]?.expiration ?? 0) - Date.now() / 1000;
+    expect(ttl).toBeGreaterThan(55);
+    expect(ttl).toBeLessThanOrEqual(61);
+    await env.OAUTH_KV.delete((await kvEntries())[0]?.name ?? "");
+    const at119 = scripted(token("at-119", 119), devices());
+    await client(at119.fetch).watchLastSync();
     expect(await kvEntries()).toEqual([]);
   });
 
@@ -183,11 +190,20 @@ describe("AC3 heart-rate rollUp", () => {
     await expect(c.rollUpHeartRate("2026-10-01T00:00:00Z", "2026-10-01T03:00:00Z", 0)).rejects.toThrow(RangeError);
     await expect(c.rollUpHeartRate("2026-10-02T00:00:00Z", "2026-10-01T00:00:00Z", 60)).rejects.toThrow(RangeError);
     await expect(c.rollUpHeartRate("2026-10-01T00:00:00Z", "2026-10-01T00:00:00Z", 60)).rejects.toThrow(RangeError);
-    await expect(c.rollUpHeartRate("not-a-date", "2026-10-01T03:00:00Z", 60)).rejects.toThrow(RangeError);
+    for (const [a, b] of [["not-a-date", "2026-10-01T03:00:00Z"], ["2026-10-01", "2026-10-01T03:00:00Z"],
+      ["2026-02-30T00:00:00Z", "2026-03-01T03:00:00Z"], ["2026-10-01T00:00:00Z", "2026-10-01T25:00:00Z"]]) {
+      await expect(c.rollUpHeartRate(a ?? "", b ?? "", 60)).rejects.toThrow(RangeError);
+    }
     for (const w of [-60, Number.NaN, Number.POSITIVE_INFINITY, 60.5]) {
       await expect(c.rollUpHeartRate("2026-10-01T00:00:00Z", "2026-10-01T03:00:00Z", w)).rejects.toThrow(RangeError);
     }
     expect(calls).toHaveLength(0);
+  });
+
+  it("accepts RFC 3339 endpoints with an offset", async () => {
+    const { fetch, calls } = scripted(token(), json({ rollupDataPoints: [] }));
+    await client(fetch).rollUpHeartRate("2026-10-20T20:00:00+02:00", "2026-10-20T23:00:00+02:00", 60);
+    expect(calls).toHaveLength(2);
   });
 
   it("retries with the same body", async () => {
@@ -257,6 +273,17 @@ describe("AC5 paired devices", () => {
       { deviceVersion: "Google Pixel Watch 2", lastSyncTime: "2026-10-20T20:19:08.999999Z" },
     ));
     expect(await client(fetch).watchLastSync()).toBe("2026-10-20T20:19:09Z");
+  });
+
+  it("compares sub-millisecond precision in either order", async () => {
+    const a = { deviceVersion: "Pixel Watch 3", lastSyncTime: "2026-10-20T20:19:09.000001Z" };
+    const b = { deviceVersion: "Pixel Watch 2", lastSyncTime: "2026-10-20T20:19:09.000002Z" };
+    for (const order of [[a, b], [b, a]]) {
+      const { fetch } = scripted(token(), devices(...order));
+      expect(await client(fetch).watchLastSync()).toBe("2026-10-20T20:19:09.000002Z");
+      const { keys } = await env.OAUTH_KV.list();
+      await Promise.all(keys.map((k) => env.OAUTH_KV.delete(k.name)));
+    }
   });
 
   it("returns null when no watch has synced", async () => {
