@@ -12,8 +12,8 @@ const NOW = 1_792_600_000;
 const SCOPES = ["activity_and_fitness", "health_metrics_and_measurements", "sleep", "settings"]
   .map((s) => `https://www.googleapis.com/auth/googlehealth.${s}.readonly`);
 
-const authEnv = (db: D1Database = env.DB) => ({
-  DB: db, GOOGLE_CLIENT_ID: CLIENT, GOOGLE_CLIENT_SECRET: "c&s=cret+/", ALLOWED_EMAIL: "owner@example.com", TOKEN_ENC_KEY: KEY,
+const authEnv = (db: D1Database = env.DB, key = KEY) => ({
+  DB: db, GOOGLE_CLIENT_ID: CLIENT, GOOGLE_CLIENT_SECRET: "c&s=cret+/", ALLOWED_EMAIL: "owner@example.com", TOKEN_ENC_KEY: key,
 });
 
 const b64url = (s: string) => btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -75,6 +75,14 @@ describe("AC1 consent redirect", () => {
     expect(rows).toEqual([{ state: q.get("state"), expires_at: NOW + 600 }]);
   });
 
+  it("stamps expiry from the clock when no now() is injected", async () => {
+    const before = Math.floor(Date.now() / 1000);
+    expect((await startGoogleConnect(new Request(`${ORIGIN}/google/connect`), authEnv())).status).toBe(302);
+    const row = await env.DB.prepare("SELECT expires_at FROM oauth_state").first<{ expires_at: number }>();
+    expect(row?.expires_at).toBeGreaterThanOrEqual(before + 600);
+    expect(row?.expires_at).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 600);
+  });
+
   it("uses a fresh state and challenge each time", async () => {
     const a = await start();
     const b = await start();
@@ -128,12 +136,16 @@ describe("AC3 rejections keep storage unchanged", () => {
   });
   const unchanged = async () => { expect(await blobs()).toEqual(before); expect(await loadGoogleRefreshToken(authEnv())).toBe("1//existing"); };
 
-  it("rejects missing, unknown and expired state without calling Google", async () => {
+  it("rejects missing, unknown and expired state without calling Google or touching other states", async () => {
     const g = google(goodToken());
+    const outstanding = await stateOf();
     expect((await finishGoogleConnect(callback({ code: "c" }), authEnv(), deps(g.fetch))).status).toBe(400);
-    expect((await finishGoogleConnect(callback({ state: "unknown", code: "c" }), authEnv(), deps(g.fetch))).status).toBe(400);
+    for (const bogus of ["unknown", "' OR '1'='1", `${outstanding}' --`]) {
+      expect((await finishGoogleConnect(callback({ state: bogus, code: "c" }), authEnv(), deps(g.fetch))).status).toBe(400);
+    }
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM oauth_state WHERE state = ?").bind(outstanding).first("n")).toBe(1);
     const old = await stateOf(NOW);
-    expect((await finishGoogleConnect(callback({ state: old, code: "c" }), authEnv(), deps(g.fetch, NOW + 601))).status).toBe(400);
+    expect((await finishGoogleConnect(callback({ state: old, code: "c" }), authEnv(), deps(g.fetch, NOW + 600))).status).toBe(400);
     expect(g.calls).toHaveLength(0);
     await unchanged();
   });
@@ -144,6 +156,10 @@ describe("AC3 rejections keep storage unchanged", () => {
       [{}, goodToken(), 400],
       [{ code: "c" }, goodToken({ id_token: idToken(claims({ email: "intruder@example.com" })) }), 403],
       [{ code: "c" }, { error: "invalid_grant" }, 400],
+      [{ code: "" }, goodToken(), 400],
+      [{ code: "c", error: "" }, goodToken(), 400],
+      [{ code: "c" }, "not json", 400],
+      [{ code: "c" }, goodToken({ refresh_token: undefined }), 400],
     ];
     for (const [params, response, status] of cases) {
       const state = await stateOf();
@@ -156,6 +172,41 @@ describe("AC3 rejections keep storage unchanged", () => {
     }
   });
 
+  it("consumes the state on network and storage failures too", async () => {
+    const s1 = await stateOf();
+    expect((await finishGoogleConnect(callback({ state: s1, code: "c" }), authEnv(), deps(() => Promise.reject(new TypeError("down"))))).status).toBe(502);
+    const s2 = await stateOf();
+    const failing = { prepare: (q: string) => env.DB.prepare(q), batch: () => Promise.reject(new Error("D1 down")) } as unknown as D1Database;
+    expect((await finishGoogleConnect(callback({ state: s2, code: "c" }), authEnv(failing), deps(google(goodToken()).fetch))).status).toBe(500);
+    for (const state of [s1, s2]) {
+      const replay = google(goodToken());
+      expect((await finishGoogleConnect(callback({ state, code: "c" }), authEnv(), deps(replay.fetch))).status).toBe(400);
+      expect(replay.calls).toHaveLength(0);
+    }
+    await unchanged();
+  });
+
+  it("answers 500 without calling Google when the state cannot be consumed or the key is invalid", async () => {
+    const state = await stateOf();
+    const broken = { prepare: () => { throw new Error("D1 unavailable"); }, batch: () => Promise.reject(new Error("D1 unavailable")) } as unknown as D1Database;
+    const g = google(goodToken());
+    expect((await finishGoogleConnect(callback({ state, code: "c" }), authEnv(broken), deps(g.fetch))).status).toBe(500);
+    expect(g.calls).toHaveLength(0);
+    const s2 = await stateOf();
+    expect((await finishGoogleConnect(callback({ state: s2, code: "c" }), authEnv(env.DB, btoa("short")), deps(google(goodToken()).fetch))).status).toBe(500);
+    await unchanged();
+  });
+
+  it("only answers success after the token is stored", async () => {
+    let stored = false;
+    const slow = { prepare: (q: string) => env.DB.prepare(q),
+      batch: async (st: D1PreparedStatement[]) => { await new Promise((r) => setTimeout(r, 20)); const out = await env.DB.batch(st); stored = true; return out; } } as unknown as D1Database;
+    const res = await finishGoogleConnect(callback({ state: await stateOf(), code: "c" }), authEnv(slow), deps(google(goodToken({ refresh_token: "1//slow" })).fetch));
+    expect(res.status).toBe(200);
+    expect(stored).toBe(true);
+    expect(await loadGoogleRefreshToken(authEnv())).toBe("1//slow");
+  });
+
   it("lets only one of two concurrent callbacks with the same state through", async () => {
     const state = await stateOf();
     const [a, b] = await Promise.all([
@@ -166,6 +217,9 @@ describe("AC3 rejections keep storage unchanged", () => {
   });
 
   it("rejects bad refresh_token values and malformed token responses with 400", async () => {
+    for (const status of [401, 500]) {
+      expect((await finishGoogleConnect(callback({ state: await stateOf(), code: "c" }), authEnv(), deps(google(goodToken(), status).fetch))).status).toBe(400);
+    }
     for (const response of [goodToken({ refresh_token: undefined }), goodToken({ refresh_token: "" }), goodToken({ refresh_token: null }),
       goodToken({ refresh_token: 5 }), goodToken({ refresh_token: {} }), "not json", "[1,2]"]) {
       expect((await finishGoogleConnect(callback({ state: await stateOf(), code: "c" }), authEnv(), deps(google(response).fetch))).status).toBe(400);
@@ -186,6 +240,9 @@ describe("AC3 rejections keep storage unchanged", () => {
       { id_token: idToken(claims({ aud: "someone-else" })) }, { id_token: idToken(claims({ aud: [CLIENT, "x"] })) },
       { id_token: idToken(claims({ iss: "https://evil.example.com" })) },
       { id_token: idToken(claims({ exp: NOW - 1 })) }, { id_token: idToken(claims({ exp: undefined })) },
+      { id_token: idToken(claims({ exp: NOW })) }, { id_token: idToken(claims({ exp: String(NOW + 3600) })) },
+      { id_token: `${b64url("{}")}.${b64url("null")}.s` }, { id_token: `${b64url("{}")}.${b64url("5")}.s` },
+      { id_token: `${b64url("{}")}.${b64url("[1]")}.s` }, { id_token: `${b64url("{}")}.%%%.s` },
     ];
     for (const over of bad) {
       expect((await finishGoogleConnect(callback({ state: await stateOf(), code: "c" }), authEnv(), deps(google(goodToken(over)).fetch))).status).toBe(403);
@@ -248,8 +305,15 @@ describe("AC5 no leakage", () => {
       const headers = JSON.stringify([...res.headers.entries()]);
       for (const s of secrets) { expect(text).not.toContain(s); expect(headers).not.toContain(s); }
     }
+    const exploding = await finishGoogleConnect(callback({ state: await stateOf(), code: "c" }), authEnv(),
+      deps(() => Promise.reject(new Error("socket closed after 1//secret-refresh ya29.secret-access"))));
+    const failing = { prepare: (q: string) => env.DB.prepare(q), batch: () => Promise.reject(new Error("D1 rejected 1//secret-refresh")) } as unknown as D1Database;
+    const storeFail = await finishGoogleConnect(callback({ state: await stateOf(), code: "c" }), authEnv(failing), deps(google(goodToken()).fetch));
+    for (const res of [exploding, storeFail]) {
+      const text = await res.text();
+      for (const s of [...secrets, "eyJ"]) { expect(text).not.toContain(s); expect(JSON.stringify([...res.headers.entries()])).not.toContain(s); }
+    }
     expect(loc.toString()).not.toContain("cret");
-    expect((await env.OAUTH_KV.list()).keys).toEqual([]);
-    for (const line of logs) for (const s of secrets) expect(line).not.toContain(s);
+    for (const line of logs) for (const s of [...secrets, "eyJ"]) expect(line).not.toContain(s);
   });
 });
