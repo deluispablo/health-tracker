@@ -40,6 +40,14 @@ Freshness is bounded by how fast the watch syncs to the Google Health app, not b
 
 The Worker and the offline tooling do not import each other. They share data only through D1 and the public Worker API.
 
+## Storage
+
+- Schema lives in `worker/migrations/0001_init.sql`. Times are epoch seconds UTC plus `tz_offset_min` per row; `local_date` is derived from both.
+- A sleep session is dated by its wake day. Behaviour on day D is compared with the night D to D+1 (`nightOf`).
+- `worker/src/lib/time.ts` converts Google `physicalTime` and `utcOffset` and rejects malformed input.
+- `worker/src/lib/d1.ts` `upsertRows` writes with `ON CONFLICT DO UPDATE`, so replays are idempotent. It binds at most 100 parameters per statement and sends all chunks in one `DB.batch`.
+- Views `v_daily`, `v_events`, `v_sleep` and `v_workouts` are read-only projections for the SQL tool.
+
 ## Security boundaries
 
 - Google tokens never leave the Worker. The refresh token is stored encrypted.
