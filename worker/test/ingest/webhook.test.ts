@@ -97,6 +97,13 @@ describe("AC1 handshake", () => {
     expect(await pending()).toEqual([]);
   });
 
+  it("probes at most 64 bytes for the unsigned handshake", async () => {
+    const base = '{"type": "verification"}';
+    const pad = (n: number) => base + " ".repeat(n - base.length);
+    expect((await handleGoogleWebhook(post(pad(64), { authorization: SECRET }), webhookEnv, deps())).status).toBe(200);
+    expect((await handleGoogleWebhook(post(pad(65), { authorization: SECRET }), webhookEnv, deps())).status).toBe(401);
+  });
+
   it("only exempts an exact verification object from the signature", async () => {
     for (const body of ['{"type":"verification","x":1}', '{"type":"verification2"}', '[{"type":"verification"}]']) {
       expect((await handleGoogleWebhook(post(body, { authorization: SECRET }), webhookEnv, deps())).status).toBe(401);
@@ -119,9 +126,17 @@ describe("AC2 signature", () => {
     for (const sig of ["%%%not-base64%%%", prefix0, badDer]) {
       expect((await handleGoogleWebhook(post(body, { authorization: SECRET, "google-health-api-signature": sig }), webhookEnv, deps())).status).toBe(401);
     }
+    expect((await handleGoogleWebhook(post("{not json", { authorization: SECRET, "google-health-api-signature": good }), webhookEnv, deps())).status).toBe(401);
     const tampered = body.replace("steps", "sleep");
     expect((await handleGoogleWebhook(post(tampered, { authorization: SECRET, "google-health-api-signature": good }), webhookEnv, deps())).status).toBe(401);
     expect(await pending()).toEqual([]);
+  });
+
+  it("verifies the raw bytes, not a reserialisation", async () => {
+    const pretty = JSON.stringify(JSON.parse(body), null, 2);
+    const sig = await sign(signer, pretty);
+    expect((await handleGoogleWebhook(post(pretty, { authorization: SECRET, "google-health-api-signature": sig }), webhookEnv, deps())).status).toBe(204);
+    expect((await handleGoogleWebhook(post(body, { authorization: SECRET, "google-health-api-signature": sig }), webhookEnv, deps())).status).toBe(401);
   });
 
   it("rejects DISABLED keys and accepts unprefixed coordinates", async () => {
@@ -142,6 +157,24 @@ describe("AC2 signature", () => {
     const mixed = JSON.stringify([notification("steps", "UPSERT", physical("2026-10-20T20:19:00Z", "2026-10-20T20:58:00Z")),
       { data: { dataType: "steps", operation: "PATCH", intervals: [] } }]);
     expect((await signedPost(mixed)).status).toBe(400);
+    expect(await pending()).toEqual([]);
+  });
+
+  it("rejects a late invalid interval past a write chunk with zero writes", async () => {
+    const good = Array.from({ length: 30 }, (_, i) => notification("steps", "UPSERT",
+      physical(new Date((NOW + i * 60) * 1000).toISOString(), new Date((NOW + i * 60 + 60) * 1000).toISOString())));
+    expect((await signedPost(JSON.stringify([...good, notification("steps", "UPSERT", physical("2026-10-20T21:00:00Z", "garbage"))]))).status).toBe(400);
+    expect(await pending()).toEqual([]);
+  });
+
+  it("treats malformed interval entries as 400 and a signed empty list as 204", async () => {
+    const civil = { civilIso8601TimeInterval: { startTime: "2026-10-20T00:00:00", endTime: "2026-10-21T00:00:00" } };
+    for (const iv of [null, 5, "x", { physicalTimeInterval: { startTime: "2026-10-20T20:00:00Z" } },
+      { physicalTimeInterval: { startTime: "bad", endTime: "2026-10-20T21:00:00Z" }, ...civil }]) {
+      const body = JSON.stringify([{ data: { dataType: "steps", operation: "UPSERT", intervals: [iv] } }]);
+      expect((await signedPost(body)).status).toBe(400);
+    }
+    expect((await signedPost("[]")).status).toBe(204);
     expect(await pending()).toEqual([]);
   });
 
@@ -225,7 +258,10 @@ describe("AC4 interval normalisation", () => {
 
   it("rejects impossible or reversed intervals with 400 and no writes", async () => {
     for (const iv of [physical("2026-02-30T00:00:00Z", "2026-03-01T00:00:00Z"), physical("2026-10-20T21:00:00Z", "2026-10-20T20:00:00Z"),
-      physical("2026-10-20T21:00:00Z", "2026-10-20T21:00:00Z"), physical("2026-10-20 21:00", "2026-10-20T22:00:00Z")]) {
+      physical("2026-10-20T21:00:00Z", "2026-10-20T21:00:00Z"), physical("2026-10-20 21:00", "2026-10-20T22:00:00Z"),
+      physical("2026-10-20T21:00:00.5Z", "2026-10-20T21:00:00.4Z"),
+      { civilIso8601TimeInterval: { startTime: "2026-10-20T00:00:00", endTime: "2026-10-20T00:00:00" } },
+      { civilIso8601TimeInterval: { startTime: "2026-10-21T00:00:00", endTime: "2026-10-20T00:00:00" } }]) {
       expect((await signedPost(JSON.stringify([notification("steps", "UPSERT", iv)]))).status).toBe(400);
     }
     expect(await pending()).toEqual([]);
@@ -235,7 +271,12 @@ describe("AC4 interval normalisation", () => {
     const iv = physical("2026-10-20T20:19:00Z", "2026-10-20T20:58:00Z");
     expect((await signedPost(JSON.stringify([notification("steps", "UPSERT", iv)]))).status).toBe(204);
     await env.DB.prepare("UPDATE sync_pending SET attempts = 3").run();
-    expect((await signedPost(JSON.stringify([notification("steps", "UPSERT", iv), notification("steps", "DELETE", iv)]))).status).toBe(204);
+    const later = JSON.stringify([notification("steps", "UPSERT", iv), notification("steps", "DELETE", iv)]);
+    const res = await handleGoogleWebhook(post(later, { authorization: SECRET, "google-health-api-signature": await sign(signer, later) }), webhookEnv,
+      { keyset: () => Promise.resolve(currentKeyset), now: () => NOW + 600 });
+    expect(res.status).toBe(204);
+    const upsert = (await pending()).find((r) => r.operation === "UPSERT") as { received_at: number };
+    expect(upsert.received_at).toBe(NOW + 600);
     const ops = (await pending()).map((r) => `${String(r.operation)}:${String(r.attempts)}`).sort();
     expect(ops).toEqual(["DELETE:0", "UPSERT:3"]);
   });
@@ -259,6 +300,19 @@ describe("AC5 keyset failures", () => {
     keysetFails = false;
     currentKeyset = { nonsense: true };
     expect((await signedPost(body, fresh)).status).toBe(503);
+  });
+});
+
+describe("AC5 keyset snapshot", () => {
+  it("replaces the cached keys on refresh, so a key disabled since is rejected", async () => {
+    const body = JSON.stringify([notification("steps", "UPSERT", physical("2026-10-20T23:00:00Z", "2026-10-20T23:05:00Z"))]);
+    const old = await makeSigner(70_001);
+    const newer = await makeSigner(70_002);
+    currentKeyset = keyset(old);
+    expect((await signedPost(body, old)).status).toBe(204);
+    currentKeyset = keysetWith([[old, "DISABLED"], [newer, "ENABLED"]]);
+    expect((await signedPost(body, newer)).status).toBe(204);
+    expect((await signedPost(body, old)).status).toBe(401);
   });
 });
 
