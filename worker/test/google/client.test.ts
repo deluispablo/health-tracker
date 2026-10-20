@@ -201,6 +201,12 @@ describe("AC3 heart-rate rollUp", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("rejects endpoints finer than a millisecond instead of truncating them", async () => {
+    const { fetch, calls } = scripted();
+    await expect(client(fetch).rollUpHeartRate("2026-10-01T00:00:00Z", "2026-10-15T00:00:00.000001Z", 60)).rejects.toThrow(RangeError);
+    expect(calls).toHaveLength(0);
+  });
+
   it("accepts RFC 3339 endpoints with an offset", async () => {
     const { fetch, calls } = scripted(token(), json({ rollupDataPoints: [] }));
     await client(fetch).rollUpHeartRate("2026-10-20T20:00:00+02:00", "2026-10-20T23:00:00+02:00", 60);
