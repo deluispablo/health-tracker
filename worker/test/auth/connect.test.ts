@@ -151,19 +151,20 @@ describe("AC3 rejections keep storage unchanged", () => {
   });
 
   it("consumes the state before the exchange, whatever the outcome", async () => {
-    const cases: [Record<string, string>, unknown, number][] = [
-      [{ error: "access_denied" }, goodToken(), 400],
-      [{}, goodToken(), 400],
-      [{ code: "c" }, goodToken({ id_token: idToken(claims({ email: "intruder@example.com" })) }), 403],
-      [{ code: "c" }, { error: "invalid_grant" }, 400],
-      [{ code: "" }, goodToken(), 400],
-      [{ code: "c", error: "" }, goodToken(), 400],
-      [{ code: "c" }, "not json", 400],
-      [{ code: "c" }, goodToken({ refresh_token: undefined }), 400],
+    // [callback params, token endpoint body, token endpoint HTTP status, expected callback status]
+    const cases: [Record<string, string>, unknown, number, number][] = [
+      [{ error: "access_denied" }, goodToken(), 200, 400],
+      [{}, goodToken(), 200, 400],
+      [{ code: "c" }, goodToken({ id_token: idToken(claims({ email: "intruder@example.com" })) }), 200, 403],
+      [{ code: "c" }, { error: "invalid_grant" }, 400, 400],
+      [{ code: "" }, goodToken(), 200, 400],
+      [{ code: "c", error: "" }, goodToken(), 200, 400],
+      [{ code: "c" }, "not json", 200, 400],
+      [{ code: "c" }, goodToken({ refresh_token: undefined }), 200, 400],
     ];
-    for (const [params, response, status] of cases) {
+    for (const [params, response, httpStatus, status] of cases) {
       const state = await stateOf();
-      const g = google(response, status === 400 && "error" in (response as object) ? 400 : 200);
+      const g = google(response, httpStatus);
       expect((await finishGoogleConnect(callback({ state, ...params }), authEnv(), deps(g.fetch))).status).toBe(status);
       const replay = google(goodToken());
       expect((await finishGoogleConnect(callback({ state, code: "c" }), authEnv(), deps(replay.fetch))).status).toBe(400);
