@@ -33,7 +33,9 @@ describe("T11 AC3e parser layer allows only the four views and declared CTEs", (
     "SELECT * FROM v_daily WHERE local_date IN (SELECT local_date FROM other_table)",
     "SELECT * FROM temp.v_daily", "SELECT * FROM main.v_daily", "SELECT 1; SELECT 2",
     "INSERT INTO v_events VALUES (1)", "WITH q AS (SELECT 1) SELECT * FROM q JOIN other_table",
-  ])("refuses relations outside the views, qualified names and non-single-select: %s", (sql) => refuses(sql));
+  ])("refuses relations outside the views, qualified names and non-single-select: %s", (sql) => {
+    refuses(sql);
+  });
 
   it.each([
     "SELECT * FROM", "SELECT AVG(rhr) OVER (ORDER BY local_date) FROM v_daily",
