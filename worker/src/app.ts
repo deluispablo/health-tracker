@@ -1,3 +1,4 @@
+import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { finishGoogleConnect, loadGoogleRefreshToken, startGoogleConnect } from "./auth/googleHealthConnect";
 import { createGoogleClient } from "./google/client";
 import { drainSyncPending } from "./ingest/drain";
@@ -21,6 +22,11 @@ export interface AppDeps {
   fetch: typeof globalThis.fetch;
   now: () => number;
   sleep: (ms: number) => Promise<void>;
+}
+
+export interface ConnectorEnv extends AppEnv {
+  PUBLIC_ORIGIN: string;
+  OAUTH_PROVIDER?: OAuthHelpers;
 }
 
 const KEYSET_URL = "https://www.gstatic.com/googlehealthapi/webhooks/webhooks_public_keyset.json";
