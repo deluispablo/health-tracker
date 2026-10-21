@@ -34,7 +34,7 @@ function watched() {
 }
 
 async function snapshot() {
-  const schema = (await env.DB.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table' ORDER BY name").all<{ name: string; sql: string }>()).results;
+  const schema = (await env.DB.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND substr(name, 1, 4) <> '_cf_' ORDER BY name").all<{ name: string; sql: string }>()).results;
   return Promise.all(schema.map(async ({ name, sql }) => ({ name, sql,
     rows: (await env.DB.prepare(`SELECT * FROM "${name.replaceAll('"', '""')}"`).all()).results,
   })));
