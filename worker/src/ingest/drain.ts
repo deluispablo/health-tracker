@@ -12,6 +12,14 @@ interface PendingRow {
   attempts: number;
 }
 
+const dailyListTypes: Record<string, { metric: string; payload: string; field: string }> = {
+  "daily-resting-heart-rate": { metric: "rhr", payload: "dailyRestingHeartRate", field: "beatsPerMinute" },
+  "daily-heart-rate-variability": { metric: "hrv_rmssd", payload: "dailyHeartRateVariability", field: "averageHeartRateVariabilityMilliseconds" },
+  "daily-oxygen-saturation": { metric: "spo2", payload: "dailyOxygenSaturation", field: "averagePercentage" },
+  "daily-respiratory-rate": { metric: "resp_rate", payload: "dailyRespiratoryRate", field: "breathsPerMinute" },
+  "daily-sleep-temperature-derivations": { metric: "skin_temp_dev", payload: "dailySleepTemperatureDerivations", field: "nightlyTemperatureCelsius" },
+};
+
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? value as Record<string, unknown> : {};
 }
@@ -53,7 +61,8 @@ export async function drainSyncPending(
   const db = env.DB;
   let processed = 0;
   let failed = 0;
-  for (const type of ["heart-rate", "steps", "daily-resting-heart-rate", "sleep"]) {
+  for (const type of ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
+    "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes"]) {
     const row = await db.prepare(`SELECT * FROM sync_pending
       WHERE data_type = ? AND attempts < 5
       ORDER BY received_at, start_ts, operation, end_ts LIMIT 1`).bind(type).first<PendingRow>();
@@ -128,18 +137,20 @@ export async function drainSyncPending(
       const fullEnd = addDays(localDate(row.end_ts - 1, env.USER_TZ), 1);
       const cap = addDays(first, 31);
       const end = fullEnd < cap ? fullEnd : cap;
+      const listed = dailyListTypes[type];
       let points: DailyRollUpPoint[];
       try {
-        if (type === "steps") {
-          points = await client.dailyRollUp("steps", first, end);
+        if (type === "steps" || type === "active-zone-minutes") {
+          points = await client.dailyRollUp(type, first, end);
         } else {
-          const items = await client.listDaily("daily-resting-heart-rate", first, end);
+          const items = await client.listDaily(type, first, end);
           points = items.map((item) => {
-            const payload = object(object(item).dailyRestingHeartRate);
+            const payload = object(object(item)[listed.payload]);
             const date = object(payload.date);
             return {
               date: [date.year, date.month, date.day].map((part, i) => String(part).padStart(i === 0 ? 4 : 2, "0")).join("-"),
-              value: payload.beatsPerMinute,
+              value: type === "daily-sleep-temperature-derivations"
+                ? Number(payload[listed.field]) - Number(payload.baselineTemperatureCelsius) : payload[listed.field],
             };
           });
         }
@@ -149,10 +160,16 @@ export async function drainSyncPending(
         continue;
       }
 
-      const metric = type === "steps" ? "steps" : "rhr";
+      const metric = type === "steps" ? "steps" : type === "active-zone-minutes" ? "azm" : listed.metric;
       const now = opts.now?.() ?? Math.floor(Date.now() / 1000);
       const rows = points.flatMap((point) => {
-        const value = Number(type === "steps" ? object(point.value).countSum : point.value);
+        let value = Number(type === "steps" ? object(point.value).countSum : point.value);
+        if (type === "active-zone-minutes") {
+          const zones = object(point.value);
+          const parts = ["sumInCardioHeartZone", "sumInPeakHeartZone", "sumInFatBurnHeartZone"]
+            .filter((field) => field in zones).map((field) => Number(zones[field]));
+          value = parts.length ? parts.reduce((sum, part) => sum + part, 0) : NaN;
+        }
         if (!validDate(point.date) || point.date < first || point.date >= end || !Number.isFinite(value)) return [];
         return [[metric, point.date, value, "gh", null, now]];
       });
