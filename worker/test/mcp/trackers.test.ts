@@ -11,13 +11,14 @@ const events = async () => (await env.DB.prepare("SELECT id, tracker_id, ts, tz_
 const daily = async () => (await env.DB.prepare("SELECT local_date, tracker_id, total, n FROM tracker_daily ORDER BY local_date, tracker_id").all()).results;
 
 // Inspect real D1 operations without changing statement or batch semantics.
-function observedDb(check: (sql: string, args: unknown[]) => void | Promise<void>): D1Database {
+function observedDb(check: (sql: string, args: unknown[], inBatch: boolean) => void | Promise<void>,
+  onBatch: (sql: string[]) => void = () => {}): D1Database {
   const statements = new WeakMap<object, { raw: D1PreparedStatement; sql: string; args: unknown[] }>();
   const wrap = (raw: D1PreparedStatement, sql: string, args: unknown[] = []): D1PreparedStatement => {
     const proxy = new Proxy(raw, { get(t, p) {
       if (p === "bind") return (...values: unknown[]) => wrap(t.bind(...values), sql, values);
       if (["first", "all", "raw", "run"].includes(String(p))) return async (...values: unknown[]) => {
-        await check(sql, args);
+        await check(sql, args, false);
         return (Reflect.get(t, p) as (...a: unknown[]) => unknown).apply(t, values);
       };
       const v: unknown = Reflect.get(t, p);
@@ -34,7 +35,8 @@ function observedDb(check: (sql: string, args: unknown[]) => void | Promise<void
         if (!entry) throw new Error("unobserved statement");
         return entry;
       });
-      for (const entry of entries) await check(entry.sql, entry.args);
+      onBatch(entries.map((entry) => entry.sql));
+      for (const entry of entries) await check(entry.sql, entry.args, true);
       return t.batch(entries.map((entry) => entry.raw));
     };
     if (p === "exec" || p === "dump") return () => { throw new Error(`unexpected ${p}`); };
@@ -144,17 +146,21 @@ describe("AC3 log events", () => {
   });
 
   it("replays before tracker, value, time and note validation, with the current total and a healing refresh", async () => {
-    await env.DB.prepare("CREATE TRIGGER fail_daily BEFORE INSERT ON tracker_daily BEGIN SELECT RAISE(ABORT, 'rollup down'); END").run();
     const first = await logEvent(env.DB, { tracker_id: "cigarettes", idempotency_key: "replay_01" }, opts);
+    await env.DB.prepare("CREATE TRIGGER fail_daily BEFORE INSERT ON tracker_daily BEGIN SELECT RAISE(ABORT, 'rollup down'); END").run();
     await stored("later", 3);
     await stored("deleted", 99, { deleted: 0 });
     await env.DB.prepare("UPDATE tracker SET archived_at = 1 WHERE id = 'cigarettes'").run();
     const args = { tracker_id: "missing", value: Number.NaN, at: "invalid", note: 123 as unknown as string, idempotency_key: "replay_01" };
-    const replay = await logEvent(env.DB, args, { now: NOW + 10 * 86400, tz: "UTC" });
-    expect(replay).toEqual({ created: false, event: first.event, day_total: 4 });
-    expect(await daily()).toEqual([]);
+    const batches: string[][] = [];
+    const db = observedDb(() => {}, (sql) => { batches.push(sql); });
+    await expect(logEvent(db, args, { now: NOW + 10 * 86400, tz: "UTC" })).rejects.toThrow("rollup down");
+    expect(batches.map((batch) => batch.length)).toEqual([3]);
+    expect(await daily()).toEqual([{ local_date: "2026-10-21", tracker_id: "cigarettes", total: 1, n: 1 }]);
     await env.DB.prepare("DROP TRIGGER fail_daily").run();
-    expect(await logEvent(env.DB, args, opts)).toEqual(replay);
+    batches.length = 0;
+    expect(await logEvent(db, args, opts)).toEqual({ created: false, event: first.event, day_total: 4 });
+    expect(batches.map((batch) => batch.length)).toEqual([3]);
     expect(await daily()).toEqual([{ local_date: "2026-10-21", tracker_id: "cigarettes", total: 4, n: 2 }]);
     expect(await events()).toHaveLength(3);
   });
@@ -332,42 +338,111 @@ describe("AC3 log events", () => {
     expect(results[1].day_total).toBe(results[0].event.value);
   });
 
-  it("rejects a final total read failure after persisting the event, and safely replays the retry", async () => {
-    let inserted = false;
-    const failure = new Error("final total unavailable");
-    const db = observedDb((sql) => {
-      if (/^\s*INSERT\s+INTO\s+event\b/i.test(sql)) inserted = true;
-      if (inserted && /^\s*SELECT\b/i.test(sql) && /\bSUM\s*\(/i.test(sql) && /\bevent\b/i.test(sql)) throw failure;
-    });
+  it("rolls back the event and daily refresh when the total SELECT fails, then creates on retry", async () => {
+    await stored("prior", 20, { tracker: "caffeine" });
+    await env.DB.prepare(`INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total)
+      VALUES ('2026-10-21', 'caffeine', 999, 99, 999)`).run();
+    const before = [await events(), await daily()];
+    const db = new Proxy(env.DB, { get(t, p) {
+      if (p === "prepare") return (sql: string) => t.prepare(sql.replace(
+        "COALESCE(SUM(value), 0)", "COALESCE(SUM(value), 0) + json_extract('broken', '$')",
+      ));
+      const value: unknown = Reflect.get(t, p);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
+    } });
     const args = { tracker_id: "caffeine", idempotency_key: "final_01" };
-    await expect(logEvent(db, args, opts)).rejects.toBe(failure);
-    expect(await events()).toEqual([expect.objectContaining({ id: "k_final_01", value: 80 })]);
-    expect(await daily()).toEqual([{ local_date: "2026-10-21", tracker_id: "caffeine", total: 80, n: 1 }]);
-    await expect(logEvent(env.DB, args, opts)).resolves.toMatchObject({ created: false, day_total: 80 });
-    expect(await events()).toHaveLength(1);
+    await expect(logEvent(db, args, opts)).rejects.toThrow();
+    expect([await events(), await daily()]).toEqual(before);
+    await expect(logEvent(env.DB, args, opts)).resolves.toMatchObject({ created: true, day_total: 100 });
+    expect(await events()).toHaveLength(2);
   });
 
   it("returns the stored event unchanged on a generated UUID conflict", async () => {
     const id = "00000000-0000-4000-8000-000000000001";
     await stored(id, 12.5, { tracker: "alcohol", date: "2026-10-20", note: "original" });
+    await stored("winner-sibling", 3, { tracker: "alcohol", date: "2026-10-20" });
+    await stored("proposed-sibling", 4);
+    await env.DB.prepare(`INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total)
+      VALUES ('2026-10-20', 'alcohol', 999, 99, 999)`).run();
+    await env.DB.prepare(`CREATE TRIGGER fail_daily BEFORE INSERT ON tracker_daily
+      WHEN NEW.local_date = '2026-10-21' BEGIN SELECT RAISE(ABORT, 'proposed date down'); END`).run();
     const before = await events();
+    const batches: string[][] = [];
+    const db = observedDb(() => {}, (sql) => { batches.push(sql); });
     const uuid = vi.spyOn(crypto, "randomUUID").mockReturnValue(id);
     try {
-      expect(await logEvent(env.DB, { tracker_id: "cigarettes", value: 2, note: "replacement" }, opts)).toEqual({
-        created: false, day_total: 12.5,
+      expect(await logEvent(db, { tracker_id: "cigarettes", value: 2, note: "replacement" }, opts)).toEqual({
+        created: false, day_total: 15.5,
         event: { id, tracker_id: "alcohol", local_date: "2026-10-20", local_time: "12:00", value: 12.5, note_untrusted: "original" },
       });
       expect(await events()).toEqual(before);
+      expect(await daily()).toEqual([{ local_date: "2026-10-20", tracker_id: "alcohol", total: 15.5, n: 2 }]);
+      expect(batches.map((batch) => batch.length)).toEqual([4, 3]);
     } finally {
       uuid.mockRestore();
     }
   });
 
-  it("still logs and reports the exact total when the daily refresh fails", async () => {
+  it("rolls back a new event and preserves stale daily rows when the refresh fails", async () => {
+    await stored("prior", 3);
+    await env.DB.prepare(`INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total)
+      VALUES ('2026-10-21', 'cigarettes', 999, 99, 999)`).run();
+    const before = [await events(), await daily()];
     await env.DB.prepare("CREATE TRIGGER fail_daily BEFORE INSERT ON tracker_daily BEGIN SELECT RAISE(ABORT, 'rollup down'); END").run();
-    const out = await logEvent(env.DB, { tracker_id: "cigarettes" }, opts);
-    expect(out).toMatchObject({ created: true, day_total: 1 });
-    expect(await events()).toHaveLength(1);
+    await expect(logEvent(env.DB, { tracker_id: "cigarettes" }, opts)).rejects.toThrow("rollup down");
+    expect([await events(), await daily()]).toEqual(before);
+    await env.DB.prepare("DROP TRIGGER fail_daily").run();
+    await expect(logEvent(env.DB, { tracker_id: "cigarettes" }, opts)).resolves.toMatchObject({ created: true, day_total: 4 });
+  });
+
+  it("inserts, refreshes and reads the total in exactly one batch, then replays in one batch", async () => {
+    const batches: string[][] = [];
+    const db = observedDb((sql, _args, inBatch) => {
+      if (!inBatch) {
+        expect(sql).toMatch(/^\s*SELECT\b/i);
+        expect(sql).not.toMatch(/\bSUM\s*\(/i);
+      }
+    }, (sql) => { batches.push(sql); });
+    const args = { tracker_id: "cigarettes", idempotency_key: "batch_01" };
+    const first = await logEvent(db, args, opts);
+    expect(first).toEqual({ created: true, day_total: 1, event: { id: "k_batch_01", tracker_id: "cigarettes",
+      local_date: "2026-10-21", local_time: "12:00", value: 1, note_untrusted: null } });
+    expect(batches.map((batch) => batch.length)).toEqual([4]);
+    expect(batches[0][0]).toMatch(/^\s*INSERT INTO event/i);
+    expect(batches[0][1]).toMatch(/^\s*DELETE FROM tracker_daily/i);
+    expect(batches[0][2]).toMatch(/^\s*INSERT INTO tracker_daily/i);
+    expect(batches[0][3]).toMatch(/^\s*SELECT COALESCE\(SUM\(value\), 0\)/i);
+    batches.length = 0;
+    expect(await logEvent(db, args, opts)).toEqual({ ...first, created: false });
+    expect(batches.map((batch) => batch.length)).toEqual([3]);
+  });
+
+  it.each(["not-a-date", "2026-02-30", "1999-12-31", "2100-01-01"])("replays invalid stored date %s with only the total SELECT", async (date) => {
+    await stored("k_bad_date", 2, { date });
+    await stored("same-date", 3, { date });
+    await stored("deleted", 99, { date, deleted: 0 });
+    const before = await events();
+    const batches: string[][] = [];
+    const db = observedDb((sql) => { expect(sql).toMatch(/^\s*SELECT\b/i); }, (sql) => { batches.push(sql); });
+    expect(await logEvent(db, { tracker_id: "missing", idempotency_key: "bad_date" }, opts)).toMatchObject({
+      created: false, event: { local_date: date }, day_total: 5,
+    });
+    expect(batches.map((batch) => batch.length)).toEqual([1]);
+    expect(await events()).toEqual(before);
+    expect(await daily()).toEqual([]);
+  });
+
+  it("replays a sole deleted event with numeric zero, clears stale totals and keeps it deleted", async () => {
+    await stored("k_deleted_only", 2, { deleted: 0 });
+    await env.DB.prepare(`INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total)
+      VALUES ('2026-10-21', 'cigarettes', 2, 1, 0)`).run();
+    const batches: string[][] = [];
+    const db = observedDb(() => {}, (sql) => { batches.push(sql); });
+    expect(await logEvent(db, { tracker_id: "cigarettes", idempotency_key: "deleted_only" }, opts))
+      .toMatchObject({ created: false, day_total: 0 });
+    expect(batches.map((batch) => batch.length)).toEqual([3]);
+    expect(await daily()).toEqual([]);
+    expect(await env.DB.prepare("SELECT deleted_at FROM event WHERE id = 'k_deleted_only'").first("deleted_at")).toBe(0);
   });
 
   it("rejects when the insert fails", async () => {

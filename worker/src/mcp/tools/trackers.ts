@@ -1,4 +1,4 @@
-import { recomputeTrackerDaily } from "../../rollup/trackers";
+import { trackerDailyStatements } from "../../rollup/trackers";
 
 interface Tracker {
   id: string;
@@ -57,17 +57,25 @@ function eventById(db: D1Database, id: string) {
     .bind(id).first<EventRow>();
 }
 
-async function logResult(db: D1Database, event: EventRow, created: boolean) {
-  try {
-    await recomputeTrackerDaily(db, event.local_date, event.local_date);
-  } catch {
-    // A replay retries the refresh; the cron also repairs D−2…D.
-  }
-  const day_total = await db.prepare(`
+function dayTotalStatement(db: D1Database, event: EventRow) {
+  return db.prepare(`
     SELECT COALESCE(SUM(value), 0) AS total FROM event
     WHERE tracker_id = ? AND local_date = ? AND deleted_at IS NULL
-  `).bind(event.tracker_id, event.local_date).first<number>("total");
-  return { created, event: { ...eventOutput(event), local_date: event.local_date }, day_total };
+  `).bind(event.tracker_id, event.local_date);
+}
+
+function logOutput(event: EventRow, created: boolean, total: D1Result<{ total: number }>) {
+  return { created, event: { ...eventOutput(event), local_date: event.local_date }, day_total: total.results[0].total };
+}
+
+async function logResult(db: D1Database, event: EventRow, created: boolean) {
+  const date = event.local_date;
+  const midnight = Date.parse(`${date}T00:00:00Z`);
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(midnight)
+    && new Date(midnight).toISOString().slice(0, 10) === date && date >= "2000-01-01" && date <= "2099-12-31";
+  const refresh = validDate ? trackerDailyStatements(db, date, date) : [];
+  const results = await db.batch<{ total: number }>([...refresh, dayTotalStatement(db, event)]);
+  return logOutput(event, created, results[results.length - 1]);
 }
 
 function eventTime(at: string, now: number): number {
@@ -124,14 +132,18 @@ export async function logEvent(db: D1Database, args: {
     tracker_id: tracker.id, ts, tz_offset_min,
     local_date: new Date((ts + tz_offset_min * 60) * 1000).toISOString().slice(0, 10), value, note,
   };
-  const inserted = await db.prepare(`
-    INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'mcp', ?) ON CONFLICT(id) DO NOTHING
-  `).bind(event.id, event.tracker_id, ts, tz_offset_min, event.local_date, value, note, now).run();
-  if (inserted.meta.changes === 0) {
+  const results = await db.batch<{ total: number }>([
+    db.prepare(`
+      INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'mcp', ?) ON CONFLICT(id) DO NOTHING
+    `).bind(event.id, event.tracker_id, ts, tz_offset_min, event.local_date, value, note, now),
+    ...trackerDailyStatements(db, event.local_date, event.local_date, event.id),
+    dayTotalStatement(db, event),
+  ]);
+  if (results[0].meta.changes === 0) {
     const existing = await eventById(db, event.id);
     if (!existing) throw new Error("Conflicting event is missing");
     return logResult(db, existing, false);
   }
-  return logResult(db, event, true);
+  return logOutput(event, true, results[results.length - 1]);
 }

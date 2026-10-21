@@ -1,7 +1,7 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { recomputeTrackerDaily } from "../../src/rollup/trackers";
+import { recomputeTrackerDaily, trackerDailyStatements } from "../../src/rollup/trackers";
 
 const at = (iso: string) => Date.parse(iso) / 1000;
 let seq = 0;
@@ -124,6 +124,23 @@ describe("AC1 tracker daily totals", () => {
     await recomputeTrackerDaily(spy, "2026-10-01", "2026-10-31");
     expect(batches).toHaveLength(1);
     expect((await rows()).map((r) => r.total)).toEqual([80]);
+  });
+
+  it("exports two unexecuted refresh statements with the same validation and range behavior", async () => {
+    await event("caffeine", "2026-10-07T07:00:00Z", 80, "2026-10-07");
+    const statements = trackerDailyStatements(env.DB, "2026-10-07", "2026-10-07");
+    expect(statements).toHaveLength(2);
+    expect(await rows()).toEqual([]);
+    await env.DB.batch(statements);
+    const expected = await rows();
+    await recomputeTrackerDaily(env.DB, "2026-10-07", "2026-10-07");
+    expect(await rows()).toEqual(expected);
+    for (const [from, to] of [["2026-02-30", "2026-03-01"], ["2026-10-08", "2026-10-07"], ["2025-01-01", "2026-01-02"]]) {
+      expect(() => trackerDailyStatements(env.DB, from, to)).toThrow(RangeError);
+      await expect(recomputeTrackerDaily(env.DB, from, to)).rejects.toThrow(RangeError);
+    }
+    expect(trackerDailyStatements(env.DB, "2025-01-01", "2026-01-01")).toHaveLength(2);
+    expect(await rows()).toEqual(expected);
   });
 
   it("validates the range before any write and runs in one atomic batch", async () => {
