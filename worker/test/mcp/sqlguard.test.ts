@@ -77,7 +77,7 @@ describe("T11 AC2 tokenized keywords and dangerous functions", () => {
 
   it.each(["load_extension", "readfile", "writefile", "edit", "fts3_tokenizer", "sqlite_version"])(
     "refuses function %s, including quoted calls and intervening comments", (name) => {
-      for (const fn of [name, name.toUpperCase(), `"${name}"`, `[${name}]`, `\`${name}\``]) {
+      for (const fn of [name, name.toUpperCase(), `"${name}"`, `[${name}]`, `\`${name}\``, `'${name}'`, `'${name.toUpperCase()}'`]) {
         refuses(`SELECT ${fn} ('x')`);
         refuses(`SELECT (SELECT ${fn}/**/('x') FROM v_events)`);
       }
@@ -188,7 +188,8 @@ describe("T11 BOM, NUL and shell file functions are refused", () => {
     "SELECT * FROM fsdir('/etc')", "SELECT * FROM zipfile('x.zip')", "SELECT sqlar_uncompress(x, 1) FROM v_events",
     "SELECT sqlar_compress('x')",
     "SELECT readfile \v('/etc/hosts')", "SELECT readfile \t\v('/etc/hosts')", "SELECT edit \v('a', 'true')",
-    "SELECT * FROM fsdir \v('/etc')", "SELECT\v1", "SELECT 1\u0001", "SELECT 1\u001f", "SELECT 1\u007f",
+    "SELECT * FROM fsdir \v('/etc')", "SELECT name FROM 'fsdir'('worker/package.json')",
+    "SELECT * FROM 'FsDir' /* x */ ('.')", "SELECT * FROM 'zipfile'\n('x.zip')", "SELECT\v1", "SELECT 1\u0001", "SELECT 1\u001f", "SELECT 1\u007f",
   ])("refuses %s", refuses);
 });
 
