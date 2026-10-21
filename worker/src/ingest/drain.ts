@@ -169,6 +169,9 @@ export async function drainSyncPending(
           const summary = object(sleep.summary);
           const asleep = readNumber(summary.minutesAsleep);
           const inBed = readNumber(summary.minutesInSleepPeriod);
+          const startHour = new Date((startTs + tz * 60) * 1000).getUTCHours();
+          const isNap = object(sleep.metadata).mainSleep !== true
+            || (inBed !== null && inBed < 180 && startHour >= 9 && startHour < 20);
           const stageMinutes = new Map<string, number>();
           for (const entry of Array.isArray(summary.stagesSummary) ? summary.stagesSummary : []) {
             const s = object(entry);
@@ -183,7 +186,7 @@ export async function drainSyncPending(
           });
           // A duplicate replaces the whole session, including its stages.
           answer.set(payload.dataPointName, { session: [payload.dataPointName, "gh", startTs, endTs, tz,
-            sleepLocalDate(endTs, tz), object(sleep.metadata).mainSleep === true ? 0 : 1, asleep, inBed,
+            sleepLocalDate(endTs, tz), isNap ? 1 : 0, asleep, inBed,
             asleep !== null && inBed !== null && inBed > 0 ? Math.round(asleep / inBed * 100) : null,
             ...["DEEP", "REM", "LIGHT", "AWAKE"].map((stage) => stageMinutes.get(stage) ?? null),
             readNumber(summary.minutesToFallAsleep), now], stages });

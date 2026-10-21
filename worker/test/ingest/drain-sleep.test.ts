@@ -78,6 +78,50 @@ beforeEach(async () => {
     env.DB.prepare("DELETE FROM sleep_stage"), env.DB.prepare("DELETE FROM sleep_session")]);
 });
 
+describe("T25 AC1/AC3 daytime naps", () => {
+  it("reclassifies the 15:37, 74-minute mainSleep probe and replays identically", async () => {
+    const start = at("2026-07-19T13:37:00Z");
+    const end = start + 74 * 60;
+    const { client } = fakeClient([session("nap-probe", new Date(start * 1000).toISOString(), new Date(end * 1000).toISOString(), {
+      summary: summary({ minutesInSleepPeriod: "74", minutesAsleep: "70" }), stages: [],
+    })]);
+    await queue(start, end);
+    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 1, failed: 0 });
+    const first = await sessions();
+    expect(first).toEqual([expect.objectContaining({ is_nap: 1, minutes_in_bed: 74, local_date: "2026-07-19" })]);
+    await queue(start, end);
+    await drainSyncPending(drainEnv(), client, opts);
+    expect(await sessions()).toEqual(first);
+  });
+
+  it.each([
+    ["03:10 short night", "01:10:00", "7200s", 90, true, 0],
+    ["seven-hour night", "21:00:00", "7200s", 420, true, 0],
+    ["before 09:00", "06:59:59", "7200s", 90, true, 0],
+    ["at 09:00", "07:00:00", "7200s", 90, true, 1],
+    ["before 20:00", "17:59:59", "7200s", 179, true, 1],
+    ["at 20:00", "18:00:00", "7200s", 90, true, 0],
+    ["180-minute threshold", "13:37:00", "7200s", 180, true, 0],
+    ["missing duration", "13:37:00", "7200s", null, true, 0],
+    ["negative stored offset", "20:37:00", "-18000s", 74, true, 1],
+    ["half-hour stored offset", "03:30:00", "19800s", 74, true, 1],
+    ["UTC daytime but local night", "10:00:00", "-28800s", 74, true, 0],
+    ["explicit non-main night", "21:00:00", "7200s", 420, false, 1],
+    ["missing mainSleep", "21:00:00", "7200s", null, undefined, 1],
+    ["non-boolean mainSleep", "21:00:00", "7200s", 420, "true", 1],
+  ])("maps %s", async (_name, time, offset, minutes, mainSleep, isNap) => {
+    const start = at(`2026-10-06T${time}Z`);
+    const end = start + 7 * 3600;
+    const item = session("rule", new Date(start * 1000).toISOString(), new Date(end * 1000).toISOString(), {
+      endUtcOffset: offset, summary: { minutesInSleepPeriod: minutes }, stages: [],
+    });
+    Object.assign(item.sleep.metadata, { mainSleep });
+    await queue(start, end);
+    expect(await drainSyncPending(drainEnv(), fakeClient([item]).client, opts)).toEqual({ processed: 1, failed: 0 });
+    expect((await sessions()).map((row) => row.is_nap)).toEqual([isNap]);
+  });
+});
+
 describe("AC1 sleep sessions", () => {
   it("reconciles sessions ending in the interval (plus one minute) and stores session and stages", async () => {
     await queue(at("2026-10-06T21:15:00Z"), at("2026-10-07T04:48:00Z"));
