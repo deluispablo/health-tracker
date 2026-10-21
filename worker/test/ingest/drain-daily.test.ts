@@ -88,21 +88,51 @@ describe("AC1 steps daily totals", () => {
     ]);
   });
 
-  it("re-reads at most 31 local dates per run and advances the row by 31 days", async () => {
+  it("re-reads at most 31 local dates per run and advances the row to UTC midnight of the range end minus 14 h", async () => {
     const start = at("2026-08-01T10:00:00Z");
     await queue("steps", start, at("2026-10-01T10:00:00Z"), "UPSERT", NOW - 60, 1);
     const { client, calls } = fakeClient();
     await drainSyncPending(drainEnv(), client, opts);
     expect(calls.map((c) => [c.start, c.end])).toEqual([["2026-08-01", "2026-09-01"]]);
     expect(await pending()).toEqual([
-      { data_type: "steps", start_ts: start + 31 * 86400, end_ts: at("2026-10-01T10:00:00Z"), operation: "UPSERT", received_at: NOW - 60, attempts: 1 }]);
+      { data_type: "steps", start_ts: at("2026-08-31T10:00:00Z"), end_ts: at("2026-10-01T10:00:00Z"), operation: "UPSERT", received_at: NOW - 60, attempts: 1 }]);
+  });
+
+  it("loses no date across the spring DST change over successive runs", async () => {
+    // 1 Mar 2026 23:30 in Madrid (CET) is 22:30Z.
+    await queue("steps", at("2026-03-01T22:30:00Z"), at("2026-04-15T10:00:00Z"));
+    const { client, calls } = fakeClient();
+    for (let i = 0; i < 3; i++) await drainSyncPending(drainEnv(), client, opts);
+    expect(calls.map((c) => [c.start, c.end])).toEqual([["2026-03-01", "2026-04-01"], ["2026-03-31", "2026-04-16"]]);
+    expect(await pending()).toEqual([]);
+  });
+
+  it("keeps a daily row re-received during the fetch and merges an advance into a queued remainder", async () => {
+    await queue("steps", at("2026-10-18T10:00:00Z"), at("2026-10-18T11:00:00Z"));
+    const racing = fakeClient();
+    const original = racing.client.dailyRollUp.bind(racing.client);
+    racing.client.dailyRollUp = async (type: string, start: string, end: string) => {
+      await env.DB.prepare("UPDATE sync_pending SET received_at = ?").bind(NOW).run();
+      return original(type, start, end);
+    };
+    expect(await drainSyncPending(drainEnv(), racing.client, opts)).toEqual({ processed: 1, failed: 0 });
+    expect((await pending()).map((r) => r.received_at)).toEqual([NOW]);
+    await env.DB.prepare("DELETE FROM sync_pending").run();
+    const start = at("2026-08-01T10:00:00Z");
+    await queue("steps", start, at("2026-10-01T10:00:00Z"), "UPSERT", NOW - 300, 2);
+    await queue("steps", at("2026-08-31T10:00:00Z"), at("2026-10-01T10:00:00Z"), "UPSERT", NOW - 30, 4);
+    await drainSyncPending(drainEnv(), fakeClient().client, opts);
+    expect(await pending()).toEqual([
+      { data_type: "steps", start_ts: at("2026-08-31T10:00:00Z"), end_ts: at("2026-10-01T10:00:00Z"), operation: "UPSERT", received_at: NOW - 30, attempts: 2 }]);
   });
 
   it("skips days whose total is not a number", async () => {
     await queue("steps", at("2026-10-20T10:00:00Z"), at("2026-10-20T11:00:00Z"));
-    const { client } = fakeClient({ steps: [{ date: "2026-10-20", value: {} }] });
-    await drainSyncPending(drainEnv(), client, opts);
+    const { client, calls } = fakeClient({ steps: [{ date: "2026-10-20", value: {} }, { date: "2026-10-19", value: { countSum: "12" } }, steps("2026-10-21", "5")] });
+    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 1, failed: 0 });
+    expect(calls).toHaveLength(1);
     expect(await daily()).toEqual([]);
+    expect(await pending()).toEqual([]);
   });
 });
 
@@ -143,6 +173,17 @@ describe("AC3 one row per type per run", () => {
     expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 1, failed: 1 });
     expect((await pending()).map((r) => [r.data_type, r.attempts])).toEqual([["steps", 1]]);
     expect((await daily()).map((r) => r.value)).toEqual([61]);
+  });
+
+  it("stops a daily row at 5 attempts and drains the next eligible row of that type", async () => {
+    await queue("daily-resting-heart-rate", at("2026-10-15T10:00:00Z"), at("2026-10-15T11:00:00Z"), "UPSERT", NOW - 900, 4);
+    const failing = fakeClient({ rhr: new Error("503") });
+    expect(await drainSyncPending(drainEnv(), failing.client, opts)).toEqual({ processed: 0, failed: 1 });
+    await queue("daily-resting-heart-rate", at("2026-10-18T10:00:00Z"), at("2026-10-18T11:00:00Z"), "UPSERT", NOW - 30);
+    const ok = fakeClient();
+    expect(await drainSyncPending(drainEnv(), ok.client, opts)).toEqual({ processed: 1, failed: 0 });
+    expect(ok.calls.map((c) => c.start)).toEqual(["2026-10-18"]);
+    expect((await pending()).map((r) => r.attempts)).toEqual([5]);
   });
 
   it("rolls back a type's writes when its queue mutation fails, and rejects", async () => {
