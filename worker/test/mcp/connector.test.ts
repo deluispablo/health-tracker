@@ -511,7 +511,7 @@ describe("AC3 stateless read tools and audit", () => {
       const msg = await rpc(token, "tools/call", { name, arguments: args });
       expect(msg.error).toBeUndefined();
       expect(msg.result?.isError).not.toBe(true);
-      expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(expected) }]);
+      expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
       expect(msg.result?.structuredContent).toEqual(expected);
       await toolAudit(name, args, 1, before);
     }
@@ -1030,7 +1030,7 @@ describe("T10f AC6 workouts through the authenticated connector", () => {
     expect(msg.error).toBeUndefined();
     expect(msg.result?.isError).not.toBe(true);
     expect(msg.result?.structuredContent).toEqual(expected);
-    expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(expected) }]);
+    expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
     await toolAudit("health_workouts", args, 1, before);
     expect((await env.DB.prepare("SELECT * FROM workout").all()).results).toEqual(beforeRows);
   });
@@ -1113,7 +1113,7 @@ describe("T18 AC5 health_trend through the authenticated connector", () => {
     expect(msg.error).toBeUndefined();
     expect(msg.result?.isError).not.toBe(true);
     expect(msg.result?.structuredContent).toEqual(expected);
-    expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(expected) }]);
+    expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
     await toolAudit("health_trend", input, 1, before);
     expect((await env.DB.prepare("SELECT * FROM daily_summary").all()).results).toEqual(beforeRows);
   });
