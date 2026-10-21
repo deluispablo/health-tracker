@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "../../src/app";
 import worker from "../../src/index";
-import { healthDaily } from "../../src/mcp/tools/daily";
+import { DAILY_COLUMNS, healthDaily } from "../../src/mcp/tools/daily";
 import { healthIntraday } from "../../src/mcp/tools/intraday";
 import { healthSleep } from "../../src/mcp/tools/sleep";
 
@@ -380,6 +380,24 @@ describe("AC3 stateless read tools and audit", () => {
       expect(tool.inputSchema).toMatchObject({ type: "object" });
       expect(tool.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
     }
+  });
+
+  it("describes the valid values of every argument so clients need not guess", async () => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    const msg = await rpc(token, "tools/list", {});
+    type Schema = { properties: Record<string, { description?: string }> };
+    const tools = new Map((msg.result?.tools ?? []).map((t) => [t.name, t.inputSchema as Schema]));
+    const describe = (tool: string, field: string) => tools.get(tool)?.properties[field]?.description ?? "";
+    for (const [tool, fields] of [["health_daily", ["start", "end"]], ["health_sleep", ["start", "end"]], ["health_intraday", ["date"]]] as const) {
+      for (const field of fields) expect(describe(tool, field)).toContain("YYYY-MM-DD");
+    }
+    for (const column of DAILY_COLUMNS) expect(describe("health_daily", "metrics")).toContain(column);
+    expect(describe("health_intraday", "metric")).toMatch(/\bhr\b/);
+    for (const r of ["1m", "5m", "1h"]) expect(describe("health_intraday", "resolution")).toContain(r);
+    expect(describe("health_daily", "start")).toContain("90");
+    expect(describe("health_sleep", "start")).toContain("31");
   });
 
   it("calls each tool on seeded data, returns both JSON forms and writes one audit row per call", async () => {
