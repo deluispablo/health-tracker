@@ -311,8 +311,12 @@ describe("AC2 baselines and readiness", () => {
     await sleep("t", `${day(D, -1)}T22:00:00Z`, `${D}T05:00:00Z`, D, { asleep: 380, in_bed: 420 });
     await recomputeDailySummary(env.DB, D, D, NOW);
     const r = await row(D);
-    expect(r?.z_rhr).not.toBeNull();
-    expect(r?.z_ln_rmssd).not.toBeNull();
+    const zOf = (x: number, xs: number[]) => {
+      const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+      return (x - m) / Math.sqrt(xs.reduce((a, v) => a + (v - m) ** 2, 0) / (xs.length - 1));
+    };
+    expect(r?.z_rhr).toBeCloseTo(zOf(65, [1, 2, 3, 4, 5, 6, 7, 8].map((i) => 60 + (i % 3))), 9);
+    expect(r?.z_ln_rmssd).toBeCloseTo(zOf(Math.log(25), [1, 2, 3, 4, 5, 6, 7].map((i) => 3 + i / 10)), 9);
     expect(r?.z_sleep).toBeNull();
     expect(r?.readiness_proxy).toBeNull();
   });
@@ -329,6 +333,19 @@ describe("AC2 baselines and readiness", () => {
     await summary(day(D, -1), { rhr: 60 });
     await recomputeDailySummary(env.DB, D, D, NOW);
     expect((await row(D))?.z_rhr).toBeNull();
+  });
+
+  it("treats a numerically constant history as zero SD and a nearly constant one as real", async () => {
+    for (let i = 1; i <= 7; i++) await summary(day(D, -i), { ln_rmssd: Math.log(26), rhr: 60 + i * 1e-6 });
+    await daily("hrv_rmssd", D, 30);
+    await daily("rhr", D, 60.00001);
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    const xs = [1, 2, 3, 4, 5, 6, 7].map((i) => 60 + i * 1e-6);
+    const m = xs.reduce((a, b) => a + b, 0) / 7;
+    const sd = Math.sqrt(xs.reduce((a, v) => a + (v - m) ** 2, 0) / 6);
+    const r = await row(D);
+    expect(r?.z_ln_rmssd).toBeNull();
+    expect(r?.z_rhr).toBeCloseTo((60.00001 - m) / sd, 4);
   });
 
   it("replays identical inputs into an identical table", async () => {
