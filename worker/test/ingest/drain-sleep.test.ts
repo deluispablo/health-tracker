@@ -156,6 +156,27 @@ describe("AC1 sleep sessions", () => {
     expect((await stages()).map((r) => [r.start_ts, r.end_ts, r.stage])).toEqual([[at("2026-10-06T21:15:00Z"), at("2026-10-06T22:00:00Z"), "LIGHT"]]);
   });
 
+  it("keeps the later of two stages that floor to the same second", async () => {
+    await queue(at("2026-10-06T21:00:00Z"), at("2026-10-07T05:00:00Z"));
+    const { client } = fakeClient([session("f", "2026-10-06T21:15:00Z", "2026-10-07T04:48:00Z", { stages: [
+      stage("2026-10-06T22:00:00.100Z", "2026-10-06T22:00:00.600Z", "AWAKE"),
+      stage("2026-10-06T22:00:00.600Z", "2026-10-06T22:30:00Z", "LIGHT"),
+    ] })]);
+    await drainSyncPending(drainEnv(), client, opts);
+    expect((await stages()).map((r) => [r.start_ts, r.end_ts, r.stage])).toEqual([[at("2026-10-06T22:00:00Z"), at("2026-10-06T22:30:00Z"), "LIGHT"]]);
+  });
+
+  it("stores a night with more stages than one D1 statement can bind", async () => {
+    await queue(at("2026-10-06T21:00:00Z"), at("2026-10-07T05:00:00Z"));
+    const base = at("2026-10-06T21:15:00Z");
+    const iso = (t: number) => new Date(t * 1000).toISOString();
+    const many = Array.from({ length: 40 }, (_, i) => stage(iso(base + i * 600), iso(base + (i + 1) * 600), ["LIGHT", "DEEP", "REM", "AWAKE"][i % 4] ?? "LIGHT"));
+    const { client } = fakeClient([session("long", "2026-10-06T21:15:00Z", "2026-10-07T04:48:00Z", { stages: many })]);
+    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 1, failed: 0 });
+    expect(await stages()).toHaveLength(40);
+    expect(await pending()).toEqual([]);
+  });
+
   it("maps partial, zero and malformed summary values without inventing numbers", async () => {
     await queue(at("2026-10-01T00:00:00Z"), at("2026-10-04T00:00:00Z"));
     const { client } = fakeClient([
