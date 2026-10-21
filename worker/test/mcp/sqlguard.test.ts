@@ -62,6 +62,10 @@ describe("T11 AC2 tokenized keywords and dangerous functions", () => {
     }
   });
 
+  it("refuses a pragma_ identifier even where a keyword-like label is meant (AC3 precedence)", () => {
+    refuses("SELECT pragma_label FROM v_events");
+  });
+
   it("refuses mixed-case keywords after line comments", () => {
     refuses("SELECT 1 -- harmless\n uPdAtE v_daily SET steps = 0");
   });
