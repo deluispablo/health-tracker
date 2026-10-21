@@ -126,13 +126,27 @@ describe("AC1 steps daily totals", () => {
       { data_type: "steps", start_ts: at("2026-08-31T10:00:00Z"), end_ts: at("2026-10-01T10:00:00Z"), operation: "UPSERT", received_at: NOW - 30, attempts: 2 }]);
   });
 
-  it("skips days whose total is not a number", async () => {
-    await queue("steps", at("2026-10-20T10:00:00Z"), at("2026-10-20T11:00:00Z"));
-    const { client, calls } = fakeClient({ steps: [{ date: "2026-10-20", value: {} }, { date: "2026-10-19", value: { countSum: "12" } }, steps("2026-10-21", "5")] });
+  it("skips days whose total is not a number or that fall outside the range, keeping valid and zero totals", async () => {
+    await queue("steps", at("2026-10-19T10:00:00Z"), at("2026-10-21T10:00:00Z"));
+    const { client, calls } = fakeClient({ steps: [{ date: "2026-10-20", value: {} }, steps("2026-10-19", "12"), steps("2026-10-21", "0"),
+      steps("2026-10-22", "5"), { date: "2026-10-20" }] });
     expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 1, failed: 0 });
     expect(calls).toHaveLength(1);
-    expect(await daily()).toEqual([]);
+    expect((await daily()).map((r) => [r.local_date, r.value])).toEqual([["2026-10-19", 12], ["2026-10-21", 0]]);
     expect(await pending()).toEqual([]);
+  });
+
+  it("keeps a capped row re-received during the fetch and inserts no stale remainder", async () => {
+    await queue("steps", at("2026-08-01T10:00:00Z"), at("2026-10-01T10:00:00Z"));
+    const racing = fakeClient();
+    const original = racing.client.dailyRollUp.bind(racing.client);
+    racing.client.dailyRollUp = async (type: string, start: string, end: string) => {
+      await env.DB.prepare("UPDATE sync_pending SET received_at = ?").bind(NOW).run();
+      return original(type, start, end);
+    };
+    await drainSyncPending(drainEnv(), racing.client, opts);
+    expect(await pending()).toEqual([
+      { data_type: "steps", start_ts: at("2026-08-01T10:00:00Z"), end_ts: at("2026-10-01T10:00:00Z"), operation: "UPSERT", received_at: NOW, attempts: 0 }]);
   });
 });
 
@@ -149,7 +163,8 @@ describe("AC2 resting heart rate", () => {
 
   it("zero-pads Google's civil dates and ignores items outside the range or without a value", async () => {
     await queue("daily-resting-heart-rate", at("2026-01-09T10:00:00Z"), at("2026-01-09T11:00:00Z"));
-    const { client } = fakeClient({ rhr: [rhr(2026, 1, 9, "58"), rhr(2026, 1, 12, "59"), { dailyRestingHeartRate: { date: { year: 2026, month: 1, day: 9 } } }] });
+    const { client } = fakeClient({ rhr: [rhr(2026, 1, 9, "58"), rhr(2026, 1, 12, "59"),
+      { dailyRestingHeartRate: { date: { year: 2026, month: 1, day: 9 } } }, { dailyRestingHeartRate: { beatsPerMinute: "70" } }, {}] });
     await drainSyncPending(drainEnv(), client, opts);
     expect((await daily()).map((r) => [r.local_date, r.value])).toEqual([["2026-01-09", 58]]);
   });
