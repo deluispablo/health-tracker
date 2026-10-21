@@ -18,6 +18,8 @@ function fakeClient(points: RollUpPoint[] | Error = []) {
         calls.push({ start, end, windowSec });
         return points instanceof Error ? Promise.reject(points) : Promise.resolve(points);
       },
+      dailyRollUp: () => Promise.reject(new Error("unexpected dailyRollUp")),
+      listDaily: () => Promise.reject(new Error("unexpected listDaily")),
     },
   };
 }
@@ -136,6 +138,8 @@ describe("AC2 one 60-minute window per invocation", () => {
         await env.DB.prepare("UPDATE sync_pending SET received_at = ?").bind(NOW).run();
         return [{ ts: t, avg: 61, min: 61, max: 61 }];
       },
+      dailyRollUp: () => Promise.reject(new Error("unexpected dailyRollUp")),
+      listDaily: () => Promise.reject(new Error("unexpected listDaily")),
     };
     expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 1, failed: 0 });
     expect(await pending()).toEqual([{ data_type: "heart-rate", start_ts: t, end_ts: t + 60, operation: "UPSERT", received_at: NOW, attempts: 0 }]);
@@ -159,7 +163,7 @@ describe("AC2 one 60-minute window per invocation", () => {
 
   it("leaves rows of other data types untouched", async () => {
     await queue("sleep", at("2026-10-20T00:00:00Z"), at("2026-10-20T08:00:00Z"));
-    await queue("steps", at("2026-10-20T10:00:00Z"), at("2026-10-20T10:15:00Z"));
+    await queue("exercise", at("2026-10-20T10:00:00Z"), at("2026-10-20T10:15:00Z"));
     const { client, calls } = fakeClient();
     expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 0, failed: 0 });
     expect(calls).toHaveLength(0);
