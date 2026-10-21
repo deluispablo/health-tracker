@@ -1,6 +1,6 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleGoogleWebhook } from "../../src/ingest/webhook";
 
 const SECRET = "Bearer test-secret-0123456789";
@@ -85,6 +85,109 @@ beforeEach(async () => {
   currentKeyset = keyset(signer);
   keysetCalls = 0;
   keysetFails = false;
+});
+
+describe("T19a webhook hardening", () => {
+  const body = JSON.stringify([notification("steps", "UPSERT", physical("2026-10-20T20:19:00Z", "2026-10-20T20:58:00Z"))]);
+
+  it("AC1 rejects invalid secrets before hashing, reading the body or accessing D1", async () => {
+    const signature = await sign(signer, body);
+    const configs: Record<string, unknown>[] = [{}, ...[undefined, null, false, 1234567890123456, {}, [], "", "x", "123456789012345"]
+      .map((WEBHOOK_SECRET) => ({ WEBHOOK_SECRET }))];
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    try {
+      for (const [i, config] of configs.entries()) {
+        const matching = typeof config.WEBHOOK_SECRET === "string" ? config.WEBHOOK_SECRET : String(config.WEBHOOK_SECRET);
+        for (const authorization of [undefined, "", matching, SECRET]) {
+          for (const payload of ['{"type":"verification"}', body]) {
+            const label = `config ${String(i)}, authorization ${String(authorization)}, body ${payload}`;
+            const headers: Record<string, string> = { "google-health-api-signature": signature };
+            if (authorization !== undefined) headers.authorization = authorization;
+            const request = post(payload, headers);
+            const prepare = vi.fn(() => { throw new Error("Unexpected D1 prepare"); });
+            const batch = vi.fn(() => { throw new Error("Unexpected D1 batch"); });
+            const invalidEnv = { DB: { prepare, batch }, ...config } as unknown as typeof webhookEnv;
+            digest.mockClear();
+            const response = await handleGoogleWebhook(request, invalidEnv, deps());
+            expect.soft(response.status, label).toBe(503);
+            expect.soft(response.body, label).toBeNull();
+            expect.soft(request.bodyUsed, label).toBe(false);
+            expect.soft(digest, label).not.toHaveBeenCalled();
+            expect.soft(keysetCalls, label).toBe(0);
+            expect.soft(prepare, label).not.toHaveBeenCalled();
+            expect.soft(batch, label).not.toHaveBeenCalled();
+          }
+        }
+      }
+    } finally { digest.mockRestore(); }
+    const minimum = "1234567890123456";
+    expect((await handleGoogleWebhook(post('{"type":"verification"}', { authorization: minimum }),
+      { ...webhookEnv, WEBHOOK_SECRET: minimum }, deps())).status).toBe(200);
+    expect(await pending()).toEqual([]);
+  });
+
+  it("AC2 skips unusable entries and keeps the first usable key for duplicate ids", async () => {
+    type Entry = ReturnType<typeof keyset>["key"][number];
+    const cases: [string, (entry: Entry) => unknown[]][] = [
+      ["non-objects", (entry) => [null, 5, "key", [], entry]],
+      ["unsupported typeUrl", (entry) => [{ ...entry, keyData: { ...entry.keyData, typeUrl: "unsupported" } }, entry]],
+      ["unsupported prefix", (entry) => [{ ...entry, outputPrefixType: "RAW" }, entry]],
+      ["unsupported material type", (entry) => [{ ...entry, keyData: { ...entry.keyData, keyMaterialType: "SYMMETRIC" } }, entry]],
+      ["non-integer id", (entry) => [{ ...entry, keyId: 1.5 }, entry]],
+      ["negative id", (entry) => [{ ...entry, keyId: -1 }, entry]],
+      ["overflow id", (entry) => [{ ...entry, keyId: 0x1_0000_0000 }, entry]],
+      ["non-number id", (entry) => [{ ...entry, keyId: String(entry.keyId) }, entry]],
+      ["missing keyData", (entry) => [{ ...entry, keyData: null }, entry]],
+      ["non-string material", (entry) => [{ ...entry, keyData: { ...entry.keyData, value: 5 } }, entry]],
+      ["invalid base64", (entry) => [{ ...entry, keyData: { ...entry.keyData, value: "%%%" } }, entry]],
+      ["invalid protobuf", (entry) => [{ ...entry, keyData: { ...entry.keyData, value: b64(Uint8Array.of(0x1a, 32)) } }, entry]],
+      ["unimportable point", (entry) => [{ ...entry, keyData: { ...entry.keyData,
+        value: b64(Uint8Array.of(0x1a, 32, ...new Uint8Array(32), 0x22, 32, ...new Uint8Array(32))) } }, entry]],
+      ["disabled keys", (entry) => [{ ...entry, status: "DISABLED" }, { ...entry, status: "DESTROYED" }, entry]],
+      ["duplicate id", (entry) => [entry, { ...entry, keyData: { ...entry.keyData, value: signer.tinkValue } }]],
+    ];
+    for (const [i, [label, entries]] of cases.entries()) {
+      // The module cache survives beforeEach, so every case must force its own refresh.
+      const fresh = await makeSigner(190_000 + i);
+      const snapshot = keyset(fresh);
+      currentKeyset = { ...snapshot, key: entries(snapshot.key[0]) };
+      const before = keysetCalls;
+      expect.soft((await signedPost(body, fresh)).status, label).toBe(204);
+      expect.soft(keysetCalls, label).toBe(before + 1);
+      if (label === "duplicate id") {
+        expect.soft((await signedPost(body, { ...signer, keyId: fresh.keyId })).status, label).toBe(401);
+        expect.soft(keysetCalls, label).toBe(before + 1);
+      }
+    }
+  });
+
+  it("AC3 returns 503 for unusable snapshots and preserves the previously cached key", async () => {
+    const entry = keyset(signer).key[0];
+    const snapshots: [string, unknown][] = [
+      ["empty keys", { key: [] }],
+      ["disabled keys only", { key: [{ ...entry, status: "DISABLED" }] }],
+      ["all invalid", { key: [null, { ...entry, keyData: { ...entry.keyData, typeUrl: "unsupported" } },
+        { ...entry, keyData: { ...entry.keyData, value: "%%%" } }] }],
+      ["missing key array", {}], ["non-array key", { key: {} }], ["null key", { key: null }],
+      ["null snapshot", null], ["missing snapshot", undefined], ["array snapshot", []], ["primitive snapshot", 5],
+    ];
+    for (const [i, [label, snapshot]] of snapshots.entries()) {
+      const cached = await makeSigner(191_000 + i * 2);
+      const unknown = await makeSigner(191_001 + i * 2);
+      currentKeyset = keyset(cached);
+      const beforeWarm = keysetCalls;
+      expect((await signedPost(body, cached)).status).toBe(204);
+      expect(keysetCalls).toBe(beforeWarm + 1);
+      const rows = await pending();
+      currentKeyset = snapshot;
+      const before = keysetCalls;
+      expect.soft((await signedPost(body.replace("steps", "sleep"), unknown)).status, label).toBe(503);
+      expect.soft(keysetCalls, label).toBe(before + 1);
+      expect.soft(await pending(), label).toEqual(rows);
+      expect.soft((await signedPost(body, cached)).status, label).toBe(204);
+      expect.soft(keysetCalls, label).toBe(before + 1);
+    }
+  });
 });
 
 describe("AC1 handshake", () => {
