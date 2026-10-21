@@ -13,7 +13,7 @@ interface SqlResult {
   notes_untrusted: boolean;
 }
 // Explicit contracts keep missing-module reds from causing unrelated unsafe-type diagnostics.
-const healthSql = executeSql as (db: D1Database, args: { query: string }) => Promise<SqlResult>;
+const healthSql = executeSql;
 const guard = lexical;
 const views = parser;
 
