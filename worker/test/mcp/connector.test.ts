@@ -530,6 +530,8 @@ describe("AC3 stateless read tools and audit", () => {
     ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["rhr", "rhr"] }, "metrics must be distinct names from DAILY_COLUMNS"],
     ["health_intraday", { metric: "steps", date: "2026-10-20", resolution: "1m" }, "metric must be hr"],
     ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "2m" }, "resolution must be 1m, 5m or 1h"],
+    ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "1m" }, "1m resolution covers at most 3 hours: pass from and to, or use 5m"],
+    ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "5m", from: "09:00", to: "08:00" }, "from and to must be HH:MM with from before to"],
   ])("returns the RangeError and failed audit for %s %j", async (name, args, message) => {
     google();
     const token = await accessToken();
@@ -853,7 +855,7 @@ describe("T11 AC5 health_sql through the authenticated connector", () => {
       expect(columns.length).toBeGreaterThan(0);
       for (const { name } of columns) expect(tool?.description).toMatch(new RegExp(`\\b${name}\\b`));
     }
-    for (const pattern of [/500/, /4000|4,000/, /SELECT\b[\s\S]*\bFROM\s+v_/i, /PARTITION BY/i,
+    for (const pattern of [/200 rows/, /20[ ,]?000.character/, /4000|4,000/, /SELECT\b[\s\S]*\bFROM\s+v_/i, /PARTITION BY 1/i, /ROWS\/RANGE BETWEEN/, /correlated subquery/i,
       /double[ -]quot/i, /notes?\b[\s\S]*untrusted|untrusted[\s\S]*\bnotes?/i]) expect(tool?.description).toMatch(pattern);
   });
 
@@ -896,7 +898,7 @@ describe("T11 AC5 health_sql through the authenticated connector", () => {
     expect((await audit()).slice(before)).toEqual([]);
   });
 
-  it.each(["UPDATE daily_summary SET rhr = 99", "SELECT * FROM unknown_relation", "SELECT * FROM main.v_daily"])("returns the exact first guard refusal and audits failure for %s", async (query) => {
+  it.each(["UPDATE daily_summary SET rhr = 99", "SELECT * FROM unknown_relation", "SELECT * FROM main.v_daily", "SELECT AVG(rhr) OVER (ORDER BY local_date) FROM v_daily"])("returns the exact first guard refusal and audits failure for %s", async (query) => {
     const lexical = await import("../../src/mcp/tools/sqlguard");
     const parser = await import("../../src/mcp/tools/sqlviews");
     const validated = lexical.validateReadOnlyQuery(query);
@@ -1156,5 +1158,70 @@ describe("T18 AC5 health_trend through the authenticated connector", () => {
     expect(msg.result?.structuredContent).toBeUndefined();
     await toolAudit("health_trend", args, 0, before);
     expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
+  });
+});
+
+
+describe("T26 AC4 output limits through the authenticated connector", () => {
+  it("publishes optional local window strings, endpoint defaults, partial buckets and the 1m limit", async () => {
+    google();
+    const token = await accessToken();
+    const msg = await rpc(token, "tools/list", {});
+    const tool = msg.result?.tools?.find((t) => t.name === "health_intraday");
+    expect(tool?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+    expect(tool?.inputSchema).toMatchObject({ required: ["metric", "date", "resolution"],
+      properties: { from: { type: "string" }, to: { type: "string" } } });
+    const schema = tool?.inputSchema as { properties: Record<string, { description: string }> };
+    for (const field of ["from", "to"]) expect(schema.properties[field].description).toMatch(/local.*HH:MM/i);
+    expect(schema.properties.from.description).toContain("00:00");
+    expect(schema.properties.to.description).toContain("24:00");
+    for (const pattern of [/1m/, /3 hours|180 minutes/, /5m/, /\[from, to\)/, /canonical|bucket start/i]) expect(tool?.description).toMatch(pattern);
+  });
+
+  it("passes the window to the query and audits the original arguments once", async () => {
+    google();
+    const token = await accessToken();
+    await env.DB.batch([0, 1, 2].map((i) => env.DB.prepare("INSERT INTO metric_minute (metric, ts, tz_offset_min, value) VALUES ('hr', ?, 120, ?)")
+      .bind(Date.parse("2026-10-20T06:00:00Z") / 1000 + i * 60, 60 + i)));
+    const args = { metric: "hr", date: "2026-10-20", resolution: "1m", from: "08:01", to: "08:02" };
+    const before = (await audit()).length;
+    const msg = await rpc(token, "tools/call", { name: "health_intraday", arguments: args });
+    expect(msg.result?.isError).not.toBe(true);
+    expect(msg.result?.structuredContent).toMatchObject({ points: [["2026-10-20T08:01", 61, 61, 61]], coverage: { minutes_with_data: 1 } });
+    expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
+    await toolAudit("health_intraday", args, 1, before);
+  });
+
+  it.each([
+    ["SELECT n FROM (WITH RECURSIVE q(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM q WHERE n < 201) SELECT n FROM q)", 200],
+    ["SELECT note FROM v_events ORDER BY ts", 0],
+  ] as const)("returns capped SQL in both JSON forms and audits success for %s", async (query, rowCount) => {
+    google();
+    const token = await accessToken();
+    await env.DB.batch(["x".repeat(20000), "small"].map((note, i) => env.DB.prepare("INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at) VALUES (?, 'caffeine', ?, 0, '2026-10-21', 1, ?, 'mcp', 1)").bind(`connector-budget-${String(i)}`, i, note)));
+    const args = { query };
+    const before = (await audit()).length;
+    const msg = await rpc(token, "tools/call", { name: "health_sql", arguments: args });
+    expect(msg.result?.isError).not.toBe(true);
+    expect(msg.result?.structuredContent).toMatchObject({ row_count: rowCount, truncated: true });
+    expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
+    await toolAudit("health_sql", args, 1, before);
+  });
+
+  it("publishes a working correlated rolling-average example on v_daily", async () => {
+    google();
+    const token = await accessToken();
+    const listed = await rpc(token, "tools/list", {});
+    const description = listed.result?.tools?.find((t) => t.name === "health_sql")?.description;
+    const query = "SELECT d.local_date, (SELECT AVG(p.rhr) FROM v_daily p WHERE p.local_date BETWEEN date(d.local_date, '-6 days') AND d.local_date) AS rolling_avg FROM v_daily d";
+    expect(description).toContain(query);
+    await env.DB.batch([['2026-10-01', 50], ['2026-10-07', 70], ['2026-10-08', 90]].map(([date, rhr]) =>
+      env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, computed_at) VALUES (?, ?, 1)").bind(date, rhr)));
+    const args = { query: query + " ORDER BY d.local_date" };
+    const before = (await audit()).length;
+    const msg = await rpc(token, "tools/call", { name: "health_sql", arguments: args });
+    expect(msg.result?.isError).not.toBe(true);
+    expect(msg.result?.structuredContent).toMatchObject({ rows: [["2026-10-01", 50], ["2026-10-07", 60], ["2026-10-08", 80]], truncated: false });
+    await toolAudit("health_sql", args, 1, before);
   });
 });

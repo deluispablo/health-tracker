@@ -6,8 +6,8 @@ interface BucketRow {
   minutes: number;
 }
 
-export async function healthIntraday(db: D1Database, { metric, date, resolution }: {
-  metric: string; date: string; resolution: "1m" | "5m" | "1h";
+export async function healthIntraday(db: D1Database, { metric, date, resolution, from = "00:00", to = "24:00" }: {
+  metric: string; date: string; resolution: "1m" | "5m" | "1h"; from?: string; to?: string;
 }): Promise<{
   metric: string; unit: string; date: string; resolution: string;
   points: [string, number, number, number][]; coverage: { minutes_with_data: number };
@@ -22,6 +22,13 @@ export async function healthIntraday(db: D1Database, { metric, date, resolution 
   if (!["1m", "5m", "1h"].includes(resolution)) {
     throw new RangeError("resolution must be 1m, 5m or 1h");
   }
+  if ([from, to].some((time) => time.length !== 5 || !/^(?:[01]\d:[0-5]\d|2[0-3]:[0-5]\d|24:00)$/.test(time)) || from >= to) {
+    throw new RangeError("from and to must be HH:MM with from before to");
+  }
+  const [start, end] = [from, to].map((time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3)));
+  if (resolution === "1m" && end - start > 180) {
+    throw new RangeError("1m resolution covers at most 3 hours: pass from and to, or use 5m");
+  }
   const size = resolution === "1m" ? "60" : resolution === "5m" ? "300" : "3600";
   const { results } = await db.prepare(`
     SELECT floor((ts + tz_offset_min * 60) / ${size}.0) * ${size} AS bucket_start,
@@ -30,8 +37,10 @@ export async function healthIntraday(db: D1Database, { metric, date, resolution 
     FROM metric_minute
     WHERE metric = ? AND source = 'gh' AND ts >= ? AND ts < ?
       AND date(ts + tz_offset_min * 60, 'unixepoch') = ?
+      AND strftime('%H:%M', ts + tz_offset_min * 60, 'unixepoch') >= ?
+      AND strftime('%H:%M', ts + tz_offset_min * 60, 'unixepoch') < ?
     GROUP BY tz_offset_min, bucket_start ORDER BY min(ts)
-  `).bind(metric, midnight / 1000 - 14 * 3600, midnight / 1000 + 38 * 3600, date).all<BucketRow>();
+  `).bind(metric, midnight / 1000 - 14 * 3600, midnight / 1000 + 38 * 3600, date, from, to).all<BucketRow>();
 
   return {
     metric, unit: "bpm", date, resolution,

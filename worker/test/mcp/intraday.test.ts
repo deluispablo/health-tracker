@@ -39,7 +39,7 @@ beforeEach(async () => {
 });
 
 describe("AC3 health_intraday", () => {
-  it("returns the local day's minutes as [local time, avg, min, max], oldest first, with unit and coverage", async () => {
+  it("returns a local window's minutes as [local time, avg, min, max], oldest first, with unit and coverage", async () => {
     await minute("2026-10-06T21:59:00Z", 50);
     await minute("2026-10-06T22:00:00Z", 58, 55, 62);
     await minute("2026-10-06T22:01:00Z", 60);
@@ -47,11 +47,13 @@ describe("AC3 health_intraday", () => {
     await minute("2026-10-07T22:00:00Z", 80);
     await minute("2026-10-06T22:02:00Z", 99, null, null, 120, "hr", "other");
     await minute("2026-10-06T22:03:00Z", 99, null, null, 120, "steps");
-    expect(await healthIntraday(env.DB, { metric: "hr", date: "2026-10-07", resolution: "1m" })).toEqual({
+    expect(await healthIntraday(env.DB, { metric: "hr", date: "2026-10-07", resolution: "1m", from: "00:00", to: "03:00" })).toEqual({
       metric: "hr", unit: "bpm", date: "2026-10-07", resolution: "1m",
-      points: [["2026-10-07T00:00", 58, 55, 62], ["2026-10-07T00:01", 60, 60, 60], ["2026-10-07T23:59", 70, 69, 71]],
-      coverage: { minutes_with_data: 3 },
+      points: [["2026-10-07T00:00", 58, 55, 62], ["2026-10-07T00:01", 60, 60, 60]],
+      coverage: { minutes_with_data: 2 },
     });
+    expect(await healthIntraday(env.DB, { metric: "hr", date: "2026-10-07", resolution: "1m", from: "21:00", to: "24:00" }))
+      .toMatchObject({ points: [["2026-10-07T23:59", 70, 69, 71]], coverage: { minutes_with_data: 1 } });
   });
 
   it("aggregates into 5-minute and hourly buckets with a rounded mean and the extreme min and max", async () => {
@@ -83,14 +85,16 @@ describe("AC3 health_intraday", () => {
     await minute("2026-10-06T10:00:00Z", 2, null, null, 840);
     await minute("2026-10-08T11:59:00Z", 3, null, null, -720);
     await minute("2026-10-08T12:00:00Z", 4, null, null, -720);
-    expect((await healthIntraday(env.DB, { metric: "hr", date: "2026-10-07", resolution: "1m" })).points)
-      .toEqual([["2026-10-07T00:00", 2, 2, 2], ["2026-10-07T23:59", 3, 3, 3]]);
+    expect((await healthIntraday(env.DB, { metric: "hr", date: "2026-10-07", resolution: "1m", to: "03:00" })).points)
+      .toEqual([["2026-10-07T00:00", 2, 2, 2]]);
+    expect((await healthIntraday(env.DB, { metric: "hr", date: "2026-10-07", resolution: "1m", from: "21:00" })).points)
+      .toEqual([["2026-10-07T23:59", 3, 3, 3]]);
   });
 
   it("orders buckets by their first UTC time when DST fall-back labels run backwards", async () => {
     await minute("2026-10-25T00:59:00Z", 61, null, null, 120);
     await minute("2026-10-25T01:00:00Z", 62, null, null, 60);
-    expect((await healthIntraday(env.DB, { metric: "hr", date: "2026-10-25", resolution: "1m" })).points)
+    expect((await healthIntraday(env.DB, { metric: "hr", date: "2026-10-25", resolution: "1m", from: "02:00", to: "03:00" })).points)
       .toEqual([["2026-10-25T02:59", 61, 61, 61], ["2026-10-25T02:00", 62, 62, 62]]);
   });
 
@@ -129,7 +133,7 @@ describe("AC3 health_intraday", () => {
   it("reads once with bound values only, never writes, and rejects on D1 failure", async () => {
     await minute("2026-10-07T06:00:00Z", 60);
     const [db, seen] = guarded();
-    await healthIntraday(db, { metric: "hr", date: "2026-10-07", resolution: "1m" });
+    await healthIntraday(db, { metric: "hr", date: "2026-10-07", resolution: "1m", from: "08:00", to: "09:00" });
     expect(seen.sql).toHaveLength(1);
     expect(seen.sql[0]).toMatch(/^\s*SELECT\b/i);
     expect(seen.sql[0]).not.toMatch(/2026|'hr'|1791/);
@@ -147,6 +151,63 @@ describe("AC3 health_intraday", () => {
       const v: unknown = Reflect.get(t, p);
       return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
     } });
-    await expect(healthIntraday(broken, { metric: "hr", date: "2026-10-07", resolution: "1m" })).rejects.toThrow("D1 down");
+    await expect(healthIntraday(broken, { metric: "hr", date: "2026-10-07", resolution: "1m", from: "08:00", to: "09:00" })).rejects.toThrow("D1 down");
+  });
+});
+
+
+describe("T26 AC1 local intraday windows", () => {
+  const base = { metric: "hr", date: "2026-10-07" };
+
+  it.each(["1m", "5m", "1h"] as const)("defaults missing endpoints at %s and excludes the upper endpoint", async (resolution) => {
+    await minute("2026-10-06T22:00:00Z", 50);
+    await minute("2026-10-07T01:00:00Z", 60);
+    await minute("2026-10-07T19:00:00Z", 70);
+    await minute("2026-10-07T21:59:00Z", 80);
+    expect(await healthIntraday(env.DB, { ...base, resolution, to: "03:00" }))
+      .toMatchObject({ points: [["2026-10-07T00:00", 50, 50, 50]], coverage: { minutes_with_data: 1 } });
+    expect(await healthIntraday(env.DB, { ...base, resolution, from: "21:00" }))
+      .toMatchObject({ coverage: { minutes_with_data: 2 } });
+    const result = await healthIntraday(env.DB, { ...base, resolution, from: "21:00", to: "24:00" });
+    expect(result.coverage.minutes_with_data).toBe(2);
+    if (resolution === "1m") expect(result.points.map(([label]) => label.slice(11))).toEqual(["21:00", "23:59"]);
+  });
+
+  it.each([
+    ["1m", "08:02", "08:04", "08:02", "08:01", "08:02", "08:04"],
+    ["5m", "08:00", "08:02", "08:00", "07:59", "08:00", "08:04"],
+    ["5m", "08:02", "08:04", "08:00", "08:01", "08:02", "08:04"],
+    ["1h", "08:30", "08:45", "08:00", "08:29", "08:30", "08:45"],
+  ] as const)("filters samples before %s aggregation for [%s, %s)", async (resolution, from, to, label, before, inside, after) => {
+    for (const [time, value] of [[before, 10], [inside, 60], [after, 100]] as const) {
+      await minute(`2026-10-07T${time}:00Z`, value, null, null, 0);
+    }
+    expect(await healthIntraday(env.DB, { ...base, resolution, from, to }))
+      .toMatchObject({ points: [[`2026-10-07T${label}`, 60, 60, 60]], coverage: { minutes_with_data: 1 } });
+  });
+
+  it.each(["1m", "5m", "1h"] as const)("validates HH:MM and ordering before reads at %s", async (resolution) => {
+    const [db, seen] = guarded();
+    for (const window of [
+      { from: "8:00" }, { to: "08:0" }, { from: "-1:00" }, { to: "24:01" }, { to: "25:00" },
+      { from: "08:60" }, { from: "08:00:00" }, { from: " 08:00" }, { to: "09:00\n" },
+      { from: "" }, { to: "" }, { from: "24:00" }, { to: "00:00" },
+      { from: "08:00", to: "08:00" }, { from: "09:00", to: "08:00" },
+    ]) {
+      await expect(healthIntraday(db, { ...base, resolution, ...window }))
+        .rejects.toThrow(new RangeError("from and to must be HH:MM with from before to"));
+    }
+    expect(seen.sql).toEqual([]);
+  });
+
+  it("accepts exactly 180 minutes and refuses longer or missing 1m windows before reading", async () => {
+    await expect(healthIntraday(env.DB, { ...base, resolution: "1m", from: "08:00", to: "11:00" }))
+      .resolves.toMatchObject({ points: [] });
+    const [db, seen] = guarded();
+    for (const window of [{}, { from: "20:00" }, { to: "03:01" }, { from: "08:00", to: "11:01" }]) {
+      await expect(healthIntraday(db, { ...base, resolution: "1m", ...window }))
+        .rejects.toThrow(new RangeError("1m resolution covers at most 3 hours: pass from and to, or use 5m"));
+    }
+    expect(seen.sql).toEqual([]);
   });
 });

@@ -68,7 +68,7 @@ describe("T11 AC4 health_sql execution", () => {
     expect(validate).toHaveBeenCalledExactlyOnceWith(query);
     expect(checkViews).toHaveBeenCalledExactlyOnceWith(normalized);
     expect(order).toEqual(["lexical", "parser"]);
-    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${normalized}\n) LIMIT 501`], ["all"]]);
+    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${normalized}\n) LIMIT 201`], ["all"]]);
   });
 
   it("stops at the lexical refusal without invoking the parser or D1", async () => {
@@ -102,18 +102,18 @@ describe("T11 AC4 health_sql execution", () => {
     const { db, calls } = watched();
     expect(await healthSql(db, { query })).toEqual({ columns: ["rhr", "local_date"], rows: [[61, "2026-10-21"]],
       truncated: false, row_count: 1, notes_untrusted: false });
-    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${checked.sql}\n) LIMIT 501`], ["all"]]);
+    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${checked.sql}\n) LIMIT 201`], ["all"]]);
   });
 
-  it.each([0, 500, 501, 502])("caps %i database rows at 500 and sets truncation only when a 501st row returns", async (count) => {
+  it.each([0, 199, 200, 201, 202])("caps %i database rows at 200 and sets truncation only when a 201st row returns", async (count) => {
     const dates = Array.from({ length: count }, (_, i) => new Date(Date.UTC(2025, 0, 1 + i)).toISOString().slice(0, 10));
     if (count) await env.DB.batch(dates.map((date, i) => env.DB.prepare("INSERT INTO daily_summary (local_date, steps, computed_at) VALUES (?, ?, 1)").bind(date, i)));
     const { db, calls } = watched();
     const sql = "SELECT local_date, steps FROM v_daily ORDER BY local_date";
     expect(await healthSql(db, { query: sql })).toEqual({ columns: count ? ["local_date", "steps"] : [],
-      rows: dates.slice(0, 500).map((date, i) => [date, i]), row_count: Math.min(count, 500),
-      truncated: count > 500, notes_untrusted: false });
-    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${sql}\n) LIMIT 501`], ["all"]]);
+      rows: dates.slice(0, 200).map((date, i) => [date, i]), row_count: Math.min(count, 200),
+      truncated: count > 200, notes_untrusted: false });
+    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${sql}\n) LIMIT 201`], ["all"]]);
   });
 
   it("preserves stored cells and first-row column order, and marks note by its returned column name", async () => {
@@ -155,5 +155,39 @@ describe("T11 AC4 health_sql execution", () => {
       return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
     } });
     await expect(healthSql(db, { query: "SELECT * FROM v_daily" })).rejects.toThrow("D1 read sentinel");
+  });
+});
+
+
+describe("T26 AC2 serialized row budget", () => {
+  it.each([0, 1])("counts UTF-16 JSON characters including emoji, escaped quotes and newlines (extra %i)", async (extra) => {
+    // [[1,"..."]] has eight JSON characters around the serialized string content.
+    const special = '😀"\n';
+    const note = special + "x".repeat(20000 - 8 - JSON.stringify(special).length + 2 + extra);
+    expect(JSON.stringify([[1, note]]).length).toBe(20000 + extra);
+    await env.DB.prepare("INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at) VALUES ('large', 'caffeine', 1, 0, '2026-10-21', 1, ?, 'mcp', 1)").bind(note).run();
+    const result = await healthSql(env.DB, { query: "SELECT value, note FROM v_events" });
+    expect(result).toEqual({ columns: ["value", "note"], rows: extra ? [] : [[1, note]], row_count: extra ? 0 : 1,
+      truncated: Boolean(extra), notes_untrusted: true });
+    if (!extra) {
+      await env.DB.prepare("INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at) VALUES ('small', 'caffeine', 2, 0, '2026-10-21', 2, 'small', 'mcp', 2)").run();
+      expect(await healthSql(env.DB, { query: "SELECT value, note FROM v_events ORDER BY ts" }))
+        .toEqual({ ...result, truncated: true });
+    }
+  });
+
+  it("includes row separators in the budget and stops at the first oversized row without skipping", async () => {
+    const notes = ["x".repeat(9994), "y".repeat(9995), "small"];
+    expect(JSON.stringify(notes.slice(0, 2).map((note) => [note])).length).toBe(20000);
+    await env.DB.batch(notes.map((note, i) => env.DB.prepare("INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at) VALUES (?, 'caffeine', ?, 0, '2026-10-21', 1, ?, 'mcp', 1)").bind(`budget-${String(i)}`, i, note)));
+    expect(await healthSql(env.DB, { query: "SELECT note FROM v_events ORDER BY ts" }))
+      .toEqual({ columns: ["note"], rows: notes.slice(0, 2).map((note) => [note]), row_count: 2, truncated: true, notes_untrusted: true });
+    // One more character makes the comma between rows the one that crosses the budget.
+    await env.DB.prepare("UPDATE event SET note = ? WHERE id = 'budget-1'").bind("y".repeat(9996)).run();
+    expect(await healthSql(env.DB, { query: "SELECT note FROM v_events ORDER BY ts" }))
+      .toEqual({ columns: ["note"], rows: [[notes[0]]], row_count: 1, truncated: true, notes_untrusted: true });
+    await env.DB.prepare("UPDATE event SET note = ? WHERE id = 'budget-0'").bind("x".repeat(20000)).run();
+    expect(await healthSql(env.DB, { query: "SELECT note FROM v_events ORDER BY ts" }))
+      .toEqual({ columns: ["note"], rows: [], row_count: 0, truncated: true, notes_untrusted: true });
   });
 });

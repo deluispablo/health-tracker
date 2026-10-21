@@ -27,6 +27,7 @@ describe("T11 AC3e parser layer allows only the four views and declared CTEs", (
     "SELECT * FROM v_events AS e, json_each(e.note, '$.a')",
     "SELECT LAG(rhr) OVER (PARTITION BY 1 ORDER BY local_date) FROM v_daily",
     "SELECT strftime('%w', local_date) AS d, avg(sleep_min) FROM v_daily GROUP BY d",
+    "SELECT d.local_date, (SELECT AVG(p.rhr) FROM v_daily p WHERE p.local_date BETWEEN date(d.local_date, '-6 days') AND d.local_date) AS rolling_avg FROM v_daily d",
     "SELECT * FROM x WHERE EXISTS (WITH x AS (SELECT 1) SELECT * FROM x)",
   ])("accepts %s", accepts);
 
@@ -43,9 +44,9 @@ describe("T11 AC3e parser layer allows only the four views and declared CTEs", (
 
   it.each([
     "SELECT * FROM", "SELECT AVG(rhr) OVER (ORDER BY local_date) FROM v_daily",
+    "SELECT AVG(rhr) OVER (PARTITION BY 1 ORDER BY local_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) FROM v_daily",
+    "SELECT AVG(rhr) OVER (PARTITION BY 1 ORDER BY local_date RANGE BETWEEN 6 PRECEDING AND CURRENT ROW) FROM v_daily",
   ])("refuses syntax the parser does not support with rewrite hints: %s", (sql) => {
-    refuses(sql, /unsupported/i);
-    refuses(sql, /PARTITION BY/);
-    refuses(sql, /double quotes/i);
+    expect(viewsOnly(sql)).toEqual({ ok: false, reason: "unsupported SQL syntax: window functions need PARTITION BY (use PARTITION BY 1 for the whole table) and window frames (ROWS/RANGE BETWEEN) are not supported; compute rolling values with a correlated subquery; quote identifiers with double quotes" });
   });
 });

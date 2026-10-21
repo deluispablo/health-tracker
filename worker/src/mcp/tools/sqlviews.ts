@@ -42,7 +42,7 @@ export function viewsOnly(sql: string): { ok: true } | { ok: false; reason: stri
   } catch {
     return {
       ok: false,
-      reason: "unsupported SQL syntax: use PARTITION BY for window functions and double quotes for identifiers",
+      reason: "unsupported SQL syntax: window functions need PARTITION BY (use PARTITION BY 1 for the whole table) and window frames (ROWS/RANGE BETWEEN) are not supported; compute rolling values with a correlated subquery; quote identifiers with double quotes",
     };
   }
 }
