@@ -80,7 +80,7 @@ Repository layout (planned):
 | `worker/` | The Cloudflare Worker (TypeScript, strict), migrations and tests |
 | `py/` | Offline tooling (uv, Python 3.12+): backfill, export, analysis |
 | `dashboards/` | Dashboard pages that call the MCP tools |
-| `scripts/` | Operations scripts (webhook subscriber creation, secret rotation) |
+| `scripts/` | Operations scripts (webhook subscriber creation) |
 
 ## MCP tools
 
@@ -166,17 +166,64 @@ An unauthenticated request to `/mcp` returns `401` with a `WWW-Authenticate` hea
 
 | Topic | Approach |
 |---|---|
-| Google tokens | Never leave the Worker; the refresh token is stored encrypted (AES-256-GCM) in D1 |
-| Secrets | Worker secrets only; none in code, config, logs or messages |
-| Webhook | Authorization header and ECDSA P-256 signature are verified before the body is parsed |
-| Access | One allowlisted email; any other account gets 403 |
+| Stored data | Health metrics, sleep, workouts, summaries, manual events, sync state and audit logs live in Cloudflare D1. Connector registrations, grants and cached Google access tokens live in Cloudflare KV (`OAUTH_KV`) |
+| Google tokens | The refresh token is encrypted with AES-256-GCM in D1; the Worker decrypts it only to refresh Google access tokens |
+| Secrets | Use Worker secrets; keep values out of code, config, logs and messages. Names: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAIL`, `COOKIE_ENCRYPTION_KEY`, `TOKEN_ENC_KEY`, `WEBHOOK_SECRET`, `WEBHOOK_SECRET_PREV`, optional `HC_WEBHOOK_TOKEN`. Offline credentials: `CF_ACCOUNT_ID`, `CF_API_TOKEN`, `D1_DATABASE_ID` in git-ignored `py/.env` |
+| Webhook | The authorization header is compared against SHA-256 secret digests in constant time, then the ECDSA P-256 signature is verified before parsing notifications. The sole unsigned exception is an authorized verification handshake: at most 64 bytes, containing only `{"type":"verification"}` |
+| Access | The connector uses OAuth 2.1 with PKCE and Google login restricted to one allowlisted email; any other account gets 403 |
 | MCP tools | Read-only, except an insert-only event logger; no update or delete over MCP |
 | Untrusted text | Free-text notes are returned wrapped as untrusted data |
 | Audit | Every call is recorded in an audit log |
-| Backups | D1 Time Travel plus a weekly export |
+| Backups | D1 Time Travel retains 7 days on the Free plan. Run the weekly export in `py/src/pixel_health/export.py` with `uv run --directory py python -m pixel_health.export`; it verifies a local restore and retains eight backup pairs in `~/pixel-health-backups`. Protect these files as health data |
 | Data sent to clients | Tool results go to whichever MCP client you query. Review that client's data-retention and training settings, and keep other connectors out of health chats |
 
 This is a personal project, not a medical device, and not legal advice.
+
+To revoke Google Health access, remove the app's consent at [Google account permissions](https://myaccount.google.com/permissions). Ingestion stops at the next token refresh. Separately, disconnect the connector in each MCP client. Issued connector grants live in `OAUTH_KV`; delete the relevant grant records with `wrangler kv key delete --binding OAUTH_KV --remote --env production` from `worker/`. Existing access tokens end at their TTL: `worker/src/index.ts` uses the OAuth provider's default of one hour. Revocation does not delete stored health data or backups.
+
+### Rotating the webhook secret
+
+Keep the current secret in your password manager in one entry, for example "Pixel Health webhook secret". Before starting, confirm it is a string of at least 16 characters and matches the current subscriber authorization. If the current value is unavailable or invalid, do not start: recovery requires setting a fresh secret in the Worker and subscriber in one go, accepting a short delivery gap that the 04:30 UTC reconcile backfills.
+
+Run the commands below from `worker/`, one step at a time, with shell tracing disabled. While `WEBHOOK_SECRET_PREV` is set, both values are accepted. A second rotation must wait until step 5 is complete.
+
+1. Generate the new value locally, including the `Bearer ` prefix, and save it in the password manager as **pending** before step 2. Retain the current entry until step 4 succeeds.
+
+   ```sh
+   printf 'Bearer '; openssl rand -hex 32
+   ```
+
+2. Upload the **current** value at Wrangler's hidden interactive prompt:
+
+   ```sh
+   npx wrangler secret put WEBHOOK_SECRET_PREV --env production
+   ```
+
+3. Upload the **pending** value at Wrangler's hidden interactive prompt:
+
+   ```sh
+   npx wrangler secret put WEBHOOK_SECRET --env production
+   ```
+
+4. Set `NUM` to your Google Cloud project number. PATCH the subscriber with that same pending value; Python prompts without echo and sends JSON through stdin, keeping the webhook secret off the command line. Confirm Google answers **HTTP 2xx**, then replace the password manager's current entry with the pending value and clear the pending label.
+
+   ```sh
+   python3 -c 'import getpass, json; print(json.dumps({"endpointAuthorization": {"secret": getpass.getpass("Pending webhook secret: ")}}))' |
+     curl --fail-with-body --request PATCH \
+       "https://health.googleapis.com/v4/projects/${NUM}/subscribers/pixel-health-production?updateMask=endpointAuthorization" \
+       --header "Authorization: Bearer $(gcloud auth print-access-token)" \
+       --header "x-goog-user-project: ${NUM}" \
+       --header 'Content-Type: application/json' \
+       --data-binary @- --write-out '\nHTTP %{http_code}\n'
+   ```
+
+5. Wait **24 hours after step 4's confirmed success**, then remove the previous value:
+
+   ```sh
+   npx wrangler secret delete WEBHOOK_SECRET_PREV --env production
+   ```
+
+Stop at the first failed or uncertain step and retry that same step with the same saved values. Never repeat step 2 after step 3 has run. If the PATCH fails or its outcome is uncertain, keep both values and retry step 4 with the same pending value; never run step 5 until step 4 has succeeded and the full 24 hours have elapsed.
 
 ## Project status & roadmap
 

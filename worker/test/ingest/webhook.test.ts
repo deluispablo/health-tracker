@@ -190,6 +190,74 @@ describe("T19a webhook hardening", () => {
   });
 });
 
+describe("T19c secret overlap", () => {
+  const previous = "Bearer previous-secret-0123456789";
+  const probe = '{"type":"verification"}';
+
+  it("AC1 always compares both digests for current, previous and neither matches", async () => {
+    const body = JSON.stringify([notification("steps", "UPSERT", physical("2026-10-20T20:19:00Z", "2026-10-20T20:58:00Z"))]);
+    const signature = await sign(signer, body);
+    const compare = vi.spyOn(crypto.subtle, "timingSafeEqual");
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    try {
+      for (const [authorization, status] of [[SECRET, 204], [previous, 204], ["Bearer wrong-secret", 401], [undefined, 401]] as const) {
+        const headers: Record<string, string> = { "google-health-api-signature": signature };
+        if (authorization !== undefined) headers.authorization = authorization;
+        const request = post(body, headers);
+        compare.mockClear();
+        digest.mockClear();
+        const response = await handleGoogleWebhook(request, { ...webhookEnv, WEBHOOK_SECRET_PREV: previous }, deps());
+        expect(response.status).toBe(status);
+        expect(compare).toHaveBeenCalledTimes(2);
+        expect(digest).toHaveBeenCalledTimes(3);
+        expect(request.bodyUsed).toBe(status === 204);
+        expect(compare.mock.calls[0][0]).toBe(compare.mock.calls[1][0]);
+      }
+    } finally { compare.mockRestore(); digest.mockRestore(); }
+    expect(await pending()).toHaveLength(1);
+  });
+
+  it("AC1 ignores invalid PREV values and accepts the 16-character boundary", async () => {
+    const compare = vi.spyOn(crypto.subtle, "timingSafeEqual");
+    try {
+      for (const WEBHOOK_SECRET_PREV of [undefined, null, false, 1234567890123456, {}, [], "", "123456789012345"]) {
+        const config = { ...webhookEnv, WEBHOOK_SECRET_PREV } as unknown as Parameters<typeof handleGoogleWebhook>[1];
+        const previousHeader = typeof WEBHOOK_SECRET_PREV === "string" ? WEBHOOK_SECRET_PREV : "1234567890123456";
+        for (const authorization of [SECRET, previousHeader]) {
+          compare.mockClear();
+          expect((await handleGoogleWebhook(post(probe, { authorization }), config, deps())).status)
+            .toBe(authorization === SECRET ? 200 : 401);
+          expect(compare).toHaveBeenCalledTimes(1);
+        }
+      }
+      const minimum = "1234567890123456";
+      compare.mockClear();
+      expect((await handleGoogleWebhook(post(probe, { authorization: minimum }),
+        { ...webhookEnv, WEBHOOK_SECRET_PREV: minimum }, deps())).status).toBe(200);
+      expect(compare).toHaveBeenCalledTimes(2);
+    } finally { compare.mockRestore(); }
+    expect(keysetCalls).toBe(0);
+    expect(await pending()).toEqual([]);
+  });
+
+  it("AC1 rejects invalid current secrets before hashing even with a valid PREV", async () => {
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    try {
+      for (const WEBHOOK_SECRET of [undefined, null, false, 1234567890123456, {}, [], "", "123456789012345"]) {
+        const config = { ...webhookEnv, WEBHOOK_SECRET, WEBHOOK_SECRET_PREV: previous } as unknown as Parameters<typeof handleGoogleWebhook>[1];
+        const request = post(probe, { authorization: previous });
+        const response = await handleGoogleWebhook(request, config, deps());
+        expect(response.status).toBe(503);
+        expect(response.body).toBeNull();
+        expect(request.bodyUsed).toBe(false);
+        expect(digest).not.toHaveBeenCalled();
+      }
+    } finally { digest.mockRestore(); }
+    expect(keysetCalls).toBe(0);
+    expect(await pending()).toEqual([]);
+  });
+});
+
 describe("AC1 handshake", () => {
   it("answers 200 to the authorized verification and 401 otherwise", async () => {
     const body = '{"type": "verification"}';

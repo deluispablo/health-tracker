@@ -1,7 +1,7 @@
 import { upsertRows } from "../lib/d1";
 import { verifyGoogleSignature } from "../lib/signature";
 
-interface WebhookEnv { DB: D1Database; WEBHOOK_SECRET: string }
+interface WebhookEnv { DB: D1Database; WEBHOOK_SECRET: string; WEBHOOK_SECRET_PREV?: string }
 interface WebhookDeps { keyset: () => Promise<unknown>; now?: () => number }
 
 const encoder = new TextEncoder();
@@ -74,11 +74,16 @@ export async function handleGoogleWebhook(request: Request, env: WebhookEnv, dep
   if (typeof env.WEBHOOK_SECRET !== "string" || env.WEBHOOK_SECRET.length < 16) return new Response(null, { status: 503 });
 
   // Equal-length digests allow a constant-time comparison even when header lengths differ.
-  const [actual, expected] = await Promise.all([
+  const previous = typeof env.WEBHOOK_SECRET_PREV === "string" && env.WEBHOOK_SECRET_PREV.length >= 16
+    ? env.WEBHOOK_SECRET_PREV : undefined;
+  const [actual, expected, expectedPrevious] = await Promise.all([
     crypto.subtle.digest("SHA-256", encoder.encode(request.headers.get("authorization") ?? "")),
     crypto.subtle.digest("SHA-256", encoder.encode(env.WEBHOOK_SECRET)),
+    previous === undefined ? undefined : crypto.subtle.digest("SHA-256", encoder.encode(previous)),
   ]);
-  if (!request.headers.has("authorization") || !crypto.subtle.timingSafeEqual(actual, expected)) return new Response(null, { status: 401 });
+  const currentMatches = crypto.subtle.timingSafeEqual(actual, expected);
+  const previousMatches = expectedPrevious === undefined ? false : crypto.subtle.timingSafeEqual(actual, expectedPrevious);
+  if (!request.headers.has("authorization") || !(currentMatches || previousMatches)) return new Response(null, { status: 401 });
 
   const body = await request.arrayBuffer();
   if (body.byteLength <= 64) {
