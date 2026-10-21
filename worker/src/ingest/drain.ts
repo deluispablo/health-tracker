@@ -24,10 +24,8 @@ function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
-function localDate(ts: number, zone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(ts * 1000);
+function localDate(ts: number, formatter: Intl.DateTimeFormat): string {
+  const parts = formatter.formatToParts(ts * 1000);
   return ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
 }
 
@@ -48,8 +46,9 @@ function sleepInterval(value: unknown): [number, number] | undefined {
   return Number.isFinite(start) && Number.isFinite(end) && end > start ? [Math.floor(start), Math.floor(end)] : undefined;
 }
 
-function sleepNumber(value: unknown): number | null {
+function readNumber(value: unknown): number | null {
   if (typeof value !== "string" && typeof value !== "number") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -59,6 +58,9 @@ export async function drainSyncPending(
   opts: { now?: () => number } = {},
 ): Promise<{ processed: number; failed: number }> {
   const db = env.DB;
+  const dateFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  });
   let processed = 0;
   let failed = 0;
   for (const type of ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
@@ -98,12 +100,12 @@ export async function drainSyncPending(
         if (!Number.isInteger(tz)) continue;
         const [startTs, endTs] = interval;
         const summary = object(sleep.summary);
-        const asleep = sleepNumber(summary.minutesAsleep);
-        const inBed = sleepNumber(summary.minutesInSleepPeriod);
+        const asleep = readNumber(summary.minutesAsleep);
+        const inBed = readNumber(summary.minutesInSleepPeriod);
         const stageMinutes = new Map<string, number>();
         for (const entry of Array.isArray(summary.stagesSummary) ? summary.stagesSummary : []) {
           const s = object(entry);
-          const minutes = sleepNumber(s.minutes);
+          const minutes = readNumber(s.minutes);
           if (typeof s.type === "string" && minutes !== null) stageMinutes.set(s.type, minutes);
         }
         const stages = (Array.isArray(sleep.stages) ? sleep.stages : []).flatMap((entry) => {
@@ -117,7 +119,7 @@ export async function drainSyncPending(
           sleepLocalDate(endTs, tz), object(sleep.metadata).mainSleep === true ? 0 : 1, asleep, inBed,
           asleep !== null && inBed !== null && inBed > 0 ? Math.round(asleep / inBed * 100) : null,
           ...["DEEP", "REM", "LIGHT", "AWAKE"].map((stage) => stageMinutes.get(stage) ?? null),
-          sleepNumber(summary.minutesToFallAsleep), now], stages });
+          readNumber(summary.minutesToFallAsleep), now], stages });
       }
 
       statements.push(db.prepare(`DELETE FROM sleep_stage WHERE session_id IN
@@ -133,8 +135,8 @@ export async function drainSyncPending(
         ["session_id", "start_ts"], [...answer.values()].flatMap((item) => item.stages)));
       if (end < row.end_ts + 60) advance = end;
     } else if (type !== "heart-rate") {
-      const first = localDate(row.start_ts, env.USER_TZ);
-      const fullEnd = addDays(localDate(row.end_ts - 1, env.USER_TZ), 1);
+      const first = localDate(row.start_ts, dateFormatter);
+      const fullEnd = addDays(localDate(row.end_ts - 1, dateFormatter), 1);
       const cap = addDays(first, 31);
       const end = fullEnd < cap ? fullEnd : cap;
       const listed = dailyListTypes[type];
@@ -147,10 +149,14 @@ export async function drainSyncPending(
           points = items.map((item) => {
             const payload = object(object(item)[listed.payload]);
             const date = object(payload.date);
+            let value = readNumber(payload[listed.field]);
+            if (type === "daily-sleep-temperature-derivations") {
+              const baseline = readNumber(payload.baselineTemperatureCelsius);
+              value = value !== null && baseline !== null ? value - baseline : null;
+            }
             return {
               date: [date.year, date.month, date.day].map((part, i) => String(part).padStart(i === 0 ? 4 : 2, "0")).join("-"),
-              value: type === "daily-sleep-temperature-derivations"
-                ? Number(payload[listed.field]) - Number(payload.baselineTemperatureCelsius) : payload[listed.field],
+              value,
             };
           });
         }
@@ -163,14 +169,14 @@ export async function drainSyncPending(
       const metric = type === "steps" ? "steps" : type === "active-zone-minutes" ? "azm" : listed.metric;
       const now = opts.now?.() ?? Math.floor(Date.now() / 1000);
       const rows = points.flatMap((point) => {
-        let value = Number(type === "steps" ? object(point.value).countSum : point.value);
+        let value = readNumber(type === "steps" ? object(point.value).countSum : point.value);
         if (type === "active-zone-minutes") {
           const zones = object(point.value);
           const parts = ["sumInCardioHeartZone", "sumInPeakHeartZone", "sumInFatBurnHeartZone"]
-            .filter((field) => field in zones).map((field) => Number(zones[field]));
+            .filter((field) => field in zones).map((field) => readNumber(zones[field]) ?? NaN);
           value = parts.length ? parts.reduce((sum, part) => sum + part, 0) : NaN;
         }
-        if (!validDate(point.date) || point.date < first || point.date >= end || !Number.isFinite(value)) return [];
+        if (!validDate(point.date) || point.date < first || point.date >= end || value === null || !Number.isFinite(value)) return [];
         return [[metric, point.date, value, "gh", null, now]];
       });
       statements.push(db.prepare(`DELETE FROM metric_daily
