@@ -28,8 +28,15 @@ async function token(name = "google_refresh_token") {
   await env.DB.prepare("INSERT INTO secret_blob (name, iv, ciphertext, updated_at) VALUES (?, ?, ?, ?)")
     .bind(name, new Uint8Array([255, 0, 17]), new Uint8Array([0, 255, 128, 42]), NOW - 60).run();
 }
-async function daily(date: string, computed = NOW) {
-  await env.DB.prepare("INSERT INTO daily_summary (local_date, computed_at) VALUES (?, ?)").bind(date, computed).run();
+async function daily(date: string, computed = NOW, hrWearMin: number | null = null) {
+  await env.DB.prepare("INSERT INTO daily_summary (local_date, computed_at, hr_wear_min) VALUES (?, ?, ?)")
+    .bind(date, computed, hrWearMin).run();
+}
+async function sleep(end = NOW - 7200, isNap = 0, source = "gh") {
+  await env.DB.prepare(`INSERT INTO sleep_session
+    (source_id, source, start_ts, end_ts, tz_offset_min, local_date, is_nap, updated_at)
+    VALUES (?, ?, ?, ?, 120, '2026-10-21', ?, 1)`)
+    .bind(`${source}-${String(end)}-${String(isNap)}`, source, end - 28800, end, isNap).run();
 }
 async function watch(syncedUntil: number | null, lastError: string | null = null, dataType = "watch") {
   await env.DB.prepare("INSERT INTO sync_state (data_type, synced_until, last_ok_at, last_error) VALUES (?, ?, ?, ?)")
@@ -37,13 +44,17 @@ async function watch(syncedUntil: number | null, lastError: string | null = null
 }
 
 // Observe actual D1 reads, allowing both individual SELECTs and SELECT batches.
-function selectOnlyDb(onRead: (sql: string, bindings: unknown[]) => void): D1Database {
+function selectOnlyDb(
+  onRead: (sql: string, bindings: unknown[]) => void,
+  onCall: (method: string) => void = () => {},
+): D1Database {
   const statements = new WeakMap<object, { raw: D1PreparedStatement; sql: string; bindings: unknown[] }>();
   const check = (sql: string, bindings: unknown[]) => { expect(sql).toMatch(/^\s*SELECT\b/i); onRead(sql, bindings); };
   const wrap = (raw: D1PreparedStatement, sql: string, bindings: unknown[] = []): D1PreparedStatement => {
     const proxy = new Proxy(raw, { get(t, p) {
       if (p === "bind") return (...args: unknown[]) => wrap(t.bind(...args), sql, args);
       if (["first", "all", "raw", "run"].includes(String(p))) return (...args: unknown[]) => {
+        onCall(String(p));
         check(sql, bindings);
         return (Reflect.get(t, p) as (...values: unknown[]) => unknown).apply(t, args);
       };
@@ -55,12 +66,15 @@ function selectOnlyDb(onRead: (sql: string, bindings: unknown[]) => void): D1Dat
   };
   return new Proxy(env.DB, { get(t, p) {
     if (p === "prepare") return (sql: string) => { expect(sql).toMatch(/^\s*SELECT\b/i); return wrap(t.prepare(sql), sql); };
-    if (p === "batch") return (batch: D1PreparedStatement[]) => t.batch(batch.map((statement) => {
-      const entry = statements.get(statement);
-      if (!entry) throw new Error("unobserved statement");
-      check(entry.sql, entry.bindings);
-      return entry.raw;
-    }));
+    if (p === "batch") return (batch: D1PreparedStatement[]) => {
+      onCall("batch");
+      return t.batch(batch.map((statement) => {
+        const entry = statements.get(statement);
+        if (!entry) throw new Error("unobserved statement");
+        check(entry.sql, entry.bindings);
+        return entry.raw;
+      }));
+    };
     if (p === "exec") return (sql: string) => { check(sql, []); return t.exec(sql); };
     if (p === "dump") return () => { throw new Error("unexpected dump"); };
     const value: unknown = Reflect.get(t, p);
@@ -97,6 +111,7 @@ describe("T10d AC1 health_status", () => {
     await token();
     await minute(NOW - 120);
     await daily("2026-10-20", NOW - 3600);
+    await daily("2026-10-21", NOW - 3600, 1);
     await watch(NOW - 60);
     await env.DB.prepare(`INSERT INTO sleep_session
       (source_id, start_ts, end_ts, tz_offset_min, local_date, updated_at)
@@ -180,23 +195,25 @@ describe("T10d AC1 health_status", () => {
     expect(codes(out).includes("daily_stale")).toBe(stale);
   });
 
-  it("counts distinct gh HR timestamps using stored offsets, window edges and repeated DST minutes", async () => {
+  it("T27 AC1 reads rounded coverage from daily summaries across the date window and DST", async () => {
     const now = at("2026-10-26T08:00:00Z");
-    for (const [iso, offset, metric, source] of [
-      ["2026-10-12T21:59:00Z", 120, "hr", "gh"],
-      ["2026-10-12T22:00:00Z", 120, "hr", "gh"],
-      ["2026-10-14T00:30:00Z", -300, "hr", "gh"],
-      ["2026-10-25T00:30:00Z", 120, "hr", "gh"],
-      ["2026-10-25T01:30:00Z", 60, "hr", "gh"],
-      ["2026-10-25T00:30:00Z", 120, "hr", "other"],
-      ["2026-10-25T02:30:00Z", 60, "hr", "other"],
-      ["2026-10-25T03:30:00Z", 60, "steps", "gh"],
-      ["2026-10-26T22:59:00Z", 60, "hr", "gh"],
-      ["2026-10-26T23:00:00Z", 60, "hr", "gh"],
-    ] as const) await minute(at(iso), offset, metric, source);
-    expect((await readStatus(env.DB, { ...options, now })).coverage).toEqual(
-      coverage("2026-10-13", { "2026-10-13": 2, "2026-10-25": 2, "2026-10-26": 1 }),
+    await daily("2026-10-12", NOW, 99);
+    await daily("2026-10-13", NOW, 2.49);
+    await daily("2026-10-14", NOW, null);
+    await daily("2026-10-15", NOW, 0);
+    await daily("2026-10-25", NOW, 2.5);
+    await daily("2026-10-26", NOW, 1);
+    await daily("2026-10-27", NOW, 99);
+    // Raw minutes must not supply coverage, even on a date without a summary.
+    await minute(at("2026-10-16T08:00:00Z"));
+    const reads: string[] = [];
+    const out = await readStatus(selectOnlyDb((sql) => { reads.push(sql); }), { ...options, now });
+    expect(out.coverage).toEqual(
+      coverage("2026-10-13", { "2026-10-13": 2, "2026-10-25": 3, "2026-10-26": 1 }),
     );
+    const minuteReads = reads.filter((sql) => /\bmetric_minute\b/i.test(sql));
+    expect(minuteReads).not.toHaveLength(0);
+    for (const sql of minuteReads) expect(sql).not.toMatch(/\bcount\s*\(|\bgroup\s+by\b|\bdate\s*\(/i);
   });
 });
 
@@ -230,7 +247,7 @@ describe("T10e AC3 watch stream and alerts", () => {
     await env.DB.prepare(`INSERT INTO sync_pending (data_type, start_ts, end_ts, operation, received_at, attempts)
       VALUES ('hr', 0, 1, 'UPSERT', ?, 5)`).bind(NOW).run();
     const out = await readStatus(env.DB, options);
-    expect(codes(out)).toEqual(["no_data_48h", "queue_stuck", "daily_stale", "watch_not_syncing"]);
+    expect(codes(out)).toEqual(["no_data_48h", "no_sleep_48h", "queue_stuck", "daily_stale", "watch_not_syncing"]);
     expect(out.alerts.at(-1)).toEqual({ code: "watch_not_syncing", message: expect.any(String) as unknown });
     expect(out.alerts.at(-1)?.message.trim().length).toBeGreaterThan(0);
     expect(out.alerts.at(-1)?.message).toMatch(/reloj|sincroni/i);
@@ -269,6 +286,7 @@ describe("T10d AC3 SELECT-only and all-or-nothing D1 reads", () => {
     await minute(NOW - 60);
     await daily("2026-10-21");
     await watch(NOW - 60);
+    await sleep();
     let reads = 0;
     const out = await readStatus(selectOnlyDb(() => { reads++; }), options);
     expect(out.alerts).toEqual([]);
@@ -286,5 +304,66 @@ describe("T10d AC3 SELECT-only and all-or-nothing D1 reads", () => {
     const statement = { bind: () => statement, first: reject, all: reject, raw: reject, run: reject };
     const broken = { prepare: () => statement, batch: reject, exec: reject, dump: reject } as unknown as D1Database;
     await expect(readStatus(broken, options)).rejects.toBe(failure);
+  });
+});
+
+describe("T27 AC2 batched reads", () => {
+  it.each([0, 1, 3])("uses one name scan then one batch with %i gh metrics", async (count) => {
+    for (let i = 0; i < count; i++) await minute(NOW - 60, 120, `metric-${String(i)}`);
+    await minute(NOW, 120, "other-only", "other");
+    const calls: string[] = [];
+    const out = await readStatus(selectOnlyDb(() => {}, (method) => { calls.push(method); }), options);
+    expect(calls).toEqual(["all", "batch"]);
+    expect(out.streams.filter((row) => row.stream.startsWith("metric:")).map((row) => row.stream))
+      .toEqual(Array.from({ length: count }, (_, i) => `metric:metric-${String(i)}`));
+  });
+
+  it("still batches the remaining reads when there are no metric names", async () => {
+    const calls: string[] = [];
+    await readStatus(selectOnlyDb(() => {}, (method) => { calls.push(method); }), options);
+    expect(calls).toEqual(["all", "batch"]);
+  });
+
+  it("rejects a D1 batch failure after the successful name scan", async () => {
+    const failure = new Error("D1 batch unavailable");
+    const db = new Proxy(env.DB, { get(t, p) {
+      if (p === "batch") return () => Promise.reject(failure);
+      const value: unknown = Reflect.get(t, p);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
+    } });
+    await expect(readStatus(db, options)).rejects.toBe(failure);
+  });
+});
+
+describe("T27 AC3 sleep gap and AC4 sleep stream", () => {
+  it.each([
+    ["absent", undefined, 0, "gh", true, true],
+    ["disconnected", undefined, 0, "gh", false, false],
+    ["exactly 48 hours", NOW - 172800, 0, "gh", true, false],
+    ["one second too old", NOW - 172801, 0, "gh", true, true],
+    ["recent main sleep", NOW - 60, 0, "gh", true, false],
+    ["exactly now", NOW, 0, "gh", true, false],
+    ["future main sleep", NOW + 1, 0, "gh", true, false],
+    ["recent nap only", NOW - 60, 1, "gh", true, true],
+    ["recent non-gh only", NOW - 60, 0, "other", true, true],
+  ] as const)("checks connected gh main sleep: %s", async (_label, end, isNap, source, connected, alert) => {
+    if (connected) await token();
+    if (end !== undefined) await sleep(end, isNap, source);
+    await minute(NOW - 60, 120, "steps");
+    const out = await readStatus(env.DB, options);
+    expect(codes(out).includes("no_sleep_48h")).toBe(alert);
+    if (alert) expect(out.alerts.find((row) => row.code === "no_sleep_48h"))
+      .toEqual({ code: "no_sleep_48h", message: "Sin sesiones de sueño principal en las últimas 48 horas." });
+  });
+
+  it.each([NOW - 172801, NOW - 172800])("keeps the latest nap as the sleep stream with main sleep ending at %i", async (mainEnd) => {
+    await token();
+    await sleep(mainEnd);
+    await sleep(NOW - 60, 1);
+    await sleep(NOW, 0, "other");
+    const out = await readStatus(env.DB, options);
+    expect(out.streams.find((row) => row.stream === "sleep"))
+      .toEqual({ stream: "sleep", latest_local: "2026-10-21T09:59", age_hours: 0 });
+    expect(codes(out).includes("no_sleep_48h")).toBe(mainEnd < NOW - 172800);
   });
 });

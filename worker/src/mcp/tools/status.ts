@@ -32,43 +32,51 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
       SELECT metric FROM names WHERE metric IS NOT NULL
     ) ORDER BY metric
   `).all<{ metric: string }>();
-  const metrics: (StreamRow & { metric: string })[] = [];
-  for (const { metric } of names) {
-    const latest = await db.prepare(`
+  const [sleepResult, dailyResult, watchResult, queueResult, googleResult, coverageResult,
+    freshResult, mainSleepResult, ...metricResults] = await db.batch([
+    db.prepare(`
+      SELECT end_ts AS ts, tz_offset_min FROM sleep_session
+      WHERE source = 'gh' ORDER BY end_ts DESC LIMIT 1
+    `),
+    db.prepare(`
+      SELECT local_date, computed_at FROM daily_summary ORDER BY local_date DESC LIMIT 1
+    `),
+    db.prepare(`
+      SELECT synced_until FROM sync_state WHERE data_type = 'watch'
+    `),
+    db.prepare(`
+      SELECT count(*) AS pending, count(CASE WHEN attempts >= 5 THEN 1 END) AS stuck,
+        min(received_at) AS oldest FROM sync_pending
+    `),
+    db.prepare(`
+      SELECT updated_at FROM secret_blob WHERE name = 'google_refresh_token'
+    `),
+    db.prepare(`
+      SELECT local_date AS date, hr_wear_min AS hr_minutes
+      FROM daily_summary WHERE local_date BETWEEN ? AND ?
+    `).bind(dates[0], today),
+    db.prepare(`
+      SELECT 1 AS present FROM metric_minute
+      WHERE metric = 'hr' AND source = 'gh' AND ts BETWEEN ? AND ? LIMIT 1
+    `).bind(now - 172800, now),
+    db.prepare(`
+      SELECT 1 AS present FROM sleep_session
+      WHERE source = 'gh' AND is_nap = 0 AND end_ts >= ? LIMIT 1
+    `).bind(now - 172800),
+    ...names.map(({ metric }) => db.prepare(`
       SELECT metric, ts, tz_offset_min FROM metric_minute
       WHERE metric = ? AND source = 'gh' ORDER BY ts DESC LIMIT 1
-    `).bind(metric).first<StreamRow & { metric: string }>();
-    if (latest) metrics.push(latest);
-  }
-  const sleep = await db.prepare(`
-    SELECT end_ts AS ts, tz_offset_min FROM sleep_session
-    WHERE source = 'gh' ORDER BY end_ts DESC LIMIT 1
-  `).first<StreamRow>();
-  const daily = await db.prepare(`
-    SELECT local_date, computed_at FROM daily_summary ORDER BY local_date DESC LIMIT 1
-  `).first<{ local_date: string; computed_at: number }>();
-  const watch = await db.prepare(`
-    SELECT synced_until FROM sync_state WHERE data_type = 'watch'
-  `).first<{ synced_until: number | null }>();
-  const queue = await db.prepare(`
-    SELECT count(*) AS pending, count(CASE WHEN attempts >= 5 THEN 1 END) AS stuck,
-      min(received_at) AS oldest FROM sync_pending
-  `).first<{ pending: number; stuck: number; oldest: number | null }>();
-  const google = await db.prepare(`
-    SELECT updated_at FROM secret_blob WHERE name = 'google_refresh_token'
-  `).first<{ updated_at: number }>();
-  const { results: coverage } = await db.prepare(`
-    SELECT date(ts + tz_offset_min * 60, 'unixepoch') AS date, count(DISTINCT ts) AS hr_minutes
-    FROM metric_minute WHERE metric = 'hr' AND source = 'gh'
-      AND ts >= ? AND ts < ?
-      AND date(ts + tz_offset_min * 60, 'unixepoch') BETWEEN ? AND ?
-    GROUP BY date
-  `).bind(Date.parse(`${dates[0]}T00:00:00Z`) / 1000 - 14 * 3600,
-    midnight / 1000 + 38 * 3600, dates[0], today).all<{ date: string; hr_minutes: number }>();
-  const fresh = await db.prepare(`
-    SELECT 1 AS present FROM metric_minute
-    WHERE metric = 'hr' AND source = 'gh' AND ts BETWEEN ? AND ? LIMIT 1
-  `).bind(now - 172800, now).first<number>("present");
+    `).bind(metric)),
+  ]);
+  const sleep = sleepResult.results[0] as StreamRow | undefined;
+  const daily = dailyResult.results[0] as { local_date: string; computed_at: number } | undefined;
+  const watch = watchResult.results[0] as { synced_until: number | null } | undefined;
+  const queue = queueResult.results[0] as { pending: number; stuck: number; oldest: number | null } | undefined;
+  const google = googleResult.results[0] as { updated_at: number } | undefined;
+  const coverage = coverageResult.results as { date: string; hr_minutes: number | null }[];
+  const fresh = freshResult.results[0];
+  const mainSleep = mainSleepResult.results[0];
+  const metrics = metricResults.flatMap(({ results }) => results) as (StreamRow & { metric: string })[];
 
   const stream = (name: string, ts: number | null, offset?: number) => ({
     stream: name,
@@ -79,6 +87,9 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
   const alerts: { code: string; message: string }[] = [];
   if (!google) alerts.push({ code: "google_disconnected", message: "Google no está conectado." });
   if (!fresh) alerts.push({ code: "no_data_48h", message: "Sin datos de frecuencia cardíaca en las últimas 48 horas." });
+  if (google && !mainSleep) {
+    alerts.push({ code: "no_sleep_48h", message: "Sin sesiones de sueño principal en las últimas 48 horas." });
+  }
   if (queue && queue.stuck > 0) alerts.push({ code: "queue_stuck", message: "Hay elementos de la cola con cinco o más intentos." });
   if (!daily || daily.local_date < yesterday) alerts.push({ code: "daily_stale", message: "El resumen diario no está actualizado." });
   if (google && (watch?.synced_until == null || now - watch.synced_until > 86400)) {
@@ -97,8 +108,8 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
       pending: queue?.pending ?? 0, stuck: queue?.stuck ?? 0,
       oldest_received_local: queue?.oldest == null ? null : localTime(queue.oldest),
     },
-    google: { connected: google !== null, token_updated_local: google ? localTime(google.updated_at) : null },
-    coverage: dates.map((date) => ({ date, hr_minutes: minutesByDate.get(date) ?? 0 })),
+    google: { connected: google !== undefined, token_updated_local: google ? localTime(google.updated_at) : null },
+    coverage: dates.map((date) => ({ date, hr_minutes: Math.round(minutesByDate.get(date) ?? 0) })),
     alerts,
   };
 }
