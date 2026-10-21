@@ -23,6 +23,10 @@ describe("T17 statistics rulings (unrounded pure functions)", () => {
     expect(Math.abs(tQuantile975(Infinity) - 1.960)).toBeLessThanOrEqual(0.001);
   });
 
+  it.each([1e7, 1e13, 1e15, 1e300, Number.MAX_VALUE])("stays near the normal quantile for huge df %s", (df) => {
+    expect(Math.abs(tQuantile975(df) - 1.959964)).toBeLessThanOrEqual(0.001);
+  });
+
   it.each([0, -1, -Infinity, NaN])("rejects invalid df %s", (df) => {
     expect(() => tQuantile975(df)).toThrow(RangeError);
   });
