@@ -74,6 +74,14 @@ describe("AC1 five-minute cron", () => {
       .toEqual(["2026-10-19", "2026-10-20", "2026-10-21"]);
   });
 
+  it("rejects and skips the summaries when the stored token cannot be decrypted", async () => {
+    await storeRefreshToken();
+    const g = google();
+    await expect(handleScheduled("*/5 * * * *", { ...appEnv(), TOKEN_ENC_KEY: btoa(String.fromCharCode(...new Uint8Array(32))) }, deps(g.fetch))).rejects.toThrow();
+    expect(g.calls).toEqual([]);
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM daily_summary").first()).toEqual({ n: 0 });
+  });
+
   it("propagates a drain failure so the run is marked failed", async () => {
     await storeRefreshToken();
     await env.DB.prepare("CREATE TRIGGER fail_q BEFORE UPDATE ON sync_pending BEGIN SELECT RAISE(ABORT, 'x'); END").run();
@@ -88,11 +96,14 @@ describe("AC1 five-minute cron", () => {
 });
 
 describe("AC2 daily cron", () => {
-  it("enqueues the 48-hour reconcile and does not call Google", async () => {
+  it("enqueues the 48-hour reconcile, purges expired OAuth states and does not call Google", async () => {
+    await env.DB.prepare("INSERT INTO oauth_state (state, verifier, expires_at) VALUES ('old', 'v', ?), ('edge', 'v', ?), ('live', 'v', ?)")
+      .bind(NOW - 1, NOW, NOW + 600).run();
     const g = google();
     await handleScheduled("30 4 * * *", appEnv(), deps(g.fetch));
     expect(g.calls).toEqual([]);
     expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first()).toEqual({ n: 9 });
+    expect((await env.DB.prepare("SELECT state FROM oauth_state ORDER BY state").all()).results).toEqual([{ state: "edge" }, { state: "live" }]);
   });
 
   it("rejects an unknown cron expression", async () => {
