@@ -417,7 +417,8 @@ describe("AC3 stateless read tools and audit", () => {
       const today = `${part("year")}-${part("month")}-${part("day")}`;
       const expected = {
         now_local: `${today}T${part("hour")}:${part("minute")}`,
-        streams: [{ stream: "sleep", latest_local: null, age_hours: null }, { stream: "daily", latest_local: null, age_hours: null }],
+        streams: [{ stream: "sleep", latest_local: null, age_hours: null }, { stream: "daily", latest_local: null, age_hours: null },
+          { stream: "watch", latest_local: null, age_hours: null }],
         queue: { pending: 0, stuck: 0, oldest_received_local: null },
         google: { connected: false, token_updated_local: null },
         coverage: Array.from({ length: 14 }, (_, i) => ({

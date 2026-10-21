@@ -31,22 +31,26 @@ async function token(name = "google_refresh_token") {
 async function daily(date: string, computed = NOW) {
   await env.DB.prepare("INSERT INTO daily_summary (local_date, computed_at) VALUES (?, ?)").bind(date, computed).run();
 }
+async function watch(syncedUntil: number | null, lastError: string | null = null, dataType = "watch") {
+  await env.DB.prepare("INSERT INTO sync_state (data_type, synced_until, last_ok_at, last_error) VALUES (?, ?, ?, ?)")
+    .bind(dataType, syncedUntil, NOW - 60, lastError).run();
+}
 
 // Observe actual D1 reads, allowing both individual SELECTs and SELECT batches.
-function selectOnlyDb(onRead: () => void): D1Database {
-  const statements = new WeakMap<object, { raw: D1PreparedStatement; sql: string }>();
-  const check = (sql: string) => { expect(sql).toMatch(/^\s*SELECT\b/i); onRead(); };
-  const wrap = (raw: D1PreparedStatement, sql: string): D1PreparedStatement => {
+function selectOnlyDb(onRead: (sql: string, bindings: unknown[]) => void): D1Database {
+  const statements = new WeakMap<object, { raw: D1PreparedStatement; sql: string; bindings: unknown[] }>();
+  const check = (sql: string, bindings: unknown[]) => { expect(sql).toMatch(/^\s*SELECT\b/i); onRead(sql, bindings); };
+  const wrap = (raw: D1PreparedStatement, sql: string, bindings: unknown[] = []): D1PreparedStatement => {
     const proxy = new Proxy(raw, { get(t, p) {
-      if (p === "bind") return (...args: unknown[]) => wrap(t.bind(...args), sql);
+      if (p === "bind") return (...args: unknown[]) => wrap(t.bind(...args), sql, args);
       if (["first", "all", "raw", "run"].includes(String(p))) return (...args: unknown[]) => {
-        check(sql);
+        check(sql, bindings);
         return (Reflect.get(t, p) as (...values: unknown[]) => unknown).apply(t, args);
       };
       const value: unknown = Reflect.get(t, p);
       return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
     } });
-    statements.set(proxy, { raw, sql });
+    statements.set(proxy, { raw, sql, bindings });
     return proxy;
   };
   return new Proxy(env.DB, { get(t, p) {
@@ -54,10 +58,10 @@ function selectOnlyDb(onRead: () => void): D1Database {
     if (p === "batch") return (batch: D1PreparedStatement[]) => t.batch(batch.map((statement) => {
       const entry = statements.get(statement);
       if (!entry) throw new Error("unobserved statement");
-      check(entry.sql);
+      check(entry.sql, entry.bindings);
       return entry.raw;
     }));
-    if (p === "exec") return (sql: string) => { check(sql); return t.exec(sql); };
+    if (p === "exec") return (sql: string) => { check(sql, []); return t.exec(sql); };
     if (p === "dump") return () => { throw new Error("unexpected dump"); };
     const value: unknown = Reflect.get(t, p);
     return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
@@ -66,7 +70,7 @@ function selectOnlyDb(onRead: () => void): D1Database {
 
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
 beforeEach(async () => {
-  await env.DB.batch(["metric_minute", "sleep_stage", "sleep_session", "daily_summary", "sync_pending", "secret_blob"]
+  await env.DB.batch(["metric_minute", "sleep_stage", "sleep_session", "daily_summary", "sync_pending", "sync_state", "secret_blob"]
     .map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
 });
 
@@ -75,7 +79,8 @@ describe("T10d AC1 health_status", () => {
     const out = await readStatus(env.DB, options);
     expect(out).toEqual({
       now_local: "2026-10-21T10:00",
-      streams: [{ stream: "sleep", latest_local: null, age_hours: null }, { stream: "daily", latest_local: null, age_hours: null }],
+      streams: [{ stream: "sleep", latest_local: null, age_hours: null }, { stream: "daily", latest_local: null, age_hours: null },
+        { stream: "watch", latest_local: null, age_hours: null }],
       queue: { pending: 0, stuck: 0, oldest_received_local: null },
       google: { connected: false, token_updated_local: null },
       coverage: coverage("2026-10-08"),
@@ -92,6 +97,7 @@ describe("T10d AC1 health_status", () => {
     await token();
     await minute(NOW - 120);
     await daily("2026-10-20", NOW - 3600);
+    await watch(NOW - 60);
     await env.DB.prepare(`INSERT INTO sleep_session
       (source_id, start_ts, end_ts, tz_offset_min, local_date, updated_at)
       VALUES ('night', ?, ?, 120, '2026-10-21', 1)`).bind(NOW - 36000, NOW - 7200).run();
@@ -101,6 +107,7 @@ describe("T10d AC1 health_status", () => {
         { stream: "metric:hr", latest_local: "2026-10-21T09:58", age_hours: 0 },
         { stream: "sleep", latest_local: "2026-10-21T08:00", age_hours: 2 },
         { stream: "daily", latest_local: "2026-10-21T09:00", age_hours: 1 },
+        { stream: "watch", latest_local: "2026-10-21T09:59", age_hours: 0 },
       ],
       queue: { pending: 0, stuck: 0, oldest_received_local: null },
       google: { connected: true, token_updated_local: "2026-10-21T09:59" },
@@ -129,6 +136,7 @@ describe("T10d AC1 health_status", () => {
       { stream: "metric:sleep", latest_local: "2026-10-21T09:00", age_hours: 0 },
       { stream: "sleep", latest_local: "2026-10-21T01:45", age_hours: 1.3 },
       { stream: "daily", latest_local: "2026-10-21T08:45", age_hours: 1.3 },
+      { stream: "watch", latest_local: null, age_hours: null },
     ]);
   });
 
@@ -192,11 +200,75 @@ describe("T10d AC1 health_status", () => {
   });
 });
 
+describe("T10e AC3 watch stream and alerts", () => {
+  it.each([
+    ["missing row, disconnected", undefined, false, null, null, false],
+    ["missing row, connected", undefined, true, null, null, true],
+    ["null timestamp, disconnected", null, false, null, null, false],
+    ["null timestamp, connected", null, true, null, null, true],
+    ["stale timestamp, disconnected", NOW - 86401, false, "2026-10-20T09:59", 24, false],
+    ["one second under 24 hours", NOW - 86399, true, "2026-10-20T10:00", 24, false],
+    ["exactly 24 hours", NOW - 86400, true, "2026-10-20T10:00", 24, false],
+    ["24 hours plus one second", NOW - 86401, true, "2026-10-20T09:59", 24, true],
+    ["age rounds up to 24.1", NOW - 86580, true, "2026-10-20T09:57", 24.1, true],
+    ["age rounds half away from zero", NOW - 4500, true, "2026-10-21T08:45", 1.3, false],
+    ["future timestamp", NOW + 3600, true, "2026-10-21T11:00", 0, false],
+  ] as const)("uses elapsed age and token presence: %s", async (_label, ts, connected, latestLocal, ageHours, alert) => {
+    if (connected) await token();
+    if (ts !== undefined) await watch(ts, "previous lookup error");
+    // A fresher unrelated row must never supply the watch timestamp.
+    await watch(NOW, null, "heart-rate");
+    const out = await readStatus(env.DB, options);
+    expect(out.streams.at(-1)).toEqual({ stream: "watch", latest_local: latestLocal, age_hours: ageHours });
+    expect(out.streams.map((row) => row.stream)).toEqual(["sleep", "daily", "watch"]);
+    expect(codes(out).includes("watch_not_syncing")).toBe(alert);
+  });
+
+  it("appends the watch alert after existing alerts, with a short Spanish message and no state internals", async () => {
+    await token();
+    await watch(null, "private 'lookup' failure");
+    await env.DB.prepare(`INSERT INTO sync_pending (data_type, start_ts, end_ts, operation, received_at, attempts)
+      VALUES ('hr', 0, 1, 'UPSERT', ?, 5)`).bind(NOW).run();
+    const out = await readStatus(env.DB, options);
+    expect(codes(out)).toEqual(["no_data_48h", "queue_stuck", "daily_stale", "watch_not_syncing"]);
+    expect(out.alerts.at(-1)).toEqual({ code: "watch_not_syncing", message: expect.any(String) as unknown });
+    expect(out.alerts.at(-1)?.message.trim().length).toBeGreaterThan(0);
+    expect(out.alerts.at(-1)?.message).toMatch(/reloj|sincroni/i);
+    expect(out.streams.at(-1)).toEqual({ stream: "watch", latest_local: null, age_hours: null });
+    expect(JSON.stringify(out)).not.toMatch(/last_ok_at|last_error|private 'lookup' failure/);
+  });
+
+  it("formats the watch instant in USER_TZ across the DST fallback", async () => {
+    await token();
+    const instant = at("2026-10-25T01:30:00Z");
+    await watch(instant);
+    expect((await readStatus(env.DB, { ...options, now: instant + 3600 })).streams.at(-1))
+      .toEqual({ stream: "watch", latest_local: "2026-10-25T02:30", age_hours: 1 });
+    expect((await readStatus(env.DB, { now: instant + 3600, tz: "America/New_York" })).streams.at(-1))
+      .toEqual({ stream: "watch", latest_local: "2026-10-24T21:30", age_hours: 1 });
+  });
+});
+
+describe("T10e AC4 watch state read", () => {
+  it("reads watch by primary key in a SELECT, including when the row is absent", async () => {
+    const reads: { sql: string; bindings: unknown[] }[] = [];
+    const out = await readStatus(selectOnlyDb((sql, bindings) => { reads.push({ sql, bindings }); }), options);
+    expect(out.streams.at(-1)).toEqual({ stream: "watch", latest_local: null, age_hours: null });
+    const watchReads = reads.filter(({ sql }) => /\bsync_state\b/i.test(sql));
+    expect(watchReads.length).toBeGreaterThan(0);
+    for (const { sql, bindings } of watchReads) {
+      const plan = (await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`).bind(...bindings).all<{ detail: string }>()).results;
+      expect(plan.some(({ detail }) => /SEARCH\b.*sqlite_autoindex_sync_state_\d+\b.*\(data_type=\?\)/i.test(detail))).toBe(true);
+    }
+  });
+});
+
 describe("T10d AC3 SELECT-only and all-or-nothing D1 reads", () => {
   it("uses only SELECTs and rejects a failure at any read without requiring a query count", async () => {
     await token();
     await minute(NOW - 60);
     await daily("2026-10-21");
+    await watch(NOW - 60);
     let reads = 0;
     const out = await readStatus(selectOnlyDb(() => { reads++; }), options);
     expect(out.alerts).toEqual([]);
