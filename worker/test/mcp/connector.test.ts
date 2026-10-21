@@ -37,13 +37,13 @@ function idToken(over: Record<string, unknown> = {}) {
     email: EMAIL, email_verified: true, ...over,
   }))}.sig`;
 }
-function google(over: Record<string, unknown> = {}, status = 200) {
+function google(over: Record<string, unknown> = {}, status = 200, refresh: string | undefined = GOOGLE_REFRESH) {
   return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const req = new Request(input, init);
     expect(req.url).toBe("https://oauth2.googleapis.com/token");
     expect(req.method).toBe("POST");
     expect(req.headers.get("content-type")).toContain("application/x-www-form-urlencoded");
-    return Promise.resolve(Response.json({ access_token: GOOGLE_ACCESS, refresh_token: GOOGLE_REFRESH, expires_in: 3600,
+    return Promise.resolve(Response.json({ access_token: GOOGLE_ACCESS, refresh_token: refresh, expires_in: 3600,
       id_token: idToken(over) }, { status }));
   });
 }
@@ -95,6 +95,7 @@ async function consent(): Promise<Consent> {
   expect(html).toContain("health:read");
   expect(html).toContain("&lt;script&gt;");
   expect(html).not.toContain(CLIENT_NAME);
+  expect(html).toContain(new URL(REDIRECT).hostname);
   const result: Consent = { clientId: client.client_id, cookie, action: "/authorize", fields: new URLSearchParams(), buttons: [] };
   let button: Consent["buttons"][number] | undefined;
   await new HTMLRewriter()
@@ -285,6 +286,12 @@ describe("AC2 owner authorization and refusals", () => {
     for (const secret of [GOOGLE_ACCESS, GOOGLE_REFRESH, EMAIL, connectorEnv.GOOGLE_CLIENT_SECRET]) expect(JSON.stringify(rows)).not.toContain(secret);
   });
 
+  it("grants the owner when Google returns no refresh token", async () => {
+    google({}, 200, undefined);
+    await accessToken();
+    expect((await audit()).map((r) => r.name)).toEqual(["grant"]);
+  });
+
   it("sends the upstream verifier matching Google's challenge", async () => {
     const fetch = google();
     const flow = await upstream();
@@ -324,20 +331,22 @@ describe("AC2 owner authorization and refusals", () => {
     const flow = await upstream();
     const other = binding === "wrong" ? await upstream() : undefined;
     const res = await callback(flow, { code: "stolen-code" }, other?.cookie ?? "");
-    expect(res.status).toBeGreaterThanOrEqual(300);
-    expect(res.headers.get("location") ?? "").not.toMatch(/[?&]code=/);
+    expect(res.status).toBe(400);
+    expect(res.headers.has("location")).toBe(false);
     expect(fetch).not.toHaveBeenCalled();
-    expect((await audit()).filter((r) => r.name === "grant")).toHaveLength(0);
+    const rows = await audit();
+    expect(rows.map((r) => [r.kind, r.name])).toEqual([["auth", "refused:invalid_request"]]);
+    auditFields(rows[0], 0);
   });
 
   it("issues no second code for a reused callback state", async () => {
     const fetch = google();
     const flow = await authorizedCode();
     const replay = await callback(flow);
-    expect(replay.status).toBeGreaterThanOrEqual(300);
-    expect(replay.headers.get("location") ?? "").not.toMatch(/[?&]code=/);
+    expect(replay.status).toBe(400);
+    expect(replay.headers.has("location")).toBe(false);
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect((await audit()).filter((r) => r.name === "grant")).toHaveLength(1);
+    expect((await audit()).map((r) => r.name)).toEqual(["grant", "refused:invalid_request"]);
   });
 
   it("rejects the wrong client PKCE verifier at the token endpoint", async () => {
@@ -398,6 +407,11 @@ describe("AC3 stateless read tools and audit", () => {
     ["health_daily", { start: "2026-01-01", end: "2026-04-01" }, "range must contain 1 to 90 dates"],
     ["health_sleep", { start: "2026-01-01", end: "2026-02-01" }, "range must contain 1 to 31 dates"],
     ["health_intraday", { metric: "hr", date: "2026-02-30", resolution: "1m" }, "date must be a real YYYY-MM-DD date between 2000-01-01 and 2099-12-31"],
+    ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["nope"] }, "metrics must be distinct names from DAILY_COLUMNS"],
+    ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: [] }, "metrics must be distinct names from DAILY_COLUMNS"],
+    ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["rhr", "rhr"] }, "metrics must be distinct names from DAILY_COLUMNS"],
+    ["health_intraday", { metric: "steps", date: "2026-10-20", resolution: "1m" }, "metric must be hr"],
+    ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "2m" }, "resolution must be 1m, 5m or 1h"],
   ])("returns the RangeError and failed audit for %s %j", async (name, args, message) => {
     google();
     const token = await accessToken();
