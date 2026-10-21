@@ -177,6 +177,27 @@ describe("T11 AC3c lexical boundaries without SQL grammar parsing", () => {
   });
 });
 
+describe("T11 SQLite token boundaries", () => {
+  it.each([
+    "SELECT event$label FROM v_events", "SELECT \u00e9event FROM v_events",
+    "SELECT event\u00e9 FROM v_events",
+  ])("treats $ and non-ASCII code points as identifier characters: %s", accepts);
+
+  it.each(["SELECT\u00e9 1", "SELECT\u00a0* FROM v_daily", "\u00a0SELECT 1"])(
+    "does not treat NBSP or non-ASCII suffixes as keyword boundaries: %s", refuses,
+  );
+
+  it("ends line comments only at LF", () => {
+    const result: unknown = validateReadOnlyQuery("SELECT 1--x\r+2");
+    expect(result).toMatchObject({ ok: true });
+    expect(result).toHaveProperty("sql", expect.stringMatching(/^SELECT 1\s*$/));
+  });
+
+  it("closes block comments at the first terminator without nesting", () => {
+    expect(validateReadOnlyQuery("SELECT 1/* outer /* inner */+2")).toEqual({ ok: true, sql: "SELECT 1 +2" });
+  });
+});
+
 describe("T11 AC3d normalized SQL preserves token contents", () => {
   it.each([
     ["SELECT/**/1", "SELECT 1"],
