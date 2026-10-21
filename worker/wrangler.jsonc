@@ -5,6 +5,7 @@
   "compatibility_date": "2026-08-22",
   "compatibility_flags": ["global_fetch_strictly_public"],
   "triggers": { "crons": ["*/5 * * * *", "30 4 * * *"] },
+  "observability": { "enabled": true },
   "vars": { "USER_TZ": "Europe/Madrid", "ALLOWED_EMAIL": "deluispablo@gmail.com", "PUBLIC_ORIGIN": "https://pixel.test" },
   // Top-level ids are placeholders for local tests; deploy with `--env production`.
   "d1_databases": [
