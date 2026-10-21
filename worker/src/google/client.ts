@@ -21,8 +21,27 @@ export interface GoogleClientOptions {
 }
 
 export interface RollUpPoint { ts: number; avg: number; min: number; max: number }
+export interface DailyRollUpPoint { date: string; value: unknown }
 
 interface Device { deviceVersion?: string; lastSyncTime?: string }
+interface CivilDate { year: number; month: number; day: number }
+
+function parseCivilDate(s: string): Date {
+  const date = new Date(`${s}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== s) {
+    throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
+  }
+  return date;
+}
+
+function civilRange(start: string, end: string, maxDays = Infinity) {
+  const a = parseCivilDate(start);
+  const b = parseCivilDate(end);
+  const days = (b.getTime() - a.getTime()) / 86400000;
+  if (!(days > 0 && days <= maxDays)) throw new RangeError("civil range must end after start and fit the daily limit");
+  const fields = (d: Date): CivilDate => ({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() });
+  return { start: { date: fields(a) }, end: { date: fields(b) } };
+}
 
 const RFC3339 = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)$/;
 
@@ -84,21 +103,50 @@ export function createGoogleClient(o: GoogleClientOptions) {
     throw new Error(`Google API ${String(res.status)}`);
   }
 
+  async function listPages(type: string, field: string, start: string, end: string, action = ""): Promise<unknown[]> {
+    const path = `${type.replaceAll("-", "_")}.${field}`;
+    const filter = `${path} >= "${start}" AND ${path} < "${end}"`;
+    const out: unknown[] = [];
+    let pageToken: string | undefined;
+    do {
+      const q = new URLSearchParams({ filter });
+      if (pageToken) q.set("pageToken", pageToken);
+      const page = await api<{ dataPoints?: unknown[]; nextPageToken?: string }>(`${API}/dataTypes/${type}/dataPoints${action}?${q.toString()}`);
+      out.push(...(page.dataPoints ?? []));
+      pageToken = page.nextPageToken;
+    } while (pageToken);
+    return out;
+  }
+
   return {
     /** Raw dataPoints of a sample-based type over [start, end), following every page. */
     async list(type: string, start: string, end: string): Promise<unknown[]> {
-      const field = `${type.replaceAll("-", "_")}.sample_time.physical_time`;
-      const filter = `${field} >= "${start}" AND ${field} < "${end}"`;
-      const out: unknown[] = [];
-      let pageToken: string | undefined;
-      do {
-        const q = new URLSearchParams({ filter });
-        if (pageToken) q.set("pageToken", pageToken);
-        const page = await api<{ dataPoints?: unknown[]; nextPageToken?: string }>(`${API}/dataTypes/${type}/dataPoints?${q.toString()}`);
-        out.push(...(page.dataPoints ?? []));
-        pageToken = page.nextPageToken;
-      } while (pageToken);
-      return out;
+      return listPages(type, "sample_time.physical_time", start, end);
+    },
+
+    async reconcile(type: string, start: string, end: string): Promise<unknown[]> {
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(type)) throw new RangeError("invalid data type");
+      if (!(parseInstant(end) > parseInstant(start))) throw new RangeError("reconcile range must be valid with end after start");
+      const field = type === "sleep" || type === "exercise" ? "interval.end_time" : "sample_time.physical_time";
+      return listPages(type, field, start, end, ":reconcile");
+    },
+
+    async listDaily(type: string, startDate: string, endDate: string): Promise<unknown[]> {
+      civilRange(startDate, endDate);
+      return listPages(type, "date", startDate, endDate);
+    },
+
+    async dailyRollUp(type: string, startDate: string, endDate: string): Promise<DailyRollUpPoint[]> {
+      const maxDays = ["heart-rate", "active-minutes", "total-calories", "active-energy-burned"].includes(type) ? 14 : 90;
+      const range = civilRange(startDate, endDate, maxDays);
+      const res = await api<{ rollupDataPoints?: ({ civilStartTime: { date: CivilDate } } & Record<string, unknown>)[] }>(
+        `${API}/dataTypes/${type}/dataPoints:dailyRollUp`,
+        { method: "POST", body: JSON.stringify({ range }) });
+      const key = type.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+      return (res.rollupDataPoints ?? []).map((p) => {
+        const { year, month, day } = p.civilStartTime.date;
+        return { date: `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`, value: p[key] };
+      }).sort((a, b) => a.date.localeCompare(b.date));
     },
 
     async rollUpHeartRate(start: string, end: string, windowSec: number): Promise<RollUpPoint[]> {
