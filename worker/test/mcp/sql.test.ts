@@ -14,8 +14,8 @@ interface SqlResult {
 }
 // Explicit contracts keep missing-module reds from causing unrelated unsafe-type diagnostics.
 const healthSql = executeSql as (db: D1Database, args: { query: string }) => Promise<SqlResult>;
-const guard = lexical as { validateReadOnlyQuery: (sql: string) => { ok: true; sql: string } | { ok: false; reason: string } };
-const views = parser as { viewsOnly: (sql: string) => { ok: true } | { ok: false; reason: string } };
+const guard = lexical;
+const views = parser;
 
 function watched() {
   const calls: unknown[][] = [];
