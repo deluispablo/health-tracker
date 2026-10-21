@@ -5,10 +5,10 @@ import { healthSleep } from "../../src/mcp/tools/sleep";
 
 const at = (iso: string) => Date.parse(iso) / 1000;
 
-async function session(id: string, start: string, end: string, localDate: string, f: Partial<Record<string, number>> = {}, tz = 120) {
-  await env.DB.prepare(`INSERT INTO sleep_session (source_id, start_ts, end_ts, tz_offset_min, local_date, is_nap, minutes_asleep, minutes_in_bed,
-    efficiency, deep_min, rem_min, light_min, awake_min, latency_min, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`)
-    .bind(id, at(start), at(end), tz, localDate, f.is_nap ?? 0, f.asleep ?? null, f.in_bed ?? null, f.eff ?? null, f.deep ?? null,
+async function session(id: string, start: string, end: string, localDate: string, f: Partial<Record<string, number>> = {}, tz = 120, src = "gh") {
+  await env.DB.prepare(`INSERT INTO sleep_session (source_id, source, start_ts, end_ts, tz_offset_min, local_date, is_nap, minutes_asleep, minutes_in_bed,
+    efficiency, deep_min, rem_min, light_min, awake_min, latency_min, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`)
+    .bind(id, src, at(start), at(end), tz, localDate, f.is_nap ?? 0, f.asleep ?? null, f.in_bed ?? null, f.eff ?? null, f.deep ?? null,
       f.rem ?? null, f.light ?? null, f.awake ?? null, f.latency ?? null).run();
 }
 async function stage(id: string, start: string, end: string, kind: string) {
@@ -112,5 +112,88 @@ describe("AC1 health_sleep", () => {
       return typeof v === "function" ? (v as (...x: unknown[]) => unknown).bind(t) : v;
     } });
     await expect(healthSleep(broken, { start: "2026-10-01", end: "2026-10-02" })).rejects.toThrow("D1 down");
+  });
+  it("returns every source, breaks start ties by source_id and keeps each session's stages isolated and ordered", async () => {
+    await session("z'2", "2026-10-07T22:00:00Z", "2026-10-08T05:00:00Z", "2026-10-08", { asleep: 2 }, 120, "other");
+    await session("a\"1", "2026-10-07T22:00:00Z", "2026-10-08T06:00:00Z", "2026-10-08", { asleep: 1 });
+    await session("out", "2026-10-08T22:00:00Z", "2026-10-09T05:00:00Z", "2026-10-09");
+    await stage("z'2", "2026-10-07T23:00:00Z", "2026-10-07T23:30:00Z", "REM");
+    await stage("z'2", "2026-10-07T22:00:00Z", "2026-10-07T23:00:00Z", "LIGHT");
+    await stage("a\"1", "2026-10-07T22:30:00Z", "2026-10-07T23:00:00Z", "DEEP");
+    await stage("out", "2026-10-08T22:00:00Z", "2026-10-08T23:00:00Z", "AWAKE");
+    const [db, seen] = guarded();
+    const out = await healthSleep(db, { start: "2026-10-08", end: "2026-10-08" });
+    expect(out.sessions.map((s) => [s.minutes_asleep, s.stages])).toEqual([
+      [1, [[30, 60, "DEEP"]]], [2, [[0, 60, "LIGHT"], [60, 90, "REM"]]]]);
+    expect(out.sessions[0]).not.toHaveProperty("source_id");
+    expect(out.sessions[0]).not.toHaveProperty("source");
+    expect(seen.sql.join(" ")).not.toMatch(/2026-10-0|z'2|a"1/);
+    expect(seen.binds.length).toBeGreaterThan(0);
+    expect(seen.binds.every((b) => b.length === 2 && b[0] === "2026-10-08" && b[1] === "2026-10-08")).toBe(true);
+  });
+
+  it("floors negative and beyond-session stage offsets without clipping or merging", async () => {
+    await session("s", "2026-10-07T22:00:00Z", "2026-10-08T05:00:00Z", "2026-10-08");
+    await stage("s", "2026-10-07T21:59:30Z", "2026-10-07T22:10:00Z", "AWAKE");
+    await stage("s", "2026-10-07T22:10:00Z", "2026-10-07T22:20:00Z", "LIGHT");
+    await stage("s", "2026-10-07T22:20:00Z", "2026-10-07T22:30:00Z", "LIGHT");
+    await stage("s", "2026-10-08T04:50:00Z", "2026-10-08T05:10:59Z", "AWAKE");
+    const out = await healthSleep(env.DB, { start: "2026-10-08", end: "2026-10-08" });
+    expect(out.sessions[0].stages).toEqual([[-1, 10, "AWAKE"], [10, 20, "LIGHT"], [20, 30, "LIGHT"], [410, 430, "AWAKE"]]);
+  });
+
+  it("returns several main sessions on one date and counts nap-only dates", async () => {
+    await session("m1", "2026-10-06T21:00:00Z", "2026-10-07T01:00:00Z", "2026-10-07");
+    await session("m2", "2026-10-07T02:00:00Z", "2026-10-07T05:00:00Z", "2026-10-07");
+    await session("n", "2026-10-08T12:00:00Z", "2026-10-08T12:30:00Z", "2026-10-08", { is_nap: 1 });
+    const out = await healthSleep(env.DB, { start: "2026-10-07", end: "2026-10-08" });
+    expect(out.sessions.map((s) => [s.local_date, s.is_nap])).toEqual([["2026-10-07", false], ["2026-10-07", false], ["2026-10-08", true]]);
+    expect(out.coverage).toEqual({ days_requested: 2, days_with_sleep: 2 });
+  });
+
+  it("returns stored summaries as stored, including zeros and inconsistent values, and never caches", async () => {
+    await session("s", "2026-10-07T22:00:00Z", "2026-10-08T05:00:00Z", "2026-10-08",
+      { asleep: 0, in_bed: 0, eff: 0, deep: 0, rem: 500, light: 0, awake: 0, latency: 0 });
+    await stage("s", "2026-10-07T22:00:00Z", "2026-10-07T23:00:00Z", "DEEP");
+    const args = { start: "2026-10-08", end: "2026-10-08" };
+    const first = (await healthSleep(env.DB, args)).sessions[0];
+    expect([first.minutes_asleep, first.minutes_in_bed, first.efficiency, first.deep_min, first.rem_min, first.latency_min]).toEqual([0, 0, 0, 0, 500, 0]);
+    expect(first.stages).toEqual([[0, 60, "DEEP"]]);
+    await env.DB.batch([env.DB.prepare("UPDATE sleep_session SET efficiency = 99"), env.DB.prepare("UPDATE sleep_stage SET stage = 'REM'")]);
+    const again = (await healthSleep(env.DB, args)).sessions[0];
+    expect([again.efficiency, again.stages]).toEqual([99, [[0, 60, "REM"]]]);
+  });
+
+  it("accepts a valid leap day and a month-crossing 31-date range, and rejects a malformed end", async () => {
+    await expect(healthSleep(env.DB, { start: "2028-02-29", end: "2028-02-29" })).resolves.toMatchObject({ coverage: { days_requested: 1 } });
+    await expect(healthSleep(env.DB, { start: "2026-10-15", end: "2026-11-14" })).resolves.toMatchObject({ coverage: { days_requested: 31 } });
+    await expect(healthSleep(env.DB, { start: "2026-10-15", end: "2026-11-15" })).rejects.toThrow(RangeError);
+    const [db, seen] = guarded();
+    for (const end of ["2026-10-1", "2026-10-32", "20261020", ""]) {
+      await expect(healthSleep(db, { start: "2026-10-01", end })).rejects.toThrow(RangeError);
+    }
+    expect(seen.sql).toEqual([]);
+  });
+
+  it("rejects when stages fail to load after sessions loaded", async () => {
+    await session("s", "2026-10-07T22:00:00Z", "2026-10-08T05:00:00Z", "2026-10-08");
+    await stage("s", "2026-10-07T22:00:00Z", "2026-10-07T23:00:00Z", "DEEP");
+    const failStages = (q: string) => /sleep_stage/i.test(q);
+    const broken = new Proxy(env.DB, { get(t, p) {
+      if (p === "batch") return (stmts: D1PreparedStatement[]) => t.batch(stmts).then(() => Promise.reject(new Error("stage read failed")));
+      if (p === "prepare") return (q: string) => {
+        const st = t.prepare(q);
+        if (!failStages(q)) return st;
+        return new Proxy(st, { get(x, xp) {
+          if (xp === "bind") return () => ({ all: () => Promise.reject(new Error("stage read failed")),
+            raw: () => Promise.reject(new Error("stage read failed")), first: () => Promise.reject(new Error("stage read failed")) });
+          const v: unknown = Reflect.get(x, xp);
+          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(x) : v;
+        } });
+      };
+      const v: unknown = Reflect.get(t, p);
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+    } });
+    await expect(healthSleep(broken, { start: "2026-10-08", end: "2026-10-08" })).rejects.toThrow("stage read failed");
   });
 });
