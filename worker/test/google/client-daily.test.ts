@@ -89,9 +89,10 @@ describe("AC1 reconcile", () => {
     const ok = scripted(token, json({ dataPoints: [p], nextPageToken: "n" }), json({}, 503), json({ dataPoints: [p] }));
     expect(await client(ok.fetch).reconcile("heart-rate", "2026-10-20T21:00:00Z", "2026-10-20T22:00:00Z")).toEqual([p, p]);
     expect(new URL(ok.calls[3]?.url ?? "").searchParams.get("pageToken")).toBe("n");
-    const down = scripted(token, json({ dataPoints: [p], nextPageToken: "n" }), json({}, 503), json({}, 503), json({}, 503), json({}, 503));
+    // The access token is still cached in KV from the call above.
+    const down = scripted(json({ dataPoints: [p], nextPageToken: "n" }), json({}, 503), json({}, 503), json({}, 503), json({}, 503));
     await expect(client(down.fetch).reconcile("heart-rate", "2026-10-20T21:00:00Z", "2026-10-20T22:00:00Z")).rejects.toThrow();
-    expect(down.calls).toHaveLength(6);
+    expect(down.calls).toHaveLength(5);
   });
 });
 
