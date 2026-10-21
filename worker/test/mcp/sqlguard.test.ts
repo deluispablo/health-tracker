@@ -67,7 +67,7 @@ describe("T11 AC2 tokenized keywords and dangerous functions", () => {
   });
 
   it.each(keywords)("does not treat %s in strings, identifiers or comments as a keyword", (word) => {
-    accepts(`SELECT '${word}', "${word}", [${word}], \`${word}\`, ${word.toLowerCase()}_label FROM v_events`);
+    accepts(`SELECT '${word}', "${word}", [${word}], \`${word}\`, label_${word.toLowerCase()} FROM v_events`);
     expect(validateReadOnlyQuery(`SELECT /* ${word}; */ 1 -- ${word}`)).toMatchObject({ ok: true });
   });
 
