@@ -106,6 +106,10 @@ describe("AC1 base columns", () => {
       expect(await snapshot()).toEqual(before);
     }
     await expect(recomputeDailySummary(env.DB, "2025-01-01", "2026-01-01", NOW)).resolves.toBe(366);
+    const span = await env.DB.prepare("SELECT count(*) AS n, min(local_date) AS lo, max(local_date) AS hi FROM daily_summary WHERE local_date BETWEEN '2025-01-01' AND '2026-01-01'").first();
+    expect(span).toEqual({ n: 366, lo: "2025-01-01", hi: "2026-01-01" });
+    await expect(recomputeDailySummary(env.DB, "2028-02-28", "2028-03-01", NOW)).resolves.toBe(3);
+    expect(await row("2028-02-29")).not.toBeNull();
   });
 });
 
@@ -163,17 +167,30 @@ describe("AC1 selection edge cases", () => {
   it("does all the work in one batch with at most 100 bound parameters per statement", async () => {
     const batches: number[] = [];
     const binds: number[] = [];
+    const unwrap = new WeakMap<object, D1PreparedStatement>();
+    const guard = (stmt: D1PreparedStatement): D1PreparedStatement => new Proxy(stmt, { get(t, p) {
+      if (p === "bind") return (...args: unknown[]) => {
+        binds.push(args.length);
+        const raw = t.bind(...args);
+        const wrapped = guard(raw);
+        unwrap.set(wrapped, raw);
+        return wrapped;
+      };
+      if (p === "run" || p === "first" || p === "all" || p === "raw") throw new Error(`unexpected ${p} outside the batch`);
+      const v: unknown = Reflect.get(t, p);
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+    } });
     const spy = new Proxy(env.DB, {
       get(target, prop) {
-        if (prop === "batch") return (stmts: D1PreparedStatement[]) => { batches.push(stmts.length); return target.batch(stmts); };
+        if (prop === "batch") return (stmts: D1PreparedStatement[]) => {
+          batches.push(stmts.length);
+          return target.batch(stmts.map((x) => unwrap.get(x) ?? x));
+        };
         if (prop === "prepare") return (sql: string) => {
-          const stmt = target.prepare(sql);
-          return new Proxy(stmt, { get(t, p) {
-            if (p === "bind") return (...args: unknown[]) => { binds.push(args.length); return t.bind(...args); };
-            if (p === "run" || p === "first" || p === "all" || p === "raw") throw new Error(`unexpected ${p} outside the batch`);
-            const v: unknown = Reflect.get(t, p);
-            return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
-          } });
+          const raw = target.prepare(sql);
+          const wrapped = guard(raw);
+          unwrap.set(wrapped, raw);
+          return wrapped;
         };
         const v: unknown = Reflect.get(target, prop);
         return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
@@ -182,6 +199,22 @@ describe("AC1 selection edge cases", () => {
     await recomputeDailySummary(spy, "2025-01-01", "2026-01-01", NOW);
     expect(batches).toHaveLength(1);
     expect(Math.max(0, ...binds)).toBeLessThanOrEqual(100);
+  });
+
+  it("leaves existing summaries untouched when either phase fails", async () => {
+    await summary(D, { steps: 1, z_rhr: 0.5 });
+    await summary("2026-10-08", { steps: 2 });
+    await daily("steps", D, 10);
+    const before = await snapshot();
+    for (const event of ["INSERT", "UPDATE"]) {
+      await env.DB.prepare(`CREATE TRIGGER fail_p BEFORE ${event} ON daily_summary BEGIN SELECT RAISE(ABORT, 'failed'); END`).run();
+      try {
+        await expect(recomputeDailySummary(env.DB, D, "2026-10-09", NOW)).rejects.toThrow();
+      } finally {
+        await env.DB.prepare("DROP TRIGGER fail_p").run();
+      }
+      expect(await snapshot()).toEqual(before);
+    }
   });
 
   it("rejects and rolls back the base upsert when the z-score update fails", async () => {
@@ -267,6 +300,44 @@ describe("AC2 baselines and readiness", () => {
     const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
     const sd = Math.sqrt(xs.reduce((a, x) => a + (x - mean) ** 2, 0) / (xs.length - 1));
     expect((await row(D))?.z_rhr).toBeCloseTo((65 - mean) / sd, 9);
+  });
+
+  it("computes each metric's baseline from its own population", async () => {
+    for (let i = 1; i <= 9; i++) {
+      await summary(day(D, -i), { rhr: i <= 8 ? 60 + (i % 3) : null, ln_rmssd: i <= 7 ? 3 + i / 10 : null, sleep_min: i <= 6 ? 400 + i : null });
+    }
+    await daily("rhr", D, 65);
+    await daily("hrv_rmssd", D, 25);
+    await sleep("t", `${day(D, -1)}T22:00:00Z`, `${D}T05:00:00Z`, D, { asleep: 380, in_bed: 420 });
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    const r = await row(D);
+    expect(r?.z_rhr).not.toBeNull();
+    expect(r?.z_ln_rmssd).not.toBeNull();
+    expect(r?.z_sleep).toBeNull();
+    expect(r?.readiness_proxy).toBeNull();
+  });
+
+  it("clears z-scores when today stays but the history becomes ineligible", async () => {
+    for (let i = 1; i <= 7; i++) await summary(day(D, -i), { rhr: 60 + i });
+    await daily("rhr", D, 65);
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect((await row(D))?.z_rhr).not.toBeNull();
+    await env.DB.prepare("DELETE FROM daily_summary WHERE local_date = ?").bind(day(D, -1)).run();
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect((await row(D))?.z_rhr).toBeNull();
+    await env.DB.prepare("UPDATE daily_summary SET rhr = 60 WHERE local_date < ?").bind(D).run();
+    await summary(day(D, -1), { rhr: 60 });
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect((await row(D))?.z_rhr).toBeNull();
+  });
+
+  it("replays identical inputs into an identical table", async () => {
+    await history([60, 62, 64, 60, 62, 64, 62], [40, 40, 50, 50, 45, 45, 45], [400, 420, 440, 400, 420, 440, 420]);
+    await daily("rhr", D, 65);
+    await recomputeDailySummary(env.DB, day(D, -10), D, NOW);
+    const first = await snapshot();
+    await recomputeDailySummary(env.DB, day(D, -10), D, NOW);
+    expect(await snapshot()).toEqual(first);
   });
 
   it("gives null z when today's value is missing even with a full history", async () => {
