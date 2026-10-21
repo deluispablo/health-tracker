@@ -187,6 +187,8 @@ describe("T11 BOM, NUL and shell file functions are refused", () => {
     "\uFEFFSELECT 1", "SELECT 1\uFEFF", "SELECT '\uFEFF'", "SELECT 1\u0000", "SELECT 'a\u0000'",
     "SELECT * FROM fsdir('/etc')", "SELECT * FROM zipfile('x.zip')", "SELECT sqlar_uncompress(x, 1) FROM v_events",
     "SELECT sqlar_compress('x')",
+    "SELECT readfile \v('/etc/hosts')", "SELECT readfile \t\v('/etc/hosts')", "SELECT edit \v('a', 'true')",
+    "SELECT * FROM fsdir \v('/etc')", "SELECT\v1", "SELECT 1\u0001", "SELECT 1\u001f", "SELECT 1\u007f",
   ])("refuses %s", refuses);
 });
 
