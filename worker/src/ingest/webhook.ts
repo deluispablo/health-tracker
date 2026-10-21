@@ -71,6 +71,8 @@ function queueRows(body: ArrayBuffer, receivedAt: number): unknown[][] {
 }
 
 export async function handleGoogleWebhook(request: Request, env: WebhookEnv, deps: WebhookDeps): Promise<Response> {
+  if (typeof env.WEBHOOK_SECRET !== "string" || env.WEBHOOK_SECRET.length < 16) return new Response(null, { status: 503 });
+
   // Equal-length digests allow a constant-time comparison even when header lengths differ.
   const [actual, expected] = await Promise.all([
     crypto.subtle.digest("SHA-256", encoder.encode(request.headers.get("authorization") ?? "")),

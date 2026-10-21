@@ -53,17 +53,19 @@ async function parseKeyset(value: unknown): Promise<Map<number, CryptoKey>> {
   if (!object(value) || !Array.isArray(value.key)) throw new TypeError("Invalid keyset");
   const snapshot = new Map<number, CryptoKey>();
   for (const entry of value.key as unknown[]) {
-    if (!object(entry)) throw new TypeError("Invalid keyset entry");
-    if (entry.status !== "ENABLED") continue;
+    if (!object(entry) || entry.status !== "ENABLED") continue;
     const data = entry.keyData;
     if (typeof entry.keyId !== "number" || !Number.isInteger(entry.keyId) || entry.keyId < 0 || entry.keyId > 0xffffffff
       || entry.outputPrefixType !== "TINK" || !object(data) || data.typeUrl !== "type.googleapis.com/google.crypto.tink.EcdsaPublicKey"
       || data.keyMaterialType !== "ASYMMETRIC_PUBLIC" || typeof data.value !== "string" || snapshot.has(entry.keyId)) {
-      throw new TypeError("Invalid signing key");
+      continue;
     }
-    const key = await crypto.subtle.importKey("raw", publicPoint(base64(data.value)), { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
-    snapshot.set(entry.keyId, key);
+    try {
+      const key = await crypto.subtle.importKey("raw", publicPoint(base64(data.value)), { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+      snapshot.set(entry.keyId, key);
+    } catch { /* Unusable key material must not discard other valid entries. */ }
   }
+  if (snapshot.size === 0) throw new TypeError("No usable signing keys");
   return snapshot;
 }
 
@@ -102,7 +104,7 @@ export async function verifyGoogleSignature(
 
   if (!keys.has(keyId)) {
     try {
-      // Replace only after the entire snapshot imports, preserving the old cache on failure.
+      // Replace only after a usable snapshot imports, preserving the old cache on failure.
       keys = await parseKeyset(await keyset());
     } catch { return "unavailable"; }
   }
