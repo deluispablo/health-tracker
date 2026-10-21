@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createGoogleClient, MissingScopeError } from "../../src/google/client";
+import { createGoogleClient } from "../../src/google/client";
 
 interface Call { url: string; method: string; headers: Record<string, string>; body: string }
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -277,14 +277,12 @@ describe("AC4 retries and errors", () => {
     expect(calls).toHaveLength(5);
   });
 
-  it("throws MissingScopeError only for ACCESS_TOKEN_SCOPE_INSUFFICIENT, without retrying", async () => {
+  it("treats every 403 as an ordinary API failure without retrying", async () => {
     const scope = scripted(token(), json({ error: { code: 403, status: "PERMISSION_DENIED", details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }] } }, 403));
-    await expect(client(scope.fetch).watchLastSync()).rejects.toBeInstanceOf(MissingScopeError);
+    await expect(client(scope.fetch).watchLastSync()).rejects.toThrow("Google API 403");
     expect(scope.calls).toHaveLength(2);
     const other = scripted(json({ error: { code: 403, status: "PERMISSION_DENIED", details: [{ reason: "ACCOUNT_NOT_LINKED" }] } }, 403));
-    const err = await client(other.fetch).watchLastSync().catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(Error);
-    expect(err).not.toBeInstanceOf(MissingScopeError);
+    await expect(client(other.fetch).watchLastSync()).rejects.toThrow("Google API 403");
     expect(other.calls).toHaveLength(1);
   });
 

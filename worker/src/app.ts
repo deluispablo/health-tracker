@@ -37,6 +37,7 @@ export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps):
   if (cron === "30 4 * * *") {
     await enqueueReconcile(env.DB, now);
     await env.DB.prepare("DELETE FROM oauth_state WHERE expires_at < ?").bind(now).run();
+    await env.DB.prepare("DELETE FROM audit_log WHERE ts < ?").bind(now - 90 * 86400).run();
     return;
   }
   if (cron !== "*/5 * * * *") throw new Error(`Unknown cron: ${cron}`);

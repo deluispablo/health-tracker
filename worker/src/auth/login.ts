@@ -17,12 +17,12 @@ Access will be sent to <strong>${escape(details.redirectHost)}</strong>.</p>
 <button name="decision" value="allow">Allow</button> <button name="decision" value="deny">Deny</button></form></html>`;
 }
 
-function allowedEmail(token: unknown, env: ConnectorEnv, now: number): string | null {
+export function allowedEmail(token: unknown, env: Pick<ConnectorEnv, "GOOGLE_CLIENT_ID" | "ALLOWED_EMAIL">, now: number): string | null {
   if (typeof token !== "string") return null;
   const parts = token.split(".");
   if (parts.length !== 3 || !/^[A-Za-z0-9_-]+$/.test(parts[1])) return null;
   try {
-    // As in Google connect, the ID token comes directly from Google's TLS token endpoint.
+    // The ID token comes directly from Google's TLS token endpoint (OIDC §3.1.3.7).
     const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const bytes = Uint8Array.from(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, "=")), (c) => c.charCodeAt(0));
     const claims: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes));

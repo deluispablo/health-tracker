@@ -39,7 +39,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await env.DB.batch(["rollup_dirty", "sync_pending", "sync_state", "metric_minute", "metric_daily", "daily_summary", "tracker_daily", "event", "secret_blob", "oauth_state"]
+  await env.DB.batch(["rollup_dirty", "sync_pending", "sync_state", "metric_minute", "metric_daily", "daily_summary", "tracker_daily", "event", "secret_blob", "oauth_state", "audit_log"]
     .map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
   const { keys } = await env.OAUTH_KV.list();
   await Promise.all(keys.map((k) => env.OAUTH_KV.delete(k.name)));
@@ -238,6 +238,14 @@ describe("T10e AC1/AC2 watch sync in the five-minute cron", () => {
 });
 
 describe("AC2 daily cron", () => {
+  it("T30 AC1 prunes audit rows older than 90 days, keeping the cutoff and newer rows", async () => {
+    await env.DB.prepare("INSERT INTO audit_log (ts, kind) VALUES (?, 'auth'), (?, 'tool'), (?, 'tool')")
+      .bind(NOW - 91 * 86400, NOW - 90 * 86400, NOW - 89 * 86400).run();
+    await handleScheduled("30 4 * * *", appEnv(), deps(google().fetch));
+    expect((await env.DB.prepare("SELECT ts FROM audit_log ORDER BY ts").all()).results)
+      .toEqual([{ ts: NOW - 90 * 86400 }, { ts: NOW - 89 * 86400 }]);
+  });
+
   it("enqueues the 48-hour reconcile, purges expired OAuth states and does not call Google", async () => {
     await env.DB.prepare("INSERT INTO oauth_state (state, verifier, expires_at) VALUES ('old', 'v', ?), ('edge', 'v', ?), ('live', 'v', ?)")
       .bind(NOW - 1, NOW, NOW + 600).run();

@@ -4,13 +4,6 @@ const KV_KEY = "google_access_token";
 const MAX_RETRIES = 3;
 const MAX_ROLLUP_MS = 14 * 24 * 3600 * 1000;
 
-export class MissingScopeError extends Error {
-  constructor() {
-    super("Google access token lacks a required scope");
-    this.name = "MissingScopeError";
-  }
-}
-
 export interface GoogleClientOptions {
   fetch: typeof fetch;
   kv: KVNamespace;
@@ -105,10 +98,6 @@ export function createGoogleClient(o: GoogleClientOptions) {
     const res = await send(url, { ...init, headers });
     if (res.ok) return res.json<T>();
     if (res.status === 401) await o.kv.delete(KV_KEY);
-    if (res.status === 403) {
-      const body = await res.json<{ error?: { details?: { reason?: string }[] } }>().catch(() => null);
-      if (body?.error?.details?.some((d) => d.reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT")) throw new MissingScopeError();
-    }
     throw new Error(`Google API ${String(res.status)}`);
   }
 

@@ -1,5 +1,6 @@
 import { decryptSecret, encryptSecret } from "../lib/crypto";
 import { upsertRows, upsertStatements } from "../lib/d1";
+import { allowedEmail } from "./login";
 
 interface GoogleConnectEnv {
   DB: D1Database;
@@ -19,22 +20,6 @@ function base64url(bytes: Uint8Array): string {
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function allowedIdentity(token: unknown, env: GoogleConnectEnv, now: number): boolean {
-  if (typeof token !== "string") return false;
-  const parts = token.split(".");
-  if (parts.length !== 3 || !/^[A-Za-z0-9_-]+$/.test(parts[1])) return false;
-  try {
-    // The ID token comes directly from Google's TLS token endpoint (OIDC §3.1.3.7).
-    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const bytes = Uint8Array.from(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, "=")), (c) => c.charCodeAt(0));
-    const claims: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes));
-    return object(claims) && (claims.iss === "https://accounts.google.com" || claims.iss === "accounts.google.com")
-      && claims.aud === env.GOOGLE_CLIENT_ID && typeof claims.exp === "number" && claims.exp > now
-      && claims.email_verified === true && typeof claims.email === "string"
-      && claims.email.toLowerCase() === env.ALLOWED_EMAIL.toLowerCase();
-  } catch { return false; }
 }
 
 export async function startGoogleConnect(request: Request, env: GoogleConnectEnv, deps: GoogleConnectDeps = {}): Promise<Response> {
@@ -86,7 +71,7 @@ export async function finishGoogleConnect(request: Request, env: GoogleConnectEn
   if (!object(tokens) || typeof tokens.refresh_token !== "string" || !tokens.refresh_token) {
     return new Response("Invalid token response", { status: 400 });
   }
-  if (!allowedIdentity(tokens.id_token, env, now)) return new Response("Account forbidden", { status: 403 });
+  if (allowedEmail(tokens.id_token, env, now) === null) return new Response("Account forbidden", { status: 403 });
   const scopes = typeof tokens.scope === "string" ? tokens.scope.split(" ") : [];
   if (!SCOPES.every((scope) => scopes.includes(scope))) return new Response("Missing scopes", { status: 400 });
   try {
