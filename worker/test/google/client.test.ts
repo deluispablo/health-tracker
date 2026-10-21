@@ -329,3 +329,45 @@ describe("AC5 paired devices", () => {
     expect(await client(fetch).watchLastSync()).toBeNull();
   });
 });
+
+
+describe("T36 AC1 hourly steps", () => {
+  const start = "2026-10-01T00:00:00Z";
+  const end = "2026-10-02T00:00:00Z";
+  // Wire shape: https://developers.google.com/health/aggregate-data (steps rollUp).
+  it("posts 3600s windows and parses countSum, including strings and zero without an offset", async () => {
+    const point = (countSum: unknown, startTime: unknown = start) => ({ startTime, steps: { countSum } });
+    const { fetch, calls } = scripted(token(), json({ rollupDataPoints: [
+      point("72"), point(0, "2026-10-01T01:00:00Z"), point(-1), point(1.5), point("Infinity"),
+      point(""), point(null), point(true), point("no"), point(2, "2026-02-30T00:00:00Z"),
+      point(2, "garbage"), point(2, null), {}, null,
+    ] }));
+    expect(await client(fetch).rollUpSteps(start, end)).toEqual([
+      { ts: Date.parse(start) / 1000, steps: 72 }, { ts: Date.parse(start) / 1000 + 3600, steps: 0 },
+    ]);
+    expect(calls[1]).toMatchObject({ url: `${API}/dataTypes/steps/dataPoints:rollUp`, method: "POST",
+      headers: expect.objectContaining({ authorization: "Bearer at-1", "content-type": "application/json" }) as unknown });
+    expect(JSON.parse(calls[1]?.body ?? "")).toEqual({ range: { startTime: start, endTime: end }, windowSize: "3600s" });
+  });
+
+  it("validates the range before fetching, allowing exactly 14 elapsed days", async () => {
+    const { fetch, calls } = scripted(token(), json({}));
+    const c = client(fetch);
+    for (const [a, b] of [[start, start], [end, start], ["bad", end], [start, "2026-10-15T00:00:00.001Z"],
+      [start, "2026-10-15T00:00:00.000001Z"]]) {
+      await expect(c.rollUpSteps(a, b)).rejects.toThrow(RangeError);
+    }
+    expect(calls).toHaveLength(0);
+    expect(await c.rollUpSteps(start, "2026-10-15T00:00:00Z")).toEqual([]);
+  });
+
+  it("retries the same request and rejects unexpected paging and API errors", async () => {
+    const sleeps: number[] = [];
+    const { fetch, calls } = scripted(token(), json({}, 503), json({ rollupDataPoints: [], nextPageToken: "more" }), json({}, 403));
+    const c = client(fetch, sleeps);
+    await expect(c.rollUpSteps(start, end)).rejects.toThrow(/paging/i);
+    expect(calls[1]?.body).toBe(calls[2]?.body);
+    expect(sleeps).toEqual([500]);
+    await expect(c.rollUpSteps(start, end)).rejects.toThrow("Google API 403");
+  });
+});

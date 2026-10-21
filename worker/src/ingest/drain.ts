@@ -30,6 +30,19 @@ function localDate(ts: number, formatter: Intl.DateTimeFormat): string {
   return ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
 }
 
+function offsetMinutes(ts: number, formatter: Intl.DateTimeFormat): number {
+  const offset = formatter.formatToParts(ts * 1000).find((part) => part.type === "timeZoneName")
+    ?.value.match(/^GMT([+-])(\d{2}):(\d{2})$/);
+  return offset ? (offset[1] === "+" ? 1 : -1) * (Number(offset[2]) * 60 + Number(offset[3])) : 0;
+}
+
+function localMidnight(date: string, formatter: Intl.DateTimeFormat): number {
+  const civil = midnight(date);
+  let ts = civil;
+  for (let i = 0; i < 3; i++) ts = civil - offsetMinutes(ts, formatter) * 60;
+  return ts;
+}
+
 const midnight = (date: string): number => Date.parse(`${date}T00:00:00Z`) / 1000;
 const addDays = (date: string, days: number): string => new Date((midnight(date) + days * 86400) * 1000).toISOString().slice(0, 10);
 
@@ -88,7 +101,7 @@ function dirtyStatements(db: D1Database, first: string, last: string, sessions?:
 }
 
 export async function drainSyncPending(
-  env: DrainEnv, client: Pick<ReturnType<typeof createGoogleClient>, "rollUpHeartRate" | "dailyRollUp" | "listDaily" | "reconcile">,
+  env: DrainEnv, client: Pick<ReturnType<typeof createGoogleClient>, "rollUpHeartRate" | "rollUpSteps" | "dailyRollUp" | "listDaily" | "reconcile">,
   opts: { now?: () => number } = {},
 ): Promise<{ processed: number; failed: number }> {
   const db = env.DB;
@@ -236,6 +249,30 @@ export async function drainSyncPending(
           });
         }
 
+        if (type === "steps") {
+          const formatter = dateTimeFormat("en-US", { timeZone: env.USER_TZ, timeZoneName: "longOffset" });
+          for (let date = first; date < end;) {
+            // Thirteen local dates stay below 14 elapsed days even over a fall-back.
+            const next = addDays(date, 13) < end ? addDays(date, 13) : end;
+            const startTs = localMidnight(date, formatter);
+            const endTs = localMidnight(next, formatter);
+            const hours = await client.rollUpSteps(new Date(startTs * 1000).toISOString(), new Date(endTs * 1000).toISOString());
+            const rows = hours.filter((point) => point.ts >= startTs && point.ts < endTs).map((point) =>
+              [point.ts, offsetMinutes(point.ts, formatter), point.steps]);
+            // One JSON binding keeps a full 31-date slice within the D1 query budget.
+            statements.push(db.prepare("DELETE FROM metric_minute WHERE metric = 'steps_h' AND source = 'gh' AND ts >= ? AND ts < ?")
+              .bind(startTs, endTs), db.prepare(`INSERT INTO metric_minute
+                (metric, ts, tz_offset_min, value, vmin, vmax, n, source)
+                SELECT 'steps_h', json_extract(value, '$[0]'), json_extract(value, '$[1]'),
+                  json_extract(value, '$[2]'), json_extract(value, '$[2]'), json_extract(value, '$[2]'), NULL, 'gh'
+                FROM json_each(?) WHERE true
+                ON CONFLICT(metric, source, ts) DO UPDATE SET tz_offset_min = excluded.tz_offset_min,
+                  value = excluded.value, vmin = excluded.vmin, vmax = excluded.vmax, n = excluded.n`)
+              .bind(JSON.stringify(rows)));
+            date = next;
+          }
+        }
+
         const metric = type === "steps" ? "steps" : type === "active-zone-minutes" ? "azm" : listed.metric;
         const now = opts.now?.() ?? Math.floor(Date.now() / 1000);
         const rows = points.flatMap((point) => {
@@ -267,9 +304,7 @@ export async function drainSyncPending(
 
         const formatter = dateTimeFormat("en-US", { timeZone: env.USER_TZ, timeZoneName: "longOffset" });
         const rows = points.map((point) => {
-          const offset = formatter.formatToParts(point.ts * 1000).find((part) => part.type === "timeZoneName")
-            ?.value.match(/^GMT([+-])(\d{2}):(\d{2})$/);
-          const offsetMin = offset ? (offset[1] === "+" ? 1 : -1) * (Number(offset[2]) * 60 + Number(offset[3])) : 0;
+          const offsetMin = offsetMinutes(point.ts, formatter);
           return ["hr", point.ts, offsetMin, point.avg, point.min, point.max, null, "gh"];
         });
         statements.push(...dirtyStatements(db, utcDate(start - 14 * 3600), utcDate(end + 14 * 3600)),

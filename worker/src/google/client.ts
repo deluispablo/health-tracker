@@ -14,6 +14,7 @@ export interface GoogleClientOptions {
 }
 
 export interface RollUpPoint { ts: number; avg: number; min: number; max: number }
+export interface StepsRollUpPoint { ts: number; steps: number }
 export interface DailyRollUpPoint { date: string; value: unknown }
 
 interface Device { deviceVersion?: string; lastSyncTime?: string }
@@ -172,6 +173,21 @@ export function createGoogleClient(o: GoogleClientOptions) {
         ts: Date.parse(p?.startTime ?? "") / 1000,
         avg: p?.heartRate?.beatsPerMinuteAvg, min: p?.heartRate?.beatsPerMinuteMin, max: p?.heartRate?.beatsPerMinuteMax,
       })).filter((point): point is RollUpPoint => [point.ts, point.avg, point.min, point.max].every(Number.isFinite));
+    },
+
+    async rollUpSteps(start: string, end: string): Promise<StepsRollUpPoint[]> {
+      const span = parseInstant(end) - parseInstant(start);
+      if (!(span > 0 && span <= MAX_ROLLUP_MS)) throw new RangeError("rollUp range must be valid, end after start, at most 14 days");
+      const res = await api<{ rollupDataPoints?: ({ startTime?: string; steps?: { countSum?: unknown } | null } | null)[];
+        nextPageToken?: string }>(`${API}/dataTypes/steps/dataPoints:rollUp`,
+        { method: "POST", body: JSON.stringify({ range: { startTime: start, endTime: end }, windowSize: "3600s" }) });
+      if (res.nextPageToken) throw new Error("Unexpected steps rollUp paging");
+      return (res.rollupDataPoints ?? []).flatMap((p) => {
+        const count = p?.steps?.countSum;
+        const steps = typeof count === "number" || (typeof count === "string" && count.trim() !== "") ? Number(count) : NaN;
+        const ts = typeof p?.startTime === "string" ? parseInstant(p.startTime) / 1000 : NaN;
+        return Number.isFinite(ts) && Number.isInteger(steps) && steps >= 0 ? [{ ts, steps }] : [];
+      });
     },
 
     /** lastSyncTime (as sent) of the most recently synced watch, or null. */

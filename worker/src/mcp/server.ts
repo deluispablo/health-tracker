@@ -62,11 +62,11 @@ export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionCon
     }, annotations,
   }, (args) => call("health_workouts", args, () => healthWorkouts(env.DB, args)));
   server.registerTool("health_intraday", {
-    description: "Read intraday heart rate at 1m, 5m or 1h resolution, using local minute samples in [from, to). At 1m the window may cover at most 3 hours (180 minutes); pass from and to, or use 5m for a whole day. Omitted from/to default to 00:00/24:00 respectively. Partial 5m/1h buckets keep their canonical bucket start, which may precede from; coverage counts only samples inside the window.",
+    description: "Read intraday heart rate at 1m, 5m or 1h resolution, using local minute samples in [from, to). At 1m the window may cover at most 3 hours (180 minutes); pass from and to, or use 5m for a whole day. Omitted from/to default to 00:00/24:00 respectively. Partial 5m/1h buckets keep their canonical bucket start, which may precede from; coverage counts only samples inside the window. For steps, use 1h only: include each stored hour when its local start label is in [from, to); points use HH:MM labels and coverage.hours_with_data counts windows.",
     inputSchema: {
-      metric: z.string().describe("Metric name: hr (heart rate)."),
+      metric: z.string().describe("Metric name: hr (heart rate) or steps (hourly step counts)."),
       date: z.string().describe("Date in YYYY-MM-DD format, between 2000-01-01 and 2099-12-31 inclusive."),
-      resolution: z.string().describe("Resolution: 1m (at most 3 hours), 5m or 1h."),
+      resolution: z.string().describe("Resolution for hr: 1m (at most 3 hours), 5m or 1h; steps supports only 1h."),
       from: z.string().optional().describe("Inclusive local HH:MM, default 00:00; must be before to."),
       to: z.string().optional().describe("Exclusive local HH:MM, default and maximum 24:00; must be after from."),
     }, annotations,

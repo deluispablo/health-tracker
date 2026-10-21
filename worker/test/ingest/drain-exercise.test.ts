@@ -22,6 +22,7 @@ function workout(id: unknown = `${ID}probe`, fields: Record<string, unknown> = {
 function fakeClient(reply: unknown[] | Error = []) {
   const calls: { type: string; start: string; end: string }[] = [];
   return { calls, client: {
+    rollUpSteps: () => Promise.resolve([]),
     rollUpHeartRate: () => Promise.reject(new Error("unexpected rollUpHeartRate")),
     dailyRollUp: () => Promise.reject(new Error("unexpected dailyRollUp")),
     listDaily: () => Promise.reject(new Error("unexpected listDaily")),

@@ -17,6 +17,7 @@ function client(value: number, failingType = "", failure?: Failure): Parameters<
       ? new Proxy(point, { get() { throw new Error("mapping failed"); } }) : point;
   }
   return {
+    rollUpSteps: () => Promise.resolve([]),
     rollUpHeartRate: () => Promise.resolve([answer("heart-rate", { ts: START, avg: value, min: value, max: value })]),
     dailyRollUp: () => Promise.resolve([answer("steps", { date: "2026-10-06", value: { countSum: value } })]),
     listDaily: () => Promise.resolve([answer("daily-resting-heart-rate", {

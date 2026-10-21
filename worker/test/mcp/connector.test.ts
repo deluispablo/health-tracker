@@ -463,6 +463,8 @@ describe("AC3 stateless read tools and audit", () => {
     }
     for (const column of DAILY_COLUMNS) expect(describe("health_daily", "metrics")).toContain(column);
     expect(describe("health_intraday", "metric")).toMatch(/\bhr\b/);
+    expect(describe("health_intraday", "metric")).toMatch(/\bsteps\b/);
+    expect(describe("health_intraday", "resolution")).toMatch(/steps.*1h/i);
     expect(describe("health_intraday", "date")).toContain("2000-01-01");
     expect(describe("health_intraday", "date")).toContain("2099-12-31");
     for (const r of ["1m", "5m", "1h"]) expect(describe("health_intraday", "resolution")).toContain(r);
@@ -536,7 +538,7 @@ describe("AC3 stateless read tools and audit", () => {
     ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["nope"] }, `unknown metric "nope"; valid: ${DAILY_COLUMNS.join(", ")}`],
     ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: [] }, "metrics must not be empty"],
     ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["rhr", "rhr"] }, 'metric "rhr" is repeated'],
-    ["health_intraday", { metric: "steps", date: "2026-10-20", resolution: "1m" }, "metric must be hr"],
+    ["health_intraday", { metric: "steps", date: "2026-10-20", resolution: "1m" }, "steps supports only 1h resolution"],
     ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "2m" }, "resolution must be 1m, 5m or 1h"],
     ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "1m" }, "1m resolution covers at most 3 hours: pass from and to, or use 5m"],
     ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "5m", from: "09:00", to: "08:00" }, "from and to must be HH:MM with from before to"],
@@ -1177,6 +1179,7 @@ describe("T26 AC4 output limits through the authenticated connector", () => {
     const msg = await rpc(token, "tools/list", {});
     const tool = msg.result?.tools?.find((t) => t.name === "health_intraday");
     expect(tool?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+    expect(tool?.description).toMatch(/steps.*local start.*\[from, to\)/i);
     expect(tool?.inputSchema).toMatchObject({ required: ["metric", "date", "resolution"],
       properties: { from: { type: "string" }, to: { type: "string" } } });
     const schema = tool?.inputSchema as { properties: Record<string, { description: string }> };

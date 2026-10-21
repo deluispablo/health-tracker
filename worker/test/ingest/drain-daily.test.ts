@@ -16,6 +16,7 @@ function fakeClient(replies: { steps?: Reply; rhr?: Reply } = {}) {
   return {
     calls,
     client: {
+      rollUpSteps: () => Promise.resolve([]),
       rollUpHeartRate: () => Promise.reject(new Error("unexpected rollUpHeartRate")),
       dailyRollUp(type: string, start: string, end: string) {
         calls.push({ method: "dailyRollUp", type, start, end });

@@ -15,6 +15,7 @@ function fakeClient(lists: Record<string, unknown[] | Error> = {}, rollups: Reco
   return {
     calls,
     client: {
+      rollUpSteps: () => Promise.resolve([]),
       rollUpHeartRate: () => Promise.reject(new Error("unexpected rollUpHeartRate")),
       reconcile: () => Promise.reject(new Error("unexpected reconcile")),
       dailyRollUp(type: string, start: string, end: string) {

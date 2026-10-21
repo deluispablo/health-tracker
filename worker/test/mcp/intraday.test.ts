@@ -211,3 +211,38 @@ describe("T26 AC1 local intraday windows", () => {
     expect(seen.sql).toEqual([]);
   });
 });
+
+
+describe("T36 AC3 hourly steps", () => {
+  const args = { metric: "steps", date: "2026-10-25", resolution: "1h" } as const;
+  it("reads gh steps_h only, keeps repeated hours in UTC order and counts windows", async () => {
+    await minute("2026-10-25T00:00:00Z", 0, 0, 0, 120, "steps_h");
+    await minute("2026-10-25T01:00:00Z", 72, 72, 72, 60, "steps_h");
+    await minute("2026-10-25T02:00:00Z", 99, null, null, 60, "steps_h", "manual");
+    await minute("2026-10-25T02:00:00Z", 99, null, null, 60, "steps");
+    await minute("2026-10-25T02:00:00Z", 99);
+    expect(await healthIntraday(env.DB, args)).toEqual({ ...args, unit: "count",
+      points: [["02:00", 0, 0, 0], ["02:00", 72, 72, 72]], coverage: { hours_with_data: 2 } });
+    expect(await healthIntraday(env.DB, { ...args, date: "2026-10-26" }))
+      .toMatchObject({ points: [], coverage: { hours_with_data: 0 } });
+  });
+
+  it("uses exact local window starts in half-hour zones and excludes partial-hour windows", async () => {
+    await minute("2026-10-25T02:30:00Z", 12, 12, 12, 330, "steps_h");
+    await minute("2026-10-25T03:30:00Z", 20, 20, 20, 330, "steps_h");
+    await minute("2026-10-25T04:00:00Z", 30, 30, 30, 330, "steps_h");
+    expect((await healthIntraday(env.DB, { ...args, from: "08:00", to: "09:00" })).points).toEqual([["08:00", 12, 12, 12]]);
+    expect((await healthIntraday(env.DB, { ...args, from: "08:30", to: "08:45" })).points).toEqual([]);
+    expect((await healthIntraday(env.DB, { ...args, from: "09:00" })).points)
+      .toEqual([["09:00", 20, 20, 20], ["09:30", 30, 30, 30]]);
+  });
+
+  it("rejects other resolutions before any read", async () => {
+    const [db, seen] = guarded();
+    for (const resolution of ["1m", "5m", "2m"]) {
+      await expect(healthIntraday(db, { ...args, resolution: resolution as "1h" }))
+        .rejects.toThrow(new RangeError("steps supports only 1h resolution"));
+    }
+    expect(seen.sql).toEqual([]);
+  });
+});

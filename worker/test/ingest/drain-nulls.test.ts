@@ -11,6 +11,7 @@ const date = (d: string) => { const [y, m, dd] = d.split("-").map(Number); retur
 
 function fakeClient(lists: Record<string, unknown[]> = {}, rollups: Record<string, unknown[]> = {}, sleep: unknown[] = []) {
   return {
+    rollUpSteps: () => Promise.resolve([]),
     rollUpHeartRate: () => Promise.reject(new Error("unexpected rollUpHeartRate")),
     reconcile: () => Promise.resolve(sleep),
     dailyRollUp: (type: string) => Promise.resolve((rollups[type] ?? []) as { date: string; value: unknown }[]),

@@ -96,7 +96,10 @@ describe("T31 idle cron", () => {
       return Promise.resolve(Response.json({ rollupDataPoints: [], dataPoints: [] }));
     };
     await handleScheduled("*/5 * * * *", appEnv(), { ...deps(fetch), now: () => NOW + 300 });
-    expect(requests.map((path) => /\/dataTypes\/([^/]+)/.exec(path)?.[1])).toEqual(types);
+    expect(requests.map((path) => /\/dataTypes\/([^/]+)/.exec(path)?.[1])).toEqual([types[0], "steps", ...types.slice(1)]);
+    expect(requests.filter((path) => path.includes("/steps/"))).toEqual([
+      "/v4/users/me/dataTypes/steps/dataPoints:dailyRollUp", "/v4/users/me/dataTypes/steps/dataPoints:rollUp",
+    ]);
     expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first("n")).toBe(0);
     expect(await env.DB.prepare("SELECT count(*) AS n FROM daily_summary").first("n")).toBe(2);
   });

@@ -59,7 +59,7 @@ describe("AC1 schema", () => {
     await expect(env.DB.prepare("INSERT INTO sleep_stage(session_id, start_ts, end_ts, stage) VALUES ('sp',3,4,'NAP')").run()).rejects.toThrow();
   });
 
-  it("seeds the nine metrics with unit and aggregation", async () => {
+  it("seeds the ten metrics with unit and aggregation", async () => {
     const r = await env.DB.prepare("SELECT metric, unit, agg FROM metric_def ORDER BY metric").all();
     expect(r.results).toEqual([
       { metric: "azm", unit: "min", agg: "sum" },
@@ -70,6 +70,7 @@ describe("AC1 schema", () => {
       { metric: "skin_temp_dev", unit: "°C", agg: "last" },
       { metric: "spo2", unit: "%", agg: "avg" },
       { metric: "steps", unit: "count", agg: "sum" },
+      { metric: "steps_h", unit: "count", agg: "sum" },
       { metric: "vo2max", unit: "ml/kg/min", agg: "last" },
     ]);
   });

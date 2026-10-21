@@ -18,6 +18,7 @@ const deps = (now = NOW) => ({ now: () => now, sleep: () => Promise.resolve(),
   fetch: () => Promise.reject(new Error("unexpected Google call")) });
 const tick = (DB = env.DB, now = NOW) => handleScheduled("*/5 * * * *", appEnv(DB), deps(now));
 const emptyClient = (): Parameters<typeof drainSyncPending>[1] => ({
+  rollUpSteps: () => Promise.resolve([]),
   rollUpHeartRate: () => Promise.resolve([]), dailyRollUp: () => Promise.resolve([]),
   listDaily: () => Promise.resolve([]), reconcile: () => Promise.resolve([]),
 });

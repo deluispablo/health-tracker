@@ -15,6 +15,7 @@ function fakeClient(points: RollUpPoint[] | Error = []) {
   return {
     calls,
     client: {
+      rollUpSteps: () => Promise.resolve([]),
       rollUpHeartRate(start: string, end: string, windowSec: number): Promise<RollUpPoint[]> {
         calls.push({ start, end, windowSec });
         return points instanceof Error ? Promise.reject(points) : Promise.resolve(points);
@@ -101,6 +102,7 @@ describe("T31 heads snapshot", () => {
     const order: string[] = [];
     const answer = (type: string) => { order.push(type); return Promise.resolve([]); };
     const client = {
+      rollUpSteps: () => Promise.resolve([]),
       rollUpHeartRate: () => answer("heart-rate"), dailyRollUp: answer, listDaily: answer, reconcile: answer,
     };
     const { db, reads } = countingDb();
@@ -121,6 +123,7 @@ describe("T31 heads snapshot", () => {
     await queue("steps", start, start + 60);
     const order: string[] = [];
     const client = {
+      rollUpSteps: () => Promise.resolve([]),
       async rollUpHeartRate() {
         order.push("heart-rate");
         await env.DB.prepare("UPDATE sync_pending SET received_at = ? WHERE data_type = 'steps'").bind(NOW).run();
@@ -241,6 +244,7 @@ describe("AC2 one 60-minute window per invocation", () => {
     const t = at("2026-10-20T21:00:00Z");
     await queue("heart-rate", t, t + 60);
     const client = {
+      rollUpSteps: () => Promise.resolve([]),
       async rollUpHeartRate(): Promise<RollUpPoint[]> {
         await env.DB.prepare("UPDATE sync_pending SET received_at = ?").bind(NOW).run();
         return [{ ts: t, avg: 61, min: 61, max: 61 }];
