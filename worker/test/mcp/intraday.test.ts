@@ -9,9 +9,9 @@ async function minute(iso: string, value: number, vmin: number | null = null, vm
   await env.DB.prepare(`INSERT INTO metric_minute (metric, ts, tz_offset_min, value, vmin, vmax, n, source)
     VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`).bind(metric, at(iso), tz, value, vmin, vmax, src).run();
 }
-interface Seen { sql: string[]; binds: unknown[][]; writes: string[] }
+interface Seen { sql: string[]; binds: unknown[][]; writes: string[]; calls: string[] }
 function guarded(): [D1Database, Seen] {
-  const seen: Seen = { sql: [], binds: [], writes: [] };
+  const seen: Seen = { sql: [], binds: [], writes: [], calls: [] };
   const wrap = <T extends object>(o: T, on: (p: string | symbol) => unknown): T => new Proxy(o, { get(t, p) {
     const r = on(p);
     if (r !== undefined) return r;
@@ -20,7 +20,10 @@ function guarded(): [D1Database, Seen] {
   } });
   const db = wrap(env.DB, (p) => {
     if (p === "prepare") return (q: string) => { seen.sql.push(q); return wrap(env.DB.prepare(q), (sp) => sp === "bind"
-      ? (...a: unknown[]) => { seen.binds.push(a); return env.DB.prepare(q).bind(...a); } : undefined); };
+      ? (...a: unknown[]) => { seen.binds.push(a); return wrap(env.DB.prepare(q).bind(...a), (bp) => {
+        if (typeof bp === "string" && ["all", "raw", "first", "run"].includes(bp)) seen.calls.push(bp);
+        return undefined;
+      }); } : undefined); };
     if (p === "exec" || p === "dump" || p === "batch") return () => { seen.writes.push(p); throw new Error("unexpected"); };
     return undefined;
   });
@@ -75,6 +78,36 @@ describe("AC3 health_intraday", () => {
       .toEqual([["2026-10-25T02:00", 60, 60, 60], ["2026-10-25T02:00", 66, 66, 66]]);
   });
 
+  it("bounds the local day across ±14 h offsets, including exact local midnights", async () => {
+    await minute("2026-10-06T09:59:00Z", 1, null, null, 840);
+    await minute("2026-10-06T10:00:00Z", 2, null, null, 840);
+    await minute("2026-10-08T11:59:00Z", 3, null, null, -720);
+    await minute("2026-10-08T12:00:00Z", 4, null, null, -720);
+    expect((await healthIntraday(env.DB, { metric: "hr", date: "2026-10-07", resolution: "1m" })).points)
+      .toEqual([["2026-10-07T00:00", 2, 2, 2], ["2026-10-07T23:59", 3, 3, 3]]);
+  });
+
+  it("orders buckets by their first UTC time when DST fall-back labels run backwards", async () => {
+    await minute("2026-10-25T00:59:00Z", 61, null, null, 120);
+    await minute("2026-10-25T01:00:00Z", 62, null, null, 60);
+    expect((await healthIntraday(env.DB, { metric: "hr", date: "2026-10-25", resolution: "1m" })).points)
+      .toEqual([["2026-10-25T02:59", 61, 61, 61], ["2026-10-25T02:00", 62, 62, 62]]);
+  });
+
+  it("averages stored values unweighted and takes each extreme independently, as stored", async () => {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO metric_minute VALUES ('hr', ?, 120, 60.25, 70, NULL, 1, 'gh')").bind(at("2026-10-07T06:00:00Z")),
+      env.DB.prepare("INSERT INTO metric_minute VALUES ('hr', ?, 120, 0, NULL, 5, 50, 'gh')").bind(at("2026-10-07T06:01:00Z")),
+      env.DB.prepare("INSERT INTO metric_minute VALUES ('hr', ?, 120, 80.5, 90, 79, 7, 'gh')").bind(at("2026-10-07T06:02:00Z")),
+    ]);
+    const args = { metric: "hr", date: "2026-10-07", resolution: "5m" } as const;
+    expect((await healthIntraday(env.DB, args)).points).toEqual([["2026-10-07T08:00", 46.9, 0, 79]]);
+    await env.DB.prepare("UPDATE metric_minute SET value = 100, vmin = NULL, vmax = NULL WHERE ts = ?").bind(at("2026-10-07T06:01:00Z")).run();
+    expect((await healthIntraday(env.DB, args)).points).toEqual([["2026-10-07T08:00", 80.3, 70, 100]]);
+    await env.DB.prepare("DELETE FROM metric_minute").run();
+    expect((await healthIntraday(env.DB, args)).points).toEqual([]);
+  });
+
   it("returns no points for a day without data", async () => {
     await minute("2026-10-07T06:00:00Z", 60);
     expect(await healthIntraday(env.DB, { metric: "hr", date: "2026-10-09", resolution: "5m" }))
@@ -86,7 +119,8 @@ describe("AC3 health_intraday", () => {
     const bad = [{ metric: "steps", date: "2026-10-07", resolution: "1m" }, { metric: "HR", date: "2026-10-07", resolution: "1m" },
       { metric: "hr", date: "2026-02-30", resolution: "1m" }, { metric: "hr", date: "2026-10-7", resolution: "1m" },
       { metric: "hr", date: "", resolution: "5m" }, { metric: "hr", date: "2026-10-07", resolution: "2m" },
-      { metric: "hr", date: "2026-10-07", resolution: "" }];
+      { metric: "hr", date: "2026-10-07", resolution: "" }, { metric: "hr", date: "1969-12-31", resolution: "1m" },
+      { metric: "hr", date: "1999-12-31", resolution: "1m" }, { metric: "hr", date: "2100-01-01", resolution: "1m" }];
     for (const args of bad) await expect(healthIntraday(db, args as Parameters<typeof healthIntraday>[1])).rejects.toThrow(RangeError);
     expect(seen.sql).toEqual([]);
     await expect(healthIntraday(env.DB, { metric: "hr", date: "2028-02-29", resolution: "1h" })).resolves.toMatchObject({ points: [] });
@@ -99,6 +133,10 @@ describe("AC3 health_intraday", () => {
     expect(seen.sql).toHaveLength(1);
     expect(seen.sql[0]).toMatch(/^\s*SELECT\b/i);
     expect(seen.sql[0]).not.toMatch(/2026|'hr'|1791/);
+    expect(seen.sql[0]).toMatch(/\bGROUP\s+BY\b/i);
+    expect(seen.sql[0]).toMatch(/\bts\s*>=\s*\?/i);
+    expect(seen.sql[0]).toMatch(/\bts\s*<\s*\?/i);
+    expect(seen.calls).toEqual(["all"]);
     const lower = at("2026-10-07T00:00:00Z") - 14 * 3600;
     const upper = at("2026-10-07T00:00:00Z") + 38 * 3600;
     expect(seen.binds[0]).toEqual(expect.arrayContaining(["hr", lower, upper, "2026-10-07"]));
