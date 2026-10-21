@@ -1,0 +1,376 @@
+<title>Hoy</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  :root {
+    color-scheme: light; --bg: #f3f6f8; --panel: #ffffff; --ink: #182d39; --muted: #536975;
+    --rule: #d6e0e6; --accent: #006b83; --band: #c8e8ef; --warning: #8a5700;
+    --awake: #946000; --light: #70a4b4; --deep: #154c64; --rem: #357a72;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark; --bg: #15232c; --panel: #1b2e39; --ink: #e3edf2; --muted: #acbec9;
+      --rule: #3a515f; --accent: #80c9dc; --band: #305564; --warning: #edbf70;
+      --awake: #edbf70; --light: #83b6c5; --deep: #5998b4; --rem: #86c4b8;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark; --bg: #15232c; --panel: #1b2e39; --ink: #e3edf2; --muted: #acbec9;
+    --rule: #3a515f; --accent: #80c9dc; --band: #305564; --warning: #edbf70;
+    --awake: #edbf70; --light: #83b6c5; --deep: #5998b4; --rem: #86c4b8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 Barlow, sans-serif; }
+  .hoy { max-width: 1080px; margin: auto; padding: 32px 0 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px)); font-variant-numeric: tabular-nums; }
+  .hoy h1, .hoy h2, .hoy p, .hoy dl { margin: 0; }
+  .hoy h1 { font-size: 48px; line-height: 1.1; letter-spacing: -2px; font-weight: 600; }
+  .hoy h2 { font-size: 20px; font-weight: 600; }
+  .eyebrow { color: var(--accent); font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: 1.8px; text-transform: uppercase; }
+  .top, .section-head, .navigation, .legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .top, .section-head { justify-content: space-between; }
+  .top { margin-bottom: 24px; }
+  .top .eyebrow { margin-bottom: 6px; }
+  .subtle, .updated, dt, .empty { color: var(--muted); }
+  .subtle, .updated { font-size: 13px; }
+  .hoy button, .hoy input { font: inherit; color: var(--ink); border: 1px solid var(--rule); background: var(--panel); border-radius: 5px; min-height: 44px; }
+  .hoy button { padding: 8px 14px; cursor: pointer; }
+  .hoy input { padding: 6px 10px; max-width: 100%; }
+  .hoy button:disabled { opacity: .45; cursor: default; }
+  .hoy :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .date-label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  .navigation { align-items: end; gap: 8px; }
+  .overview { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); border: 1px solid var(--rule); background: var(--panel); }
+  .panel { min-width: 0; padding: 24px; }
+  #readiness { border-right: 1px solid var(--rule); }
+  .section-head { align-items: baseline; gap: 4px 12px; margin-bottom: 20px; }
+  .section-head .updated { flex-basis: 100%; }
+  .score { font: 500 52px/1.2 'IBM Plex Mono', monospace; letter-spacing: -3px; margin: 8px 0 !important; }
+  .baseline { font-size: 25px; line-height: 1.15; max-width: 240px; margin-bottom: 10px !important; }
+  .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px 16px; }
+  .metrics dd { margin: 5px 0 0; font: 500 20px 'IBM Plex Mono', monospace; overflow-wrap: anywhere; }
+  .metrics dt { font-size: 13px; }
+  .components { display: grid; gap: 8px; margin-top: 20px !important; }
+  .components > div { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+  .components dd { margin: 0; font-family: 'IBM Plex Mono', monospace; }
+  .detail { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--rule); }
+  .empty { padding: 26px 0; font-size: 15px; }
+  .notice, #page-notice { color: var(--warning); font-size: 14px; }
+  .notice:not(:empty), #page-notice:not(:empty) { border-left: 2px solid var(--warning); padding: 10px 14px; margin: 12px 0; }
+  .notice button, #page-notice button { margin: 8px 8px 0 0; }
+  .chart { width: 100%; height: auto; display: block; overflow: hidden; }
+  .chart text { fill: var(--muted); font: 12px 'IBM Plex Mono', monospace; }
+  .gridline { stroke: var(--rule); stroke-width: 1; }
+  .hr-band { fill: var(--band); }
+  .hr-line, .hr-whisker { fill: none; stroke: var(--accent); stroke-width: 2; }
+  .hr-dot { fill: var(--accent); }
+  .stage-AWAKE { fill: var(--awake); } .stage-LIGHT { fill: var(--light); }
+  .stage-DEEP { fill: var(--deep); } .stage-REM { fill: var(--rem); }
+  .legend { margin-top: 12px; font-size: 12px; color: var(--muted); gap: 8px 20px; }
+  .key { display: inline-block; width: 10px; height: 3px; margin-right: 6px; vertical-align: middle; background: var(--accent); }
+  .key.band { height: 9px; background: var(--band); }
+  .sleep-times { font: 500 28px 'IBM Plex Mono', monospace; margin-bottom: 6px !important; }
+  .sleep-summary { margin: 20px 0 26px; }
+  footer { margin-top: 32px; border-top: 1px solid var(--rule); padding-top: 14px; }
+  @media (max-width: 800px) {
+    .chart text { font-size: 24px; }
+  }
+  @media (max-width: 650px) {
+    .hoy { padding-top: 24px; } .hoy h1 { font-size: 40px; }
+    .overview { grid-template-columns: minmax(0, 1fr); }
+    #readiness { border-right: 0; border-bottom: 1px solid var(--rule); }
+    .panel { padding: 20px; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .navigation { width: 100%; } .date-label { flex: 1; } .date-label input { width: 100%; min-width: 0; }
+    .sleep-times { font-size: 23px; }
+  }
+</style>
+<main class="hoy" lang="es">
+  <header class="top">
+    <div><p class="eyebrow">Pixel Health / Registro diario</p><h1>Hoy</h1><p class="subtle">Tu día, de un vistazo.</p></div>
+    <nav class="navigation" aria-label="Elegir fecha">
+      <button id="previous" type="button" aria-label="Día anterior">←</button>
+      <label class="date-label">Fecha local · Madrid<input id="date" type="date" min="2000-01-01"></label>
+      <button id="next" type="button" aria-label="Día siguiente">→</button>
+    </nav>
+  </header>
+  <div id="page-notice" role="status"></div>
+  <div class="overview">
+    <section id="readiness" class="panel" aria-labelledby="readiness-title">
+      <div class="section-head"><h2 id="readiness-title">Recuperación</h2><span class="updated" id="readiness-updated">Sin actualizar</span></div>
+      <div id="readiness-content" class="content"></div><div id="readiness-notice" class="notice" role="status"></div>
+    </section>
+    <section id="vitals" class="panel" aria-labelledby="vitals-title">
+      <div class="section-head"><h2 id="vitals-title">Constantes del día</h2><span class="updated" id="vitals-updated">Sin actualizar</span></div>
+      <div id="vitals-content" class="content"></div><div id="vitals-notice" class="notice" role="status"></div>
+    </section>
+  </div>
+  <section id="hr" class="detail" aria-labelledby="hr-title">
+    <div class="section-head"><h2 id="hr-title">Pulso a lo largo del día</h2><span class="subtle">Intervalos de 5 minutos · bpm</span><span class="updated" id="hr-updated">Sin actualizar</span></div>
+    <div id="hr-content" class="content"></div><div id="hr-notice" class="notice" role="status"></div>
+  </section>
+  <section id="sleep" class="detail" aria-labelledby="sleep-title">
+    <div class="section-head"><h2 id="sleep-title">La última noche</h2><span class="subtle">Sueño principal que termina en la fecha elegida</span><span class="updated" id="sleep-updated">Sin actualizar</span></div>
+    <div id="sleep-content" class="content"></div><div id="sleep-notice" class="notice" role="status"></div>
+  </section>
+  <footer class="subtle">Europe/Madrid · Actualización automática cada 5 minutos</footer>
+</main>
+<script id="hoy-logic">
+(() => {
+  function mainSession(sessions, date) {
+    return sessions.filter(s => !s.is_nap && s.local_date === date).slice().sort((a, b) =>
+      (b.minutes_in_bed ?? -Infinity) - (a.minutes_in_bed ?? -Infinity) ||
+      (b.end_local || '').localeCompare(a.end_local || '') ||
+      (b.start_local || '').localeCompare(a.start_local || ''))[0] ?? null;
+  }
+  function hrSegments(points) {
+    const segments = [];
+    let previous;
+    for (const point of points) {
+      const time = Date.parse(point[0] + 'Z');
+      if (!segments.length || time <= previous || time - previous > 900000) segments.push([]);
+      segments[segments.length - 1].push(point);
+      previous = time;
+    }
+    return segments;
+  }
+  function hypnogram(session) {
+    const bars = (session.stages ?? []).map(([start, end, stage]) => ({ start, end, stage }))
+      .filter(b => Number.isFinite(b.start) && Number.isFinite(b.end) && b.end >= b.start && ['AWAKE', 'LIGHT', 'DEEP', 'REM'].includes(b.stage));
+    return { domainStart: Math.min(0, ...bars.map(b => b.start)),
+      domainEnd: Math.max(session.minutes_in_bed ?? 0, ...bars.map(b => b.end)), bars };
+  }
+  function fmtValue(v, unit) { return v == null ? '—' : `${v} ${unit}`; }
+  function validDate(d, today) {
+    if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d) || d < '2000-01-01' || d > today) return false;
+    const t = Date.parse(d + 'T00:00:00Z');
+    return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === d;
+  }
+  function shiftDate(d, n, today) {
+    const t = Date.parse(d + 'T00:00:00Z') + n * 86400000;
+    const next = new Date(t).toISOString().slice(0, 10);
+    return next < '2000-01-01' ? '2000-01-01' : next > today ? today : next;
+  }
+  function freshness(result, receivedAt) { return result.cache?.storedAt ?? receivedAt; }
+  globalThis.HoyLogic = { mainSession, hrSegments, hypnogram, fmtValue, validDate, shiftDate, freshness };
+})();
+</script>
+<script>
+(async () => {
+  const L = globalThis.HoyLogic;
+  const $ = id => document.getElementById(id);
+  const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const value = (v, unit) => {
+    if (unit === '°C' && typeof v === 'number') {
+      const rounded = Number(v.toFixed(2));
+      v = rounded === 0 ? 0 : `${rounded > 0 ? '+' : '−'}${Math.abs(rounded).toFixed(2)}`;
+    }
+    return esc(L.fmtValue(typeof v === 'number' ? Number(v.toFixed(2)) : v, unit));
+  };
+  const empty = text => `<p class="empty">${esc(text)}</p>`;
+  const metric = (label, v, unit) => `<div><dt>${esc(label)}</dt><dd>${value(v, unit)}</dd></div>`;
+  const localTime = t => t ? esc(t.slice(11, 16)) : '—';
+  const localStamp = t => t ? esc(t.slice(0, 10).split('-').reverse().join('/')) + ' · ' + localTime(t) : '—';
+  const madridToday = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  let selected = madridToday(), generation = 0, connector = null, stopped = false;
+  let subscriptions = [], states = [];
+  const sections = ['readiness', 'vitals', 'hr', 'sleep'];
+  const denials = new Set(['needs_reauth', 'server_not_connected', 'blocked_by_policy', 'approval_required',
+    'not_in_manifest', 'consent_required', 'not_granted', 'capability_disabled', 'capability_removed', 'user_changed']);
+  const errorCopy = {
+    needs_reauth: 'Vuelve a conectar Pixel Health en claude.ai Settings → Connectors.',
+    server_not_connected: 'Añade Pixel Health en claude.ai Settings → Connectors.',
+    selection_required: 'Elige una conexión de Pixel Health en el selector de conectores y vuelve a cargar.',
+    server_not_found: 'La conexión de Pixel Health ya no existe. Revísala en Settings → Connectors.',
+    not_in_manifest: 'Pixel Health no está permitido para esta vista. Revisa los permisos del artefacto.',
+    blocked_by_policy: 'La política de tu organización bloquea esta sección. Consulta al administrador.',
+    approval_required: 'Esta sección necesita tu aprobación para leer los datos.',
+    consent_required: 'Revisa el aviso de permisos y permite esta conexión para consultar la sección.',
+    server_unavailable: 'Pixel Health no responde temporalmente. Puedes volver a cargar la sección.',
+    rate_limited: 'Se ha alcanzado el límite de consultas. Espera antes de volver a cargar.',
+    tool_error: 'Pixel Health no pudo completar esta consulta.',
+    bad_request: 'No se pueden iniciar las actualizaciones de esta sección. Vuelve a abrir el artefacto.',
+    transform_error: 'No se pudo preparar esta consulta. Vuelve a abrir el artefacto.',
+    self_only: 'Esta consulta no está permitida para este artefacto.',
+    cancelled: 'Consulta cancelada. Puedes volver a cargar la sección.',
+    not_granted: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Pixel Health.',
+    capability_disabled: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Pixel Health.',
+    capability_removed: 'El conector no está disponible en esta vista. Vuelve a abrir el artefacto.',
+    user_changed: 'La cuenta ha cambiado. Vuelve a abrir el artefacto para continuar.',
+    upstream_error: 'No se pudo contactar con Pixel Health. Puedes volver a cargar esta sección.'
+  };
+  function message(error) {
+    return (errorCopy[error.code] || errorCopy.upstream_error) +
+      (error.code === 'tool_error' && error.message ? ' ' + error.message : '');
+  }
+  function renderDaily(payload) {
+    const row = payload.rows?.find(r => r[0] === selected);
+    const d = Object.fromEntries((payload.columns ?? []).map((c, i) => [c, row?.[i] ?? null]));
+    $('readiness-content').innerHTML = (d.readiness_proxy == null
+      ? '<p class="baseline">Necesita 7 días de referencia</p><p class="subtle">El índice aparecerá cuando haya una base suficiente.</p>'
+      : `<p class="score">${value(d.readiness_proxy, '')}</p><p class="subtle">Índice de recuperación</p>`) +
+      `<dl class="components">${metric('HRV · z', d.z_ln_rmssd, 'z')}${metric('Pulso en reposo · z', d.z_rhr, 'z')}${metric('Sueño · z', d.z_sleep, 'z')}</dl>`;
+    const fields = [['Pulso en reposo', 'rhr', 'bpm'], ['Variabilidad · HRV', 'hrv_rmssd', 'ms'], ['Oxígeno · SpO₂', 'spo2_avg', '%'],
+      ['Respiración', 'resp_rate', 'resp/min'], ['Desviación térmica', 'skin_temp_dev', '°C'], ['Pasos', 'steps', 'pasos']];
+    $('vitals-content').innerHTML = (!row || fields.every(([, key]) => d[key] == null)
+      ? '<p class="subtle">Sin constantes registradas para esta fecha.</p>' : '') +
+      `<dl class="metrics">${fields.map(([label, key, unit]) => metric(label, d[key], unit)).join('')}</dl>`;
+  }
+  function renderHr(payload) {
+    const points = payload.points ?? [];
+    const usable = p => typeof p[0] === 'string' && Number.isFinite(Date.parse(p[0] + 'Z')) && p.slice(1, 4).length === 3 && p.slice(1, 4).every(Number.isFinite);
+    const groups = L.hrSegments(points).flatMap(g => {
+      const parts = []; let part = [];
+      for (const p of g) { if (usable(p)) part.push(p); else { if (part.length) parts.push(part); part = []; } }
+      if (part.length) parts.push(part); return parts;
+    });
+    const all = groups.flat();
+    if (!all.length) { $('hr-content').innerHTML = empty('Sin pulso registrado. Los intervalos aparecerán cuando se sincronice el reloj.'); return; }
+    const low = Math.min(...all.flatMap(p => p.slice(1, 4))) - 5;
+    const high = Math.max(...all.flatMap(p => p.slice(1, 4))) + 5;
+    if (!Number.isFinite(high - low) || high <= low) {
+      $('hr-content').innerHTML = empty('No hay un rango de pulso válido para dibujar el gráfico.'); return;
+    }
+    const x = p => 72 + (Number(p[0].slice(11, 13)) * 60 + Number(p[0].slice(14, 16))) / 1440 * 656;
+    const y = v => 180 - (v - low) / (high - low) * 154;
+    const xy = (p, index) => `${x(p)},${y(p[index])}`;
+    const paths = groups.map(g => `<polygon class="hr-band" points="${g.map(p => xy(p, 3)).concat(g.slice().reverse().map(p => xy(p, 2))).join(' ')}"/>` +
+      (g.length === 1 ? `<line class="hr-whisker" x1="${x(g[0])}" x2="${x(g[0])}" y1="${y(g[0][2])}" y2="${y(g[0][3])}"/><circle class="hr-dot" cx="${x(g[0])}" cy="${y(g[0][1])}" r="3.5"/>`
+        : `<polyline class="hr-line" points="${g.map(p => xy(p, 1)).join(' ')}"/>`)).join('');
+    const grid = [low, (low + high) / 2, high].map(v => `<line class="gridline" x1="72" x2="728" y1="${y(v)}" y2="${y(v)}"/><text x="64" y="${y(v) + 4}" text-anchor="end">${Math.round(v)}</text>`).join('');
+    const ticks = [0, 6, 12, 18, 24].map(h => `<text x="${72 + h / 24 * 656}" y="211" text-anchor="${h === 24 ? 'end' : h === 0 ? 'start' : 'middle'}">${String(h).padStart(2, '0')}:00</text>`).join('');
+    $('hr-content').innerHTML = `<svg class="chart" viewBox="0 0 752 228" role="img" aria-label="Pulso en bpm por hora local: media y banda mínima–máxima. Los huecos de más de 15 minutos y los retrocesos de hora separan los trazos.">${grid}${paths}${ticks}</svg><p class="legend"><span><i class="key"></i>Media</span><span><i class="key band"></i>Mínimo–máximo</span><span>Hora local · Europe/Madrid</span></p>`;
+  }
+  function renderSleep(payload) {
+    const sessions = payload.sessions ?? [];
+    const session = L.mainSession(sessions, selected);
+    if (!session) {
+      const naps = sessions.filter(s => s.is_nap && s.local_date === selected);
+      $('sleep-content').innerHTML = empty('Sin sueño principal registrado para esta fecha.') + (naps.length
+        ? `<p class="subtle">Siestas registradas</p><dl class="components">${naps.map(s => `<div><dt>${localStamp(s.start_local)} → ${localStamp(s.end_local)}</dt><dd>${value(s.minutes_asleep, 'min dormido')} · ${value(s.minutes_in_bed, 'min en cama')}</dd></div>`).join('')}</dl>` : ''); return;
+    }
+    const summary = `<p class="sleep-times">${localTime(session.start_local)} → ${localTime(session.end_local)}</p><p class="subtle">${localStamp(session.start_local)} → ${localStamp(session.end_local)}</p>` +
+      `<dl class="metrics sleep-summary">${[['Dormido', 'minutes_asleep', 'min'], ['En cama', 'minutes_in_bed', 'min'], ['Eficiencia', 'efficiency', '%'], ['Profundo', 'deep_min', 'min'], ['REM', 'rem_min', 'min'], ['Ligero', 'light_min', 'min'], ['Despierto', 'awake_min', 'min'], ['Latencia', 'latency_min', 'min']].map(([label, key, unit]) => metric(label, session[key], unit)).join('')}</dl>`;
+    const h = L.hypnogram(session);
+    const levels = { AWAKE: [28, 'Despierto'], REM: [62, 'REM'], LIGHT: [96, 'Ligero'], DEEP: [130, 'Profundo'] };
+    const bars = h.bars;
+    if (!bars.length || !Number.isFinite(h.domainEnd - h.domainStart) || h.domainEnd <= h.domainStart) {
+      $('sleep-content').innerHTML = summary + empty('Sin fases registradas para dibujar el hipnograma.'); return;
+    }
+    const x = m => 150 + (m - h.domainStart) / (h.domainEnd - h.domainStart) * 578;
+    const labels = Object.values(levels).map(([y, name]) => `<text x="140" y="${y + 4}" text-anchor="end">${name}</text><line class="gridline" x1="150" x2="728" y1="${y}" y2="${y}"/>`).join('');
+    const drawing = bars.map(b => `<rect class="stage-${b.stage}" x="${x(b.start)}" y="${levels[b.stage][0] - 6}" width="${x(b.end) - x(b.start)}" height="12"><title>${levels[b.stage][1]}: ${b.start}–${b.end} min desde el inicio</title></rect>`).join('');
+    const ticks = [h.domainStart, (h.domainStart + h.domainEnd) / 2, h.domainEnd].map((m, i) => `<text x="${x(m)}" y="163" text-anchor="${['start', 'middle', 'end'][i]}">${Math.round(m)} min</text>`).join('');
+    $('sleep-content').innerHTML = summary + `<svg class="chart" viewBox="0 0 752 180" role="img" aria-label="Hipnograma: fases del sueño en minutos desde el inicio de la sesión.">${labels}${drawing}${ticks}</svg><p class="subtle">Minutos desde el inicio · fases tal como las registra el reloj</p>`;
+  }
+  function dispose() {
+    subscriptions.forEach(unsubscribe => unsubscribe()); subscriptions = [];
+    states.forEach(s => clearTimeout(s.timer));
+  }
+  function setDateControls() {
+    const today = madridToday();
+    $('date').max = today; $('date').value = selected;
+    $('previous').disabled = selected === '2000-01-01'; $('next').disabled = selected >= today;
+  }
+  function render() {
+    setDateControls();
+    const shared = states.length === 3 && states.every(s => s.error && s.error.code === states[0].error.code);
+    const page = $('page-notice'); page.replaceChildren();
+    if (shared) appendNotice(page, states[0].error, states);
+    for (const s of states) {
+      for (const id of s.ids) {
+        const content = $(id + '-content');
+        if (s.data == null) content.innerHTML = empty(s.error ? 'Sin datos disponibles en esta sección.' : 'Esperando los datos de Pixel Health…');
+        const updated = $(id + '-updated');
+        updated.textContent = s.at == null ? 'Sin actualizar' : `${s.error ? 'Datos anteriores · ' : s.revalidating ? 'Actualizando · ' : ''}Actualizado ${new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'short', timeStyle: 'medium' }).format(s.at)}`;
+        const notice = $(id + '-notice'); notice.replaceChildren();
+        if (s.error && !shared) appendNotice(notice, s.error, [s]);
+      }
+    }
+  }
+  function appendNotice(node, error, affected) {
+    const text = document.createElement('p'); text.textContent = message(error); node.append(text);
+    if (stopped) return;
+    const button = document.createElement('button'); button.type = 'button';
+    button.textContent = error.code === 'approval_required' ? 'Aprobar lectura' : error.code === 'consent_required' ? 'Permitir conexión' : 'Volver a cargar';
+    button.disabled = affected.some(s => s.busy);
+    button.onclick = () => {
+      if (!connector) window.location.reload();
+      else affected.forEach(s => readOnce(s, generation));
+    };
+    node.append(button);
+  }
+  function receive(s, result, token) {
+    if (token !== generation || stopped) return;
+    clearTimeout(s.timer); s.timer = null;
+    s.data = result.payload ?? {}; s.at = L.freshness(result, Date.now());
+    s.error = null; s.revalidating = !!result.cache?.revalidating;
+    if (s.kind === 'daily') renderDaily(s.data);
+    if (s.kind === 'hr') renderHr(s.data);
+    if (s.kind === 'sleep') renderSleep(s.data);
+    render();
+  }
+  function fail(s, error, token, mayRetry) {
+    if (token !== generation || stopped) return;
+    error = error ?? { code: 'upstream_error' };
+    if (error.code === 'user_changed') {
+      stopped = true; dispose();
+      states.forEach(state => { state.data = null; state.at = null; state.error = error; }); render(); return;
+    }
+    s.error = error; s.revalidating = false;
+    if (denials.has(error.code)) { s.data = null; s.at = null; clearTimeout(s.timer); s.timer = null; }
+    render();
+    if (mayRetry && error.retryable === true && !denials.has(error.code) && s.timer == null) {
+      const delay = Math.max(Number(error.retryAfterMs) || (error.code === 'rate_limited' ? 3000 : 0), 700 + Math.random() * 600);
+      s.timer = setTimeout(() => { s.timer = null; readOnce(s, token); }, delay);
+    }
+  }
+  async function readOnce(s, token) {
+    if (token !== generation || stopped || s.busy) return;
+    clearTimeout(s.timer); s.timer = null; s.busy = true; render();
+    try { receive(s, await connector.callTool('Pixel Health', s.tool, s.input, { cache: { staleTime: 300000, gcTime: 86400000, refresh: true } }), token); }
+    catch (error) { fail(s, error, token, false); }
+    finally { s.busy = false; if (token === generation && !stopped) render(); }
+  }
+  function load() {
+    if (stopped) return;
+    const token = ++generation; dispose(); setDateControls();
+    const range = { start: selected, end: selected };
+    states = [
+      { kind: 'daily', ids: ['readiness', 'vitals'], tool: 'health_daily', input: range },
+      { kind: 'hr', ids: ['hr'], tool: 'health_intraday', input: { metric: 'hr', date: selected, resolution: '5m' } },
+      { kind: 'sleep', ids: ['sleep'], tool: 'health_sleep', input: range }
+    ].map(s => ({ ...s, data: null, at: null, error: null, timer: null, busy: false }));
+    render();
+    if (!connector) {
+      states.forEach(s => { s.error = { code: 'capability_disabled' }; }); render(); return;
+    }
+    for (const s of states) {
+      subscriptions.push(connector.watchTool('Pixel Health', s.tool, s.input, event => {
+        if (event.type === 'data') receive(s, event.result, token);
+        else fail(s, event.error, token, true);
+      }, { cache: { staleTime: 300000, gcTime: 86400000 }, refetchInterval: 300000 }));
+    }
+  }
+  function changeDate(date) {
+    if (!L.validDate(date, madridToday()) || stopped) { setDateControls(); return; }
+    selected = date; load();
+  }
+  $('previous').onclick = () => changeDate(L.shiftDate(selected, -1, madridToday()));
+  $('next').onclick = () => changeDate(L.shiftDate(selected, 1, madridToday()));
+  $('date').onchange = event => changeDate(event.target.value);
+  window.addEventListener('pagehide', () => { ++generation; dispose(); });
+  window.addEventListener('pageshow', event => { if (event.persisted) load(); });
+  setDateControls(); sections.forEach(id => { $(id + '-content').innerHTML = empty('Conectando con Pixel Health…'); });
+  try {
+    if (window.claude) {
+      const claude = window.claude;
+      const mcp = await claude.use("mcp");
+      connector = mcp;
+    }
+    load();
+  } catch (error) {
+    load(); states.forEach(s => fail(s, error, generation, false));
+  }
+})();
+</script>
