@@ -19,6 +19,7 @@ const keywords = [
   "TRANSACTION", "RETURNING",
 ];
 const deniedNames = [
+  "profile", "weight_log",
   "metric_minute", "metric_hour", "metric_daily", "metric_def", "sleep_session", "sleep_stage", "workout",
   "tracker", "event", "daily_summary", "tracker_daily", "sync_pending", "sync_state", "secret_blob",
   "audit_log", "oauth_state", "d1_migrations", "sqlite_master", "sqlite_schema", "sqlite_custom",

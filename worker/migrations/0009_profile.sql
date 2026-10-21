@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS profile (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS weight_log (
+  local_date TEXT PRIMARY KEY,
+  kg REAL NOT NULL,
+  updated_at INTEGER NOT NULL
+);

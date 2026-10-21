@@ -243,7 +243,7 @@ async function toolAudit(name: string, args: object, ok: number, before: number)
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
 beforeEach(async () => {
   await env.DB.batch(["audit_log", "workout", "sleep_stage", "sleep_session", "metric_daily", "metric_minute", "daily_summary", "tracker_daily",
-    "sync_pending", "sync_state", "secret_blob", "oauth_state", "event"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
+    "sync_pending", "sync_state", "secret_blob", "oauth_state", "event", "profile", "weight_log"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
   const { keys } = await env.OAUTH_KV.list();
   await Promise.all(keys.map((key) => env.OAUTH_KV.delete(key.name)));
 });
@@ -370,17 +370,17 @@ describe("AC2 owner authorization and refusals", () => {
 });
 
 describe("AC3 stateless read tools and audit", () => {
-  it("initializes and lists exactly twelve described tools, with log and delete writing", async () => {
+  it("initializes and lists exactly fourteen described tools, with profile, log and delete writing", async () => {
     google();
     const token = await accessToken();
     await initialize(token);
     const msg = await rpc(token, "tools/list", {});
     expect(msg.error).toBeUndefined();
-    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_delete_event", "health_intraday", "health_log_event", "health_sleep", "health_sql", "health_status", "health_trackers", "health_trend", "health_workouts"]);
+    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_delete_event", "health_intraday", "health_log_event", "health_profile", "health_set_profile", "health_sleep", "health_sql", "health_status", "health_trackers", "health_trend", "health_workouts"]);
     for (const tool of msg.result?.tools ?? []) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.inputSchema).toMatchObject({ type: "object" });
-      expect(tool.annotations).toMatchObject(tool.name === "health_log_event"
+      expect(tool.annotations).toMatchObject((tool.name === "health_log_event" || tool.name === "health_set_profile")
         ? { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
         : tool.name === "health_delete_event"
           ? { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
@@ -1290,5 +1290,71 @@ describe("T33 AC2 delete connector", () => {
     expect(JSON.stringify(msg)).not.toMatch(/not found/i);
     expect(await audit()).toEqual(before);
     expect((await env.DB.prepare("SELECT * FROM event").all()).results).toEqual(events);
+  });
+});
+
+
+describe("T35 AC4 owner profile connector", () => {
+  it("reads and writes both JSON forms, with field names only in successful audits", async () => {
+    google();
+    const token = await accessToken();
+    const listed = await rpc(token, "tools/list", {});
+    const write = listed.result?.tools?.find((tool) => tool.name === "health_set_profile");
+    expect(write?.description).toMatch(/midnight/);
+    expect(write?.description).toMatch(/date/);
+    const args = { weight_kg: 30, date: "2000-01-01", smoker: false };
+    const before = (await audit()).length;
+    const updated = await rpc(token, "tools/call", { name: "health_set_profile", arguments: args });
+    expect(updated.result?.isError).not.toBe(true);
+    expect(updated.result?.structuredContent).toMatchObject({ weight_kg: 30, weight_date: "2000-01-01", smoker: false });
+    expect(JSON.parse(updated.result?.content?.[0].text ?? "null")).toEqual(updated.result?.structuredContent);
+    await toolAudit("health_set_profile", { fields: Object.keys(args) }, 1, before);
+    const read = await rpc(token, "tools/call", { name: "health_profile", arguments: {} });
+    expect(read.result?.structuredContent).toEqual(updated.result?.structuredContent);
+    expect(JSON.parse(read.result?.content?.[0].text ?? "null")).toEqual(updated.result?.structuredContent);
+    await toolAudit("health_profile", { fields: [] }, 1, before + 1);
+  });
+
+  it.each([
+    { step_goal: 999 }, { weight_kg: 30, date: "2000-02-30" }, { weight_kg: 30, date: "9999-01-01" },
+    { date: "2000-01-01" }, { mystery: 1 }, {},
+  ])("audits an in-tool refusal with only field names for %j", async (args) => {
+    google();
+    const token = await accessToken();
+    const before = (await audit()).length;
+    const msg = await rpc(token, "tools/call", { name: "health_set_profile", arguments: args });
+    expect(msg.result?.isError).toBe(true);
+    expect(msg.result?.content?.[0].text).not.toBe("Unable to read health data");
+    await toolAudit("health_set_profile", { fields: Object.keys(args) }, 0, before);
+  });
+
+  it("preserves the SDK validation exemption for wrongly typed arguments", async () => {
+    google();
+    const token = await accessToken();
+    const before = await audit();
+    const msg = await rpc(token, "tools/call", { name: "health_set_profile", arguments: { step_goal: "7000" } });
+    expect(msg.result?.isError).toBe(true);
+    expect(await audit()).toEqual(before);
+  });
+
+  it.each(["health_profile", "health_set_profile"])("returns a generic error and redacted failed audit for a %s D1 failure", async (name) => {
+    google();
+    const token = await accessToken();
+    const before = (await audit()).length;
+    const args = name === "health_profile" ? {} : { weight_kg: 30, date: "2000-01-01" };
+    const db = new Proxy(env.DB, { get(target, property) {
+      if (property === "batch" && name === "health_set_profile") return () => Promise.reject(new Error("private profile sentinel"));
+      if (property === "prepare") return (sql: string) => {
+        if (/FROM profile/.test(sql)) throw new Error("private profile sentinel");
+        return target.prepare(sql);
+      };
+      const value: unknown = Reflect.get(target, property);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    } });
+    const msg = await rpc(token, "tools/call", { name, arguments: args }, 1, { ...connectorEnv, DB: db });
+    expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: "Unable to read health data" }] });
+    expect(msg.result?.structuredContent).toBeUndefined();
+    await toolAudit(name, { fields: Object.keys(args) }, 0, before);
+    expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
   });
 });

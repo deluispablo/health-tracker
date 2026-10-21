@@ -8,6 +8,7 @@ import { BEHAVIORS, healthCompare, OUTCOMES } from "./tools/compare";
 import { ANALYSIS_NAMES, healthCorrelate } from "./tools/correlate";
 import { DAILY_COLUMNS, healthDaily } from "./tools/daily";
 import { healthIntraday } from "./tools/intraday";
+import { healthProfile, healthSetProfile } from "./tools/profile";
 import { healthSleep } from "./tools/sleep";
 import { healthSql } from "./tools/sql";
 import { healthStatus } from "./tools/status";
@@ -30,9 +31,32 @@ export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionCon
           : "Unable to read health data";
       return { isError: true, content: [{ type: "text", text: error }] };
     } finally {
-      audit(ctx, env.DB, { kind: "tool", name, args, started, error });
+      const auditArgs = name === "health_profile" || name === "health_set_profile" ? { fields: Object.keys(args) } : args;
+      audit(ctx, env.DB, { kind: "tool", name, args: auditArgs, started, error });
     }
   };
+  server.registerTool("health_profile", {
+    description: "Read the owner's profile, local-year age, goals, measured or estimated max HR and latest 90 dated weights. Unset step/sleep goals default to 7000 steps and 450 minutes.",
+    inputSchema: {}, annotations,
+  }, (args) => call("health_profile", args, () => healthProfile(env.DB, {
+    now: Math.floor(Date.now() / 1000), tz: env.USER_TZ,
+  })));
+  server.registerTool("health_set_profile", {
+    description: "Partially update the owner's profile; at least one field is required. Weight is rounded to 0.1 kg and upserted for date or local today. Pass an explicit date for stable retries across midnight. Returns the full profile.",
+    inputSchema: z.looseObject({
+      birth_year: z.number().optional().describe("Integer from 1920 to the owner's local current year; store only the birth year."),
+      sex: z.enum(["female", "male"]).nullable().optional().describe("female, male or null to clear."),
+      height_cm: z.number().optional().describe("100–250 cm, rounded to 0.1."),
+      weight_kg: z.number().optional().describe("30–300 kg, rounded to 0.1."),
+      date: z.string().optional().describe("Real YYYY-MM-DD from 2000-01-01 to local today; requires weight_kg."),
+      step_goal: z.number().optional().describe("Integer from 1000 to 50000 steps."),
+      sleep_goal_min: z.number().optional().describe("Integer from 240 to 720 minutes."),
+      max_hr: z.number().optional().describe("Measured maximum heart rate, integer from 120 to 230 bpm."),
+      smoker: z.boolean().optional(),
+    }), annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, (args) => call("health_set_profile", args, () => healthSetProfile(env.DB, args, {
+    now: Math.floor(Date.now() / 1000), tz: env.USER_TZ,
+  })));
   server.registerTool("health_status", {
     description: "Read stream freshness, pending and stuck queue counts, Google connection, 14-day HR coverage and alerts.",
     inputSchema: {}, annotations,

@@ -84,10 +84,12 @@ Repository layout (planned):
 
 ## MCP tools
 
-Twelve tools. All are read-only except `health_log_event`, which inserts, and `health_delete_event`, which soft-deletes a logged event while keeping its history.
+Fourteen tools. Writes are `health_log_event` (insert), `health_delete_event` (soft delete) and `health_set_profile` (owner profile updates).
 
 | Tool | Access | Returns |
 |---|---|---|
+| `health_profile` | read | Owner profile, age, goals, measured or estimated max HR and latest 90 dated weights |
+| `health_set_profile` | update | Partial owner profile update, returning the full profile |
 | `health_status` | read | Last watch sync, token health, sync progress per type, days without coverage |
 | `health_daily` | read | Daily summary rows with units, sample counts and coverage |
 | `health_intraday` | read | Compact intraday series at 1 min, 5 min or 1 h |
@@ -100,6 +102,8 @@ Twelve tools. All are read-only except `health_log_event`, which inserts, and `h
 | `health_log_event` | insert only | Creates one tracker event and returns it |
 | `health_delete_event` | soft delete | Undoes a logged event by its returned `event.id`; returns the event and current day total |
 | `health_sql` | read (advanced) | A single `SELECT` over read-only views, row-limited |
+
+`health_set_profile` accepts birth year (never a full birth date), sex (female, male or null to clear), height in cm, weight in kg, step and sleep goals, measured max HR and smoker status. Weight is upserted for an optional real `date` from 2000-01-01 to local today; pass it explicitly for stable retries across midnight. Reads default to 7000 steps and 450 sleep minutes and estimate max HR as round(208 − 0.7 × age) when birth year is known and no measured value exists. Profile audits retain field names only; `health_sql` cannot read either profile table. Dashboard settings are deferred.
 
 Mood emotions are count trackers: `mood_genial`, `mood_bien`, `mood_tranquilo`, `mood_cansado`, `mood_estresado`, `mood_ansioso`, `mood_triste` and `mood_enfadado`. Each defaults to 1 with limits 1–1; use `health_log_event` to record several emotions per day and `health_sql` over `v_events` to analyze them.
 
