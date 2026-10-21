@@ -1,3 +1,5 @@
+import { round } from "./compare";
+
 export const DAILY_COLUMNS: readonly string[] = [
   "rhr", "hrv_rmssd", "ln_rmssd", "resp_rate", "spo2_avg", "skin_temp_dev",
   "sleep_min", "sleep_eff", "deep_min", "rem_min", "sleep_latency_min", "bedtime_local", "waketime_local",
@@ -29,9 +31,11 @@ export async function healthDaily(db: D1Database, { start, end, metrics = DAILY_
 }> {
   const daysRequested = (calendarTime(end) - calendarTime(start)) / 86_400_000 + 1;
   if (daysRequested < 1 || daysRequested > 90) throw new RangeError("range must contain 1 to 90 dates");
-  if (metrics.length === 0 || new Set(metrics).size !== metrics.length || metrics.some((m) => !DAILY_COLUMNS.includes(m))) {
-    throw new RangeError("metrics must be distinct names from DAILY_COLUMNS");
-  }
+  if (metrics.length === 0) throw new RangeError("metrics must not be empty");
+  const unknown = metrics.find((metric) => !DAILY_COLUMNS.includes(metric));
+  if (unknown !== undefined) throw new RangeError(`unknown metric "${unknown}"; valid: ${DAILY_COLUMNS.join(", ")}`);
+  const repeated = metrics.find((metric, i) => metrics.indexOf(metric) !== i);
+  if (repeated !== undefined) throw new RangeError(`metric "${repeated}" is repeated`);
 
   const columns = ["local_date", ...metrics];
   const { results } = await db.prepare(
@@ -39,7 +43,10 @@ export async function healthDaily(db: D1Database, { start, end, metrics = DAILY_
   ).bind(start, end).all();
   return {
     columns,
-    rows: results.map((row) => columns.map((column) => row[column])),
+    rows: results.map((row) => columns.map((column) => {
+      const value = row[column];
+      return typeof value === "number" && Number.isFinite(value) && !Number.isInteger(value) ? round(value) : value;
+    })),
     units: Object.fromEntries(metrics.map((metric) => [metric, UNITS[metric]])),
     coverage: { days_requested: daysRequested, days_with_data: results.length },
   };

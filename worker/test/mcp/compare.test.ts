@@ -8,7 +8,7 @@ interface Comparison { group: string; vs: string; diff: number; df: number | nul
 interface Result {
   behavior: string; outcome: string; lag_days: number; start: string; end: string; n: number;
   groups: { label: string; n: number; mean: number | null; sd: number | null }[];
-  comparisons: Comparison[]; caveats: string;
+  comparisons: Comparison[]; notes: string[]; caveats: string;
 }
 const compare: (db: D1Database, args: Args) => Promise<Result> = healthCompare;
 const outcomes = ["rhr", "hrv_rmssd", "ln_rmssd", "resp_rate", "spo2_avg", "skin_temp_dev", "sleep_min", "sleep_eff",
@@ -51,8 +51,11 @@ describe("T17 AC1/AC3 health_compare", () => {
   it.each([["cigarettes", ["0", ">0–5", ">5–10", ">10"]], ["alcohol_g", ["0", ">0–20", ">20–40", ">40"]],
     ["caffeine_mg", ["0", ">0–200", ">200–400", ">400"]]] as const)("uses default bins for %s, lag 1, and exact empty shape", async (behavior, labels) => {
     const args = { behavior, outcome: "sleep_min", start: base.start, end: base.end };
-    expect(await compare(env.DB, args)).toEqual({ ...args, lag_days: 1, n: 0,
-      groups: labels.map((label) => ({ label, n: 0, mean: null, sd: null })), comparisons: [], caveats: caveats(0) });
+    const out = await compare(env.DB, args);
+    expect(out).toEqual({ ...args, lag_days: 1, n: 0,
+      groups: labels.map((label) => ({ label, n: 0, mean: null, sd: null })), comparisons: [],
+      notes: [`${behavior} solo tiene valores distintos de 0 en 0 de 0 días; los días sin registro cuentan como 0.`], caveats: caveats(0) });
+    expect(Object.keys(out)).toEqual(["behavior", "outcome", "lag_days", "start", "end", "n", "groups", "comparisons", "notes", "caveats"]);
   });
 
   it.each([["cigarettes", 5, 10], ["alcohol_g", 20, 40], ["caffeine_mg", 200, 400]] as const)(
@@ -73,7 +76,7 @@ describe("T17 AC1/AC3 health_compare", () => {
     expect(await compare(env.DB, { ...base, end: date(8) })).toEqual({ ...base, end: date(8), n: 8,
       groups: [{ label: "0", n: 1, mean: 9, sd: null }, { label: ">0–5", n: 4, mean: 4, sd: 2.582 },
         { label: ">5–10", n: 3, mean: 4.667, sd: 3.055 }, { label: ">10", n: 0, mean: null, sd: null }],
-      comparisons: [{ group: ">5–10", vs: ">0–5", diff: 0.667, df: 3.959, ci95: [-5.427, 6.76] }], caveats: caveats(8) });
+      comparisons: [{ group: ">5–10", vs: ">0–5", diff: 0.667, df: 3.959, ci95: [-5.427, 6.76] }], notes: [], caveats: caveats(8) });
   });
 
   it("bins fractional values at inclusive thresholds, with negatives and missing totals in zero", async () => {
@@ -103,6 +106,7 @@ describe("T17 AC1/AC3 health_compare", () => {
     expect(out.groups).toEqual([{ label: "0", n: 1, mean: 30, sd: null }, { label: ">0–5", n: 0, mean: null, sd: null },
       { label: ">5–10", n: 0, mean: null, sd: null }, { label: ">10", n: 1, mean: 40, sd: null }]);
     expect(out.comparisons).toEqual([]);
+    expect(out.notes).toEqual(["cigarettes solo tiene valores distintos de 0 en 1 de 2 días; los días sin registro cuentan como 0."]);
     expect(out.caveats).toBe(caveats(2));
     expect(await compare(env.DB, { behavior: base.behavior, outcome: base.outcome, start: base.start, end: "2026-01-03" })).toEqual(out);
   });
@@ -144,10 +148,37 @@ describe("T17 AC1/AC3 health_compare", () => {
     expect(out.n).toBe(4);
     expect(out.groups[0]).toEqual({ label: "0", n: 4, mean: 25, sd: 12.91 });
     expect(out.groups.slice(1).every((group) => group.n === 0)).toBe(true);
+    expect(out.notes).toEqual(["cigarettes solo tiene valores distintos de 0 en 0 de 4 días; los días sin registro cuentan como 0."]);
   });
 
   it.each(outcomes)("accepts outcome %s", async (outcome) => {
     expect((await compare(env.DB, { ...base, outcome })).outcome).toBe(outcome);
+  });
+});
+
+describe("T28 AC3 compare notes", () => {
+  it.each([0, 1, 2, 3])("reports sparse behaviour at %s counted non-zero days, even when comparisons exist", async (k) => {
+    for (let i = 1; i <= 5; i++) await row(date(i), i === 5 ? 0 : i, i <= k ? 1 : undefined);
+    await row(date(6), null, 11);
+    const out = await compare(env.DB, base);
+    expect(out.n).toBe(5);
+    expect(out.notes).toEqual(k < 3
+      ? [`cigarettes solo tiene valores distintos de 0 en ${String(k)} de 5 días; los días sin registro cuentan como 0.`] : []);
+    expect(out.comparisons).toHaveLength(k >= 2 ? 1 : 0);
+  });
+
+  it("counts negative and fractional behaviours as non-zero while retaining their existing bins", async () => {
+    for (const [i, total] of [-0.5, 0.25, 0, undefined].entries()) await row(date(i + 1), i, total);
+    const out = await compare(env.DB, base);
+    expect(out.groups.map(({ n }) => n)).toEqual([3, 1, 0, 0]);
+    expect(out.notes).toEqual(["cigarettes solo tiene valores distintos de 0 en 2 de 4 días; los días sin registro cuentan como 0."]);
+  });
+
+  it.each([{ totals: [1, 1, 1] }, { totals: [1, 6, 11] }])("explains empty comparisons with three non-zero days: $totals", async ({ totals }) => {
+    for (const [i, total] of totals.entries()) await row(date(i + 1), i, total);
+    const out = await compare(env.DB, base);
+    expect(out.comparisons).toEqual([]);
+    expect(out.notes).toEqual(["Ningún grupo distinto del de referencia tiene al menos 2 días; no hay comparaciones."]);
   });
 });
 

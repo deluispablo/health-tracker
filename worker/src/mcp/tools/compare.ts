@@ -58,6 +58,7 @@ export async function healthCompare(db: D1Database, { behavior, outcome, start, 
   const labels = ["0", ...bins.map((t, i) => `>${String(i === 0 ? 0 : bins[i - 1])}–${String(t)}`), `>${String(bins[bins.length - 1])}`];
   const groups = labels.map((): number[] => []);
   let n = 0;
+  let nonZeroDays = 0;
   for (let i = 0; i < days; i++) {
     const value = outcomes[i + lag_days];
     if (value === null) continue;
@@ -65,6 +66,7 @@ export async function healthCompare(db: D1Database, { behavior, outcome, start, 
     const group = total <= 0 ? 0 : 1 + bins.filter((t) => total > t).length;
     groups[group].push(value);
     n++;
+    if (total !== 0) nonZeroDays++;
   }
   const reference = groups.findIndex((group) => group.length >= 2);
   const comparisons: { group: string; vs: string; diff: number; df: number | null; ci95: [number, number] | null }[] = [];
@@ -76,7 +78,13 @@ export async function healthCompare(db: D1Database, { behavior, outcome, start, 
         ci95: result.ci95 === null ? null : [round(result.ci95[0]), round(result.ci95[1])] });
     }
   }
+  const notes: string[] = [];
+  if (nonZeroDays < 3) {
+    notes.push(`${behavior} solo tiene valores distintos de 0 en ${String(nonZeroDays)} de ${String(n)} días; los días sin registro cuentan como 0.`);
+  } else if (comparisons.length === 0) {
+    notes.push("Ningún grupo distinto del de referencia tiene al menos 2 días; no hay comparaciones.");
+  }
   return { behavior, outcome, lag_days, start, end, n,
     groups: groups.map((group, i) => ({ label: labels[i], n: group.length, mean: round(mean(group)), sd: round(sampleSd(group)) })),
-    comparisons, caveats: caveats(n) };
+    comparisons, notes, caveats: caveats(n) };
 }

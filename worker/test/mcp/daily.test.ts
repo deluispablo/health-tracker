@@ -47,6 +47,20 @@ beforeEach(async () => {
 });
 
 describe("AC1 health_daily", () => {
+  it.each([
+    [[], "metrics must not be empty"],
+    [["nope", "other"], `unknown metric "nope"; valid: ${VIEW_COLUMNS.join(", ")}`],
+    [["rhr", "rhr", "nope", "other"], `unknown metric "nope"; valid: ${VIEW_COLUMNS.join(", ")}`],
+    [["rhr", "rhr"], 'metric "rhr" is repeated'],
+    [["steps", "rhr", "steps", "rhr"], 'metric "steps" is repeated'],
+  ] as const)("T28 AC1 rejects metrics %j with the first applicable exact message before reading", async (metrics, message) => {
+    const [db, seen] = guarded();
+    const pending = healthDaily(db, { start: "2026-10-01", end: "2026-10-02", metrics });
+    await expect(pending).rejects.toBeInstanceOf(RangeError);
+    await expect(pending).rejects.toHaveProperty("message", message);
+    expect(seen.sql).toEqual([]);
+  });
+
   it("returns v_daily rows in the range, oldest first, with every column, units and coverage", async () => {
     await summary("2026-10-05", { rhr: 61, steps: 8123, readiness_proxy: 0.4 });
     await summary("2026-10-07", { rhr: 63, sleep_min: 380, bedtime_local: "23:15" });
@@ -115,13 +129,35 @@ describe("AC1 health_daily", () => {
     await expect(healthDaily(broken, { start: "2026-10-01", end: "2026-10-02" })).rejects.toThrow("D1 down");
   });
 
-  it("returns values exactly as stored and counts days with a row even when its metrics are NULL or zero", async () => {
+  it("T28 AC2 rounds fractional values and counts days with a row even when its metrics are NULL or zero", async () => {
     await summary("2026-10-05", { skin_temp_dev: -0.25, z_rhr: 1.234567891, steps: 0, waketime_local: "06:48" });
     await summary("2026-10-06", {});
     const out = await healthDaily(env.DB, { start: "2026-10-05", end: "2026-10-07", metrics: ["skin_temp_dev", "z_rhr", "steps", "waketime_local", "rhr"] });
-    expect(out.rows).toEqual([["2026-10-05", -0.25, 1.234567891, 0, "06:48", null], ["2026-10-06", null, null, null, null, null]]);
+    expect(out.rows).toEqual([["2026-10-05", -0.25, 1.235, 0, "06:48", null], ["2026-10-06", null, null, null, null, null]]);
     expect(out.coverage).toEqual({ days_requested: 3, days_with_data: 2 });
     const empty = await healthDaily(env.DB, { start: "2026-11-01", end: "2026-11-02", metrics: ["rhr"] });
     expect(empty).toEqual({ columns: ["local_date", "rhr"], rows: [], units: { rhr: "bpm" }, coverage: { days_requested: 2, days_with_data: 0 } });
+  });
+
+  it("T28 AC2 rounds every numeric metric to three decimals, preserving strings and integers", async () => {
+    const numeric = VIEW_COLUMNS.filter((column) => !["bedtime_local", "waketime_local", "cigarettes", "alcohol_g", "caffeine_mg"].includes(column));
+    await summary("2026-10-05", { ...Object.fromEntries(numeric.map((column) => [column, 1.234567891])),
+      skin_temp_dev: -1.2345, workout_min: 55.18333333333333, steps: Number.MAX_SAFE_INTEGER,
+      bedtime_local: "23:15", waketime_local: "06:48" });
+    await env.DB.batch(["cigarettes", "alcohol", "caffeine"].map((tracker) => env.DB.prepare(
+      "INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES ('2026-10-05', ?, 1.234567891, 1, 0)",
+    ).bind(tracker)));
+    const out = await healthDaily(env.DB, { start: "2026-10-05", end: "2026-10-05" });
+    const expected: Record<string, number | string> = { skin_temp_dev: -1.234, workout_min: 55.183,
+      steps: Number.MAX_SAFE_INTEGER, bedtime_local: "23:15", waketime_local: "06:48" };
+    expect(out.rows).toEqual([["2026-10-05", ...VIEW_COLUMNS.map((column) => expected[column] ?? 1.235)]]);
+    expect(await env.DB.prepare("SELECT workout_min FROM daily_summary").first("workout_min")).toBe(55.18333333333333);
+  });
+
+  it("T28 AC2 leaves non-finite numbers unchanged at the read boundary", async () => {
+    const values = { local_date: "2026-10-05", rhr: Infinity, z_rhr: -Infinity, z_sleep: NaN };
+    const db = { prepare: () => ({ bind: () => ({ all: () => Promise.resolve({ results: [values] }) }) }) } as unknown as D1Database;
+    const out = await healthDaily(db, { start: "2026-10-05", end: "2026-10-05", metrics: ["rhr", "z_rhr", "z_sleep"] });
+    expect(out.rows).toEqual([["2026-10-05", Infinity, -Infinity, NaN]]);
   });
 });

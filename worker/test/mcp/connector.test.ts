@@ -494,12 +494,12 @@ describe("AC3 stateless read tools and audit", () => {
     const token = await accessToken();
     await initialize(token);
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, steps, computed_at) VALUES ('2026-10-20', 61, 8123, 1)"),
+      env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, steps, workout_min, computed_at) VALUES ('2026-10-20', 61, 8123, 55.18333333333333, 1)"),
       env.DB.prepare("INSERT INTO sleep_session (source_id, start_ts, end_ts, tz_offset_min, local_date, minutes_asleep, updated_at) VALUES ('night', 1792443600, 1792472400, 120, '2026-10-20', 420, 1)"),
       env.DB.prepare("INSERT INTO sleep_stage (session_id, start_ts, end_ts, stage) VALUES ('night', 1792443600, 1792447200, 'DEEP')"),
       env.DB.prepare("INSERT INTO metric_minute (metric, ts, tz_offset_min, value) VALUES ('hr', 1792476000, 120, 62)"),
     ]);
-    const daily = { start: "2026-10-20", end: "2026-10-20", metrics: ["rhr", "steps"] };
+    const daily = { start: "2026-10-20", end: "2026-10-20", metrics: ["rhr", "steps", "workout_min"] };
     const sleep = { start: "2026-10-20", end: "2026-10-20" };
     const intraday = { metric: "hr", date: "2026-10-20", resolution: "5m" } as const;
     const cases = [
@@ -513,6 +513,7 @@ describe("AC3 stateless read tools and audit", () => {
       expect(msg.result?.isError).not.toBe(true);
       expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
       expect(msg.result?.structuredContent).toEqual(expected);
+      if (name === "health_daily") expect(msg.result?.structuredContent).toMatchObject({ rows: [["2026-10-20", 61, 8123, 55.183]] });
       await toolAudit(name, args, 1, before);
     }
   });
@@ -525,9 +526,9 @@ describe("AC3 stateless read tools and audit", () => {
     ["health_workouts", { start: "2026-10-03", end: "2026-10-02" }, "range must contain 1 to 31 dates"],
     ["health_workouts", { start: "2026-02-30", end: "2026-03-01" }, "date must be a real calendar date in YYYY-MM-DD format"],
     ["health_intraday", { metric: "hr", date: "2026-02-30", resolution: "1m" }, "date must be a real YYYY-MM-DD date between 2000-01-01 and 2099-12-31"],
-    ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["nope"] }, "metrics must be distinct names from DAILY_COLUMNS"],
-    ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: [] }, "metrics must be distinct names from DAILY_COLUMNS"],
-    ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["rhr", "rhr"] }, "metrics must be distinct names from DAILY_COLUMNS"],
+    ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["nope"] }, `unknown metric "nope"; valid: ${DAILY_COLUMNS.join(", ")}`],
+    ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: [] }, "metrics must not be empty"],
+    ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["rhr", "rhr"] }, 'metric "rhr" is repeated'],
     ["health_intraday", { metric: "steps", date: "2026-10-20", resolution: "1m" }, "metric must be hr"],
     ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "2m" }, "resolution must be 1m, 5m or 1h"],
     ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "1m" }, "1m resolution covers at most 3 hours: pass from and to, or use 5m"],
@@ -732,7 +733,7 @@ describe("T17 AC4 analysis tools through the authenticated connector", () => {
     expect(msg.result?.structuredContent).toEqual({ ...compareArgs, n: 7,
       groups: [{ label: "0", n: 4, mean: 4, sd: 2.582 }, { label: ">0–5", n: 3, mean: 4.667, sd: 3.055 },
         { label: ">5–10", n: 0, mean: null, sd: null }, { label: ">10", n: 0, mean: null, sd: null }],
-      comparisons: [{ group: ">0–5", vs: "0", diff: 0.667, df: 3.959, ci95: [-5.427, 6.76] }], caveats: caveats(7) });
+      comparisons: [{ group: ">0–5", vs: "0", diff: 0.667, df: 3.959, ci95: [-5.427, 6.76] }], notes: [], caveats: caveats(7) });
     expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
     await toolAudit("health_compare", compareArgs, 1, before);
   });
@@ -747,7 +748,7 @@ describe("T17 AC4 analysis tools through the authenticated connector", () => {
     expect(msg.result?.isError).not.toBe(true);
     expect(msg.result?.structuredContent).toEqual({ behavior: args.behavior, outcome: args.outcome, ...window, lag_days: 1, n: 0,
       groups: ["0", ">0–0.5", ">0.5–2.5", ">2.5"].map((label) => ({ label, n: 0, mean: null, sd: null })),
-      comparisons: [], caveats: caveats(0) });
+      comparisons: [], notes: ["caffeine_mg solo tiene valores distintos de 0 en 0 de 0 días; los días sin registro cuentan como 0."], caveats: caveats(0) });
     expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
     await toolAudit("health_compare", args, 1, before);
   });
