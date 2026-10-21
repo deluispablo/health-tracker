@@ -6,6 +6,8 @@ import worker from "../../src/index";
 import { DAILY_COLUMNS, healthDaily } from "../../src/mcp/tools/daily";
 import { healthIntraday } from "../../src/mcp/tools/intraday";
 import { healthSleep } from "../../src/mcp/tools/sleep";
+// @ts-expect-error Vite loads this Markdown as text; there is no raw-module declaration.
+import architectureSource from "../../../docs/architecture.md?raw";
 
 const ORIGIN = "https://pixel.test";
 const REDIRECT = "https://client.example/callback";
@@ -368,13 +370,13 @@ describe("AC2 owner authorization and refusals", () => {
 });
 
 describe("AC3 stateless read tools and audit", () => {
-  it("initializes and lists exactly the ten described tools, only the log tool writing", async () => {
+  it("initializes and lists exactly the eleven described tools, only the log tool writing", async () => {
     google();
     const token = await accessToken();
     await initialize(token);
     const msg = await rpc(token, "tools/list", {});
     expect(msg.error).toBeUndefined();
-    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_intraday", "health_log_event", "health_sleep", "health_sql", "health_status", "health_trackers", "health_workouts"]);
+    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_intraday", "health_log_event", "health_sleep", "health_sql", "health_status", "health_trackers", "health_trend", "health_workouts"]);
     for (const tool of msg.result?.tools ?? []) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.inputSchema).toMatchObject({ type: "object" });
@@ -1056,6 +1058,103 @@ describe("T10f AC6 workouts through the authenticated connector", () => {
     expect(msg.error).toBeUndefined();
     expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: "Unable to read health data" }] });
     await toolAudit("health_workouts", args, 0, before);
+    expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
+  });
+});
+
+
+describe("T18 AC5 health_trend through the authenticated connector", () => {
+  const names = ["cigarettes", "alcohol_g", "caffeine_mg", "rhr", "hrv_rmssd", "ln_rmssd", "resp_rate", "spo2_avg", "skin_temp_dev",
+    "sleep_min", "sleep_eff", "deep_min", "rem_min", "sleep_latency_min", "steps", "azm", "readiness_proxy"];
+  const args = { metric: "rhr", period: "week", start: "2026-12-28", end: "2027-01-10" };
+
+  it("lists health_trend in architecture documentation", () => {
+    expect(architectureSource as string).toContain("health_trend");
+  });
+
+  it("describes all four required fields, allowed names/periods and date limits with read-only annotations", async () => {
+    google();
+    const token = await accessToken();
+    const msg = await rpc(token, "tools/list", {});
+    expect(msg.error).toBeUndefined();
+    const tool = msg.result?.tools?.find((t) => t.name === "health_trend");
+    expect(tool).toBeDefined();
+    expect(tool?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+    const schema = tool?.inputSchema as { required: string[]; properties: Record<string, { type: string; description: string }> } | undefined;
+    expect(schema?.required.slice().sort()).toEqual(["end", "metric", "period", "start"]);
+    expect(Object.keys(schema?.properties ?? {}).sort()).toEqual(["end", "metric", "period", "start"]);
+    for (const field of ["metric", "period", "start", "end"]) {
+      expect(schema?.properties[field]).toMatchObject({ type: "string", description: expect.any(String) as unknown });
+      expect(schema?.properties[field]?.description.length).toBeGreaterThan(0);
+    }
+    for (const name of names) expect(schema?.properties.metric.description).toContain(name);
+    for (const period of ["week", "month"]) expect(schema?.properties.period.description).toContain(period);
+    for (const field of ["start", "end"]) {
+      for (const limit of ["YYYY-MM-DD", "2000", "2099", "365"]) expect(schema?.properties[field]?.description).toContain(limit);
+      expect(schema?.properties[field]?.description).toMatch(/inclusive/i);
+    }
+  });
+
+  it.each(["week", "month"])("returns a seeded %s trend in both JSON forms and audits exactly one successful read", async (period) => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    await env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, computed_at) VALUES ('2026-12-28', 1, 1), ('2027-01-04', 3, 1)").run();
+    const beforeRows = (await env.DB.prepare("SELECT * FROM daily_summary").all()).results;
+    const before = (await audit()).length;
+    const input = { ...args, period };
+    const expected = { ...input, baseline: { n: 2, mean: 2, sd: 1.414 }, buckets: [
+      { period_start: period === "week" ? "2026-12-28" : "2026-12-01", days: period === "week" ? 7 : 4,
+        n: 1, mean: 1, sd: null, min: 1, max: 1, z: -0.707 },
+      { period_start: period === "week" ? "2027-01-04" : "2027-01-01", days: period === "week" ? 7 : 10,
+        n: 1, mean: 3, sd: null, min: 3, max: 3, z: 0.707 },
+    ], caveats: "Descriptivo. z compara cada periodo con la media del rango; los periodos parciales tienen menos días." };
+    const msg = await rpc(token, "tools/call", { name: "health_trend", arguments: input });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result?.isError).not.toBe(true);
+    expect(msg.result?.structuredContent).toEqual(expected);
+    expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(expected) }]);
+    await toolAudit("health_trend", input, 1, before);
+    expect((await env.DB.prepare("SELECT * FROM daily_summary").all()).results).toEqual(beforeRows);
+  });
+
+  it.each([
+    [{ metric: "unknown" }, `metric must be one of: ${names.join(", ")}`],
+    [{ period: "day" }, "period must be week or month"],
+    [{ start: "2026-02-30" }, "date must be a real calendar date in YYYY-MM-DD format"],
+    [{ end: "2100-01-01" }, "date must be a real calendar date in YYYY-MM-DD format"],
+    [{ end: "2026-12-27" }, "range must contain 1 to 365 dates"],
+    [{ start: "2026-01-01", end: "2027-01-01" }, "range must contain 1 to 365 dates"],
+  ] as [Partial<typeof args>, string][])("returns the exact RangeError and failed audit for %j", async (overrides, message) => {
+    google();
+    const token = await accessToken();
+    const before = (await audit()).length;
+    const input = { ...args, ...overrides };
+    const msg = await rpc(token, "tools/call", { name: "health_trend", arguments: input });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: message }] });
+    expect(msg.result?.structuredContent).toBeUndefined();
+    await toolAudit("health_trend", input, 0, before);
+    expect((await audit()).at(-1)?.error).toBe(message);
+  });
+
+  it("returns the generic tool error and failed audit when the trend D1 read fails", async () => {
+    google();
+    const token = await accessToken();
+    const before = (await audit()).length;
+    const db = new Proxy(env.DB, { get(t, p) {
+      if (p === "prepare") return (sql: string) => {
+        if (/\bFROM\s+v_daily\b/i.test(sql)) throw new Error("private D1 trend failure");
+        return t.prepare(sql);
+      };
+      const value: unknown = Reflect.get(t, p);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
+    } });
+    const msg = await rpc(token, "tools/call", { name: "health_trend", arguments: args }, 1, { ...connectorEnv, DB: db });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: "Unable to read health data" }] });
+    expect(msg.result?.structuredContent).toBeUndefined();
+    await toolAudit("health_trend", args, 0, before);
     expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
   });
 });
