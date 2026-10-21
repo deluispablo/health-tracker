@@ -1,5 +1,6 @@
 import type { createGoogleClient, DailyRollUpPoint, RollUpPoint } from "../google/client";
 import { upsertStatements } from "../lib/d1";
+import { sleepLocalDate } from "../lib/time";
 
 interface DrainEnv { DB: D1Database; USER_TZ: string }
 interface PendingRow {
@@ -30,14 +31,29 @@ function validDate(date: unknown): date is string {
     && Number.isFinite(midnight(date)) && addDays(date, 0) === date;
 }
 
+function sleepInterval(value: unknown): [number, number] | undefined {
+  const interval = object(value);
+  const instant = (v: unknown): number => typeof v === "string"
+    && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)$/.test(v) ? Date.parse(v) / 1000 : NaN;
+  const start = instant(interval.startTime);
+  const end = instant(interval.endTime);
+  return Number.isFinite(start) && Number.isFinite(end) && end > start ? [Math.floor(start), Math.floor(end)] : undefined;
+}
+
+function sleepNumber(value: unknown): number | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 export async function drainSyncPending(
-  env: DrainEnv, client: Pick<ReturnType<typeof createGoogleClient>, "rollUpHeartRate" | "dailyRollUp" | "listDaily">,
+  env: DrainEnv, client: Pick<ReturnType<typeof createGoogleClient>, "rollUpHeartRate" | "dailyRollUp" | "listDaily" | "reconcile">,
   opts: { now?: () => number } = {},
 ): Promise<{ processed: number; failed: number }> {
   const db = env.DB;
   let processed = 0;
   let failed = 0;
-  for (const type of ["heart-rate", "steps", "daily-resting-heart-rate"]) {
+  for (const type of ["heart-rate", "steps", "daily-resting-heart-rate", "sleep"]) {
     const row = await db.prepare(`SELECT * FROM sync_pending
       WHERE data_type = ? AND attempts < 5
       ORDER BY received_at, start_ts, operation, end_ts LIMIT 1`).bind(type).first<PendingRow>();
@@ -50,7 +66,64 @@ export async function drainSyncPending(
     const statements: D1PreparedStatement[] = [];
     let advance: number | undefined;
 
-    if (type !== "heart-rate") {
+    if (type === "sleep") {
+      const end = Math.min(row.end_ts + 60, row.start_ts + 7 * 86400);
+      let items: unknown[];
+      try {
+        items = await client.reconcile("sleep", new Date(row.start_ts * 1000).toISOString(), new Date(end * 1000).toISOString());
+      } catch {
+        await db.prepare(`UPDATE sync_pending SET attempts = attempts + 1 WHERE ${predicate}`).bind(...key).run();
+        failed++;
+        continue;
+      }
+
+      const now = opts.now?.() ?? Math.floor(Date.now() / 1000);
+      const answer = new Map<string, { session: unknown[]; stages: unknown[][] }>();
+      for (const item of items) {
+        const payload = object(item);
+        const sleep = object(payload.sleep);
+        const interval = sleepInterval(sleep.interval);
+        const offset = object(sleep.interval).endUtcOffset;
+        if (typeof payload.dataPointName !== "string" || !interval || typeof offset !== "string" || !/^-?\d+s$/.test(offset)) continue;
+        const tz = Number(offset.slice(0, -1)) / 60;
+        if (!Number.isInteger(tz)) continue;
+        const [startTs, endTs] = interval;
+        const summary = object(sleep.summary);
+        const asleep = sleepNumber(summary.minutesAsleep);
+        const inBed = sleepNumber(summary.minutesInSleepPeriod);
+        const stageMinutes = new Map<string, number>();
+        for (const entry of Array.isArray(summary.stagesSummary) ? summary.stagesSummary : []) {
+          const s = object(entry);
+          const minutes = sleepNumber(s.minutes);
+          if (typeof s.type === "string" && minutes !== null) stageMinutes.set(s.type, minutes);
+        }
+        const stages = (Array.isArray(sleep.stages) ? sleep.stages : []).flatMap((entry) => {
+          const s = object(entry);
+          const times = sleepInterval(s);
+          return times && typeof s.type === "string" && ["LIGHT", "DEEP", "REM", "AWAKE"].includes(s.type)
+            ? [[payload.dataPointName, ...times, s.type]] : [];
+        });
+        // A duplicate replaces the whole session, including its stages.
+        answer.set(payload.dataPointName, { session: [payload.dataPointName, "gh", startTs, endTs, tz,
+          sleepLocalDate(endTs, tz), object(sleep.metadata).mainSleep === true ? 0 : 1, asleep, inBed,
+          asleep !== null && inBed !== null && inBed > 0 ? Math.round(asleep / inBed * 100) : null,
+          ...["DEEP", "REM", "LIGHT", "AWAKE"].map((stage) => stageMinutes.get(stage) ?? null),
+          sleepNumber(summary.minutesToFallAsleep), now], stages });
+      }
+
+      statements.push(db.prepare(`DELETE FROM sleep_stage WHERE session_id IN
+        (SELECT source_id FROM sleep_session WHERE source = 'gh' AND end_ts >= ? AND end_ts < ?)`)
+        .bind(row.start_ts, end),
+      db.prepare("DELETE FROM sleep_session WHERE source = 'gh' AND end_ts >= ? AND end_ts < ?").bind(row.start_ts, end));
+      for (const id of answer.keys()) statements.push(db.prepare("DELETE FROM sleep_stage WHERE session_id = ?").bind(id));
+      statements.push(...upsertStatements(db, "sleep_session",
+        ["source_id", "source", "start_ts", "end_ts", "tz_offset_min", "local_date", "is_nap", "minutes_asleep", "minutes_in_bed",
+          "efficiency", "deep_min", "rem_min", "light_min", "awake_min", "latency_min", "updated_at"],
+        ["source_id"], [...answer.values()].map((item) => item.session)),
+      ...upsertStatements(db, "sleep_stage", ["session_id", "start_ts", "end_ts", "stage"],
+        ["session_id", "start_ts"], [...answer.values()].flatMap((item) => item.stages)));
+      if (end < row.end_ts + 60) advance = end;
+    } else if (type !== "heart-rate") {
       const first = localDate(row.start_ts, env.USER_TZ);
       const fullEnd = addDays(localDate(row.end_ts - 1, env.USER_TZ), 1);
       const cap = addDays(first, 31);
