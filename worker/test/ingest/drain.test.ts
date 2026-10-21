@@ -1,8 +1,9 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RollUpPoint } from "../../src/google/client";
 import { drainSyncPending } from "../../src/ingest/drain";
+import { dateTimeFormat } from "../../src/lib/time";
 
 const at = (iso: string) => Date.parse(iso) / 1000;
 const NOW = at("2026-10-21T00:00:00Z");
@@ -47,6 +48,111 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await env.DB.batch([env.DB.prepare("DROP TRIGGER IF EXISTS fail_queue"), env.DB.prepare("DELETE FROM sync_pending"), env.DB.prepare("DELETE FROM metric_minute")]);
+});
+
+// Record executed queue reads and the rows D1 actually returns, including bound statements.
+function countingDb() {
+  const reads: Record<string, unknown>[][] = [];
+  const wrap = (statement: D1PreparedStatement): D1PreparedStatement => new Proxy(statement, { get(t, p) {
+    if (p === "bind") return (...args: unknown[]) => wrap(t.bind(...args));
+    const value: unknown = Reflect.get(t, p);
+    if (p === "all" || p === "first") return async (...args: unknown[]) => {
+      const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(t, args);
+      reads.push(p === "all" ? (result as D1Result<Record<string, unknown>>).results : result ? [result as Record<string, unknown>] : []);
+      return result;
+    };
+    return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
+  } });
+  const db = new Proxy(env.DB, { get(t, p) {
+    if (p === "prepare") return (sql: string) => {
+      const statement = t.prepare(sql);
+      return /\bSELECT\b/i.test(sql) && !/^\s*INSERT\b/i.test(sql) && /\bsync_pending\b/i.test(sql)
+        ? wrap(statement) : statement;
+    };
+    const value: unknown = Reflect.get(t, p);
+    return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
+  } });
+  return { db, reads };
+}
+
+describe("T31 heads snapshot", () => {
+  const types = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
+    "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"];
+
+  it.each([false, true])("AC1/AC4 executes one queue SELECT on an idle drain (exhausted: %s)", async (exhausted) => {
+    if (exhausted) await queue("heart-rate", NOW - 120, NOW - 60, "UPSERT", NOW - 60, 5);
+    const { db, reads } = countingDb();
+    expect(await drainSyncPending({ ...drainEnv(), DB: db }, fakeClient().client)).toEqual({ processed: 0, failed: 0 });
+    expect(reads).toEqual([[]]);
+  });
+
+  it("AC1/AC4 returns only one eligible head per supported type from a backlog and drains in fixed order", async () => {
+    const start = at("2026-10-20T10:00:00Z");
+    // Reverse insertion order, with ties exercising every ORDER BY column.
+    for (const type of [...types].reverse()) {
+      await queue(type, start - 60, start + 60, "DELETE", NOW - 900, 5);
+      await queue(type, start - 60, start, "DELETE", NOW - 30);
+      await queue(type, start + 60, start + 120);
+      await queue(type, start, start + 180);
+      await queue(type, start, start + 120, "DELETE");
+      await queue(type, start, start + 60, "DELETE");
+    }
+    await queue("weight", start, start + 60);
+    const order: string[] = [];
+    const answer = (type: string) => { order.push(type); return Promise.resolve([]); };
+    const client = {
+      rollUpHeartRate: () => answer("heart-rate"), dailyRollUp: answer, listDaily: answer, reconcile: answer,
+    };
+    const { db, reads } = countingDb();
+    expect(await drainSyncPending({ ...drainEnv(), DB: db }, client)).toEqual({ processed: 10, failed: 0 });
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).toHaveLength(10);
+    expect(reads[0].map((r) => r.data_type).sort()).toEqual([...types].sort());
+    expect(reads[0].every((r) => r.start_ts === start && r.end_ts === start + 60 && r.operation === "DELETE"
+      && r.received_at === NOW - 60 && r.attempts === 0)).toBe(true);
+    // Heart-rate DELETE does not call Google; every other type still does.
+    expect(order).toEqual(types.slice(1));
+    expect(await pending()).toHaveLength(51);
+  });
+
+  it("AC1 preserves a later type re-received mid-drain and defers a newly arriving type to the next run", async () => {
+    const start = at("2026-10-20T10:00:00Z");
+    await queue("heart-rate", start, start + 60);
+    await queue("steps", start, start + 60);
+    const order: string[] = [];
+    const client = {
+      async rollUpHeartRate() {
+        order.push("heart-rate");
+        await env.DB.prepare("UPDATE sync_pending SET received_at = ? WHERE data_type = 'steps'").bind(NOW).run();
+        await queue("exercise", start, start + 60, "UPSERT", NOW);
+        return [];
+      },
+      dailyRollUp: (type: string) => { order.push(type); return Promise.resolve([]); },
+      listDaily: () => Promise.resolve([]),
+      reconcile: (type: string) => { order.push(type); return Promise.resolve([]); },
+    };
+    expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 2, failed: 0 });
+    expect(order).toEqual(["heart-rate", "steps"]);
+    expect((await pending()).map((r) => [r.data_type, r.received_at])).toEqual([["exercise", NOW], ["steps", NOW]]);
+    order.length = 0;
+    expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 2, failed: 0 });
+    expect(order).toEqual(["steps", "exercise"]);
+    expect(await pending()).toEqual([]);
+  });
+
+  it("AC3 reuses the memoised civil-date and offset formatters across drains", async () => {
+    const options = { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" } as const;
+    dateTimeFormat("en-US", options);
+    dateTimeFormat("en-US", { timeZone: "Europe/Madrid", timeZoneName: "longOffset" });
+    const constructor = vi.spyOn(Intl, "DateTimeFormat");
+    try {
+      for (let i = 0; i < 2; i++) {
+        await queue("heart-rate", NOW - 120, NOW - 60);
+        await drainSyncPending(drainEnv(), fakeClient([{ ts: NOW - 120, avg: 60, min: 60, max: 60 }]).client);
+      }
+      expect(constructor).not.toHaveBeenCalled();
+    } finally { constructor.mockRestore(); }
+  });
 });
 
 describe("AC1 heart-rate upsert", () => {

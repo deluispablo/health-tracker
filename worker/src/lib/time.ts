@@ -2,6 +2,18 @@ const RFC3339_Z = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
 
 const dateOf = (epochSeconds: number): string => new Date(epochSeconds * 1000).toISOString().slice(0, 10);
 
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+export function dateTimeFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = JSON.stringify([locale, options]);
+  let formatter = formatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    formatters.set(key, formatter);
+  }
+  return formatter;
+}
+
 /** Google physicalTime ("...Z") and utcOffset ("7200s") to epoch seconds, offset minutes and local date. */
 export function fromGoogleTime(physicalTime: string, utcOffset: string): { ts: number; tzOffsetMin: number; localDate: string } {
   const m = RFC3339_Z.exec(physicalTime);

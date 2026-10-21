@@ -4,6 +4,7 @@ import { createGoogleClient } from "./google/client";
 import { drainSyncPending } from "./ingest/drain";
 import { enqueueReconcile } from "./ingest/poll";
 import { handleGoogleWebhook } from "./ingest/webhook";
+import { dateTimeFormat } from "./lib/time";
 import { homepage, pageResponse, privacy } from "./pages";
 import { recomputeDailySummary } from "./rollup/daily";
 import { recomputeTrackerDaily } from "./rollup/trackers";
@@ -42,14 +43,16 @@ export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps):
   }
   if (cron !== "*/5 * * * *") throw new Error(`Unknown cron: ${cron}`);
 
-  const refreshToken = await loadGoogleRefreshToken(env);
+  const watchDue = Math.floor(now / 300) % 6 === 0;
+  const needsGoogle = watchDue || await env.DB.prepare("SELECT 1 FROM sync_pending WHERE attempts < 5 LIMIT 1").first() !== null;
+  const refreshToken = needsGoogle ? await loadGoogleRefreshToken(env) : null;
   if (refreshToken !== null) {
     const client = createGoogleClient({
       fetch: deps.fetch, kv: env.OAUTH_KV, clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET, refreshToken, sleep: deps.sleep,
     });
     await drainSyncPending(env, client, { now: () => now });
-    if (Math.floor(now / 300) % 6 === 0) {
+    if (watchDue) {
       try {
         let syncedUntil: number | null = null;
         let lastError: string | null = null;
@@ -73,7 +76,7 @@ export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps):
       } catch { /* Watch persistence failures must not skip the rollups. */ }
     }
   }
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dateTimeFormat("en-US", {
     timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(now * 1000);
   const today = ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");

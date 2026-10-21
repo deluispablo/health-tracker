@@ -1,7 +1,7 @@
 import type { createGoogleClient, DailyRollUpPoint } from "../google/client";
 import { parseExerciseInstant } from "../google/client";
 import { upsertStatements } from "../lib/d1";
-import { sleepLocalDate } from "../lib/time";
+import { dateTimeFormat, sleepLocalDate } from "../lib/time";
 
 interface DrainEnv { DB: D1Database; USER_TZ: string }
 interface PendingRow {
@@ -92,16 +92,19 @@ export async function drainSyncPending(
   opts: { now?: () => number } = {},
 ): Promise<{ processed: number; failed: number }> {
   const db = env.DB;
-  const dateFormatter = new Intl.DateTimeFormat("en-US", {
+  const dateFormatter = dateTimeFormat("en-US", {
     timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",
   });
   let processed = 0;
   let failed = 0;
-  for (const type of ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
-    "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"]) {
-    const row = await db.prepare(`SELECT * FROM sync_pending
-      WHERE data_type = ? AND attempts < 5
-      ORDER BY received_at, start_ts, operation, end_ts LIMIT 1`).bind(type).first<PendingRow>();
+  const types = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
+    "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"];
+  const { results: heads } = await db.prepare(`SELECT * FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY data_type ORDER BY received_at, start_ts, operation, end_ts) AS rank
+    FROM sync_pending WHERE attempts < 5 AND data_type IN (${types.map(() => "?").join(", ")})
+  ) WHERE rank = 1`).bind(...types).all<PendingRow>();
+  for (const type of types) {
+    const row = heads.find((head) => head.data_type === type);
     if (!row) continue;
 
     const key = [row.data_type, row.start_ts, row.end_ts, row.operation];
@@ -262,7 +265,7 @@ export async function drainSyncPending(
         const end = Math.min(roundedEnd, start + 3600);
         const points = await client.rollUpHeartRate(new Date(start * 1000).toISOString(), new Date(end * 1000).toISOString(), 60);
 
-        const formatter = new Intl.DateTimeFormat("en-US", { timeZone: env.USER_TZ, timeZoneName: "longOffset" });
+        const formatter = dateTimeFormat("en-US", { timeZone: env.USER_TZ, timeZoneName: "longOffset" });
         const rows = points.map((point) => {
           const offset = formatter.formatToParts(point.ts * 1000).find((part) => part.type === "timeZoneName")
             ?.value.match(/^GMT([+-])(\d{2}):(\d{2})$/);

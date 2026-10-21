@@ -1,8 +1,10 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleScheduled, route } from "../src/app";
+import * as googleClient from "../src/google/client";
 import { encryptSecret } from "../src/lib/crypto";
+import { dateTimeFormat } from "../src/lib/time";
 
 const at = (iso: string) => Date.parse(iso) / 1000;
 const NOW = at("2026-10-21T04:30:27Z");
@@ -43,6 +45,72 @@ beforeEach(async () => {
     .map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
   const { keys } = await env.OAUTH_KV.list();
   await Promise.all(keys.map((k) => env.OAUTH_KV.delete(k.name)));
+});
+
+describe("T31 idle cron", () => {
+  it.each([false, true])("AC2/AC4 skips token reads, client construction and fetch while completing rollups (exhausted: %s)", async (exhausted) => {
+    await storeRefreshToken();
+    if (exhausted) await env.DB.prepare(`INSERT INTO sync_pending
+      (data_type, start_ts, end_ts, operation, received_at, attempts) VALUES ('heart-rate', 0, 60, 'UPSERT', 1, 5)`).run();
+    await env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at)
+      VALUES ('idle', 'caffeine', ?, 120, '2026-10-21', 80, 'mcp', ?)`).bind(NOW, NOW).run();
+    const now = NOW + 300;
+    expect(Math.floor(now / 300) % 6).not.toBe(0);
+    const tokenReads: string[] = [];
+    const db = new Proxy(env.DB, { get(t, p) {
+      if (p === "prepare") return (sql: string) => {
+        if (/\bSELECT\b/i.test(sql) && /\bsecret_blob\b/i.test(sql)) tokenReads.push(sql);
+        return t.prepare(sql);
+      };
+      const value: unknown = Reflect.get(t, p);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
+    } });
+    const createClient = vi.spyOn(googleClient, "createGoogleClient");
+    const g = google();
+    try {
+      await handleScheduled("*/5 * * * *", { ...appEnv(), DB: db }, { ...deps(g.fetch), now: () => now });
+      expect(tokenReads).toEqual([]);
+      expect(createClient).not.toHaveBeenCalled();
+      expect(g.calls).toEqual([]);
+      expect(await env.DB.prepare("SELECT local_date, computed_at FROM daily_summary").first())
+        .toEqual({ local_date: "2026-10-21", computed_at: now });
+      expect(await env.DB.prepare("SELECT local_date, total FROM tracker_daily").first())
+        .toEqual({ local_date: "2026-10-21", total: 80 });
+      expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first("n")).toBe(exhausted ? 1 : 0);
+    } finally { createClient.mockRestore(); }
+  });
+
+  it("AC4 drains all ten types in order on a busy non-watch tick", async () => {
+    await storeRefreshToken();
+    const types = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
+      "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"];
+    await env.DB.batch([...types].reverse().map((type) => env.DB.prepare(`INSERT INTO sync_pending
+      (data_type, start_ts, end_ts, operation, received_at) VALUES (?, ?, ?, 'UPSERT', ?)`)
+      .bind(type, NOW - 120, NOW - 60, NOW - 30)));
+    const g = google();
+    const requests: string[] = [];
+    const fetch: typeof globalThis.fetch = (input, init) => {
+      const request = new Request(input, init);
+      if (request.url === "https://oauth2.googleapis.com/token") return g.fetch(input, init);
+      requests.push(new URL(request.url).pathname);
+      return Promise.resolve(Response.json({ rollupDataPoints: [], dataPoints: [] }));
+    };
+    await handleScheduled("*/5 * * * *", appEnv(), { ...deps(fetch), now: () => NOW + 300 });
+    expect(requests.map((path) => /\/dataTypes\/([^/]+)/.exec(path)?.[1])).toEqual(types);
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first("n")).toBe(0);
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM daily_summary").first("n")).toBe(2);
+  });
+
+  it("AC3 reuses the shared civil-date formatter across ticks", async () => {
+    dateTimeFormat("en-US", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" });
+    const constructor = vi.spyOn(Intl, "DateTimeFormat");
+    try {
+      for (let i = 1; i <= 2; i++) {
+        await handleScheduled("*/5 * * * *", appEnv(), { ...deps(google().fetch), now: () => NOW + i * 300 });
+      }
+      expect(constructor).not.toHaveBeenCalled();
+    } finally { constructor.mockRestore(); }
+  });
 });
 
 describe("AC1 five-minute cron", () => {
