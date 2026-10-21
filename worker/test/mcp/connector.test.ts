@@ -37,14 +37,17 @@ function idToken(over: Record<string, unknown> = {}) {
     email: EMAIL, email_verified: true, ...over,
   }))}.sig`;
 }
-function google(over: Record<string, unknown> = {}, status = 200, refresh: string | undefined = GOOGLE_REFRESH) {
+let lastGoogleBody: Record<string, unknown> = {};
+function google(over: Record<string, unknown> = {}, status = 200, refresh: string | null = GOOGLE_REFRESH) {
   return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const req = new Request(input, init);
     expect(req.url).toBe("https://oauth2.googleapis.com/token");
     expect(req.method).toBe("POST");
     expect(req.headers.get("content-type")).toContain("application/x-www-form-urlencoded");
-    return Promise.resolve(Response.json({ access_token: GOOGLE_ACCESS, refresh_token: refresh, expires_in: 3600,
-      id_token: idToken(over) }, { status }));
+    const body: Record<string, unknown> = { access_token: GOOGLE_ACCESS, expires_in: 3600, id_token: idToken(over) };
+    if (refresh !== null) body.refresh_token = refresh;
+    lastGoogleBody = body;
+    return Promise.resolve(Response.json(body, { status }));
   });
 }
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
@@ -93,8 +96,11 @@ async function consent(): Promise<Consent> {
   }
   const html = await page.text();
   expect(html).toContain("health:read");
-  expect(html).toContain("&lt;script&gt;");
-  expect(html).not.toContain(CLIENT_NAME);
+  expect(html).not.toContain("<script>alert");
+  const decoded = html.replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+  expect(decoded).toContain(CLIENT_NAME);
   expect(html).toContain(new URL(REDIRECT).hostname);
   const result: Consent = { clientId: client.client_id, cookie, action: "/authorize", fields: new URLSearchParams(), buttons: [] };
   let button: Consent["buttons"][number] | undefined;
@@ -287,8 +293,10 @@ describe("AC2 owner authorization and refusals", () => {
   });
 
   it("grants the owner when Google returns no refresh token", async () => {
-    google({}, 200, undefined);
+    const fetch = google({}, 200, null);
     await accessToken();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(lastGoogleBody).not.toHaveProperty("refresh_token");
     expect((await audit()).map((r) => r.name)).toEqual(["grant"]);
   });
 
