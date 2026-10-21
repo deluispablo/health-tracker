@@ -404,6 +404,32 @@ describe("AC3 stateless read tools and audit", () => {
     for (const r of ["1m", "5m", "1h"]) expect(describe("health_intraday", "resolution")).toContain(r);
     expect(describe("health_daily", "start")).toContain("90");
     expect(describe("health_sleep", "start")).toContain("31");
+    expect(describe("health_trackers", "date")).toContain("YYYY-MM-DD");
+    for (const field of ["tracker_id", "value", "at", "note", "idempotency_key"]) {
+      expect(describe("health_log_event", field).trim().length).toBeGreaterThan(0);
+    }
+    const trackerValues = describe("health_log_event", "tracker_id") + " " + describe("health_log_event", "value");
+    for (const value of ["cigarettes", "alcohol", "caffeine", "u", "g", "mg", "1", "20", "13", "200", "80", "1000"]) {
+      expect(trackerValues).toContain(value);
+    }
+    expect(trackerValues).toMatch(/default/i);
+    expect(describe("health_log_event", "at")).toMatch(/RFC\s*3339|YYYY-MM-DDT/);
+    expect(describe("health_log_event", "at")).toMatch(/7/);
+    expect(describe("health_log_event", "at")).toMatch(/300|5\s*min/);
+    expect(describe("health_log_event", "note")).toContain("280");
+    const key = describe("health_log_event", "idempotency_key");
+    expect(key).toContain("8");
+    expect(key).toContain("64");
+    expect(key).toMatch(/ASCII|A-Z/);
+    expect(key).toMatch(/_|underscore/i);
+    expect(key).toMatch(/-|hyphen/i);
+    expect(key).toMatch(/retry|replay|duplicate|idempoten/i);
+    const log = tools.get("health_log_event") as Schema & { required: string[] };
+    expect(log.required).toEqual(["tracker_id"]);
+    for (const [field, type] of [["tracker_id", "string"], ["value", "number"], ["at", "string"], ["note", "string"], ["idempotency_key", "string"]]) {
+      expect(log.properties[field]).toMatchObject({ type });
+    }
+    expect(tools.get("health_trackers")).toMatchObject({ required: ["date"], properties: { date: { type: "string" } } });
   });
 
   it("calls each tool on seeded data, returns both JSON forms and writes one audit row per call", async () => {
@@ -458,6 +484,10 @@ describe("AC3 stateless read tools and audit", () => {
   it.each([
     ["health_daily", { end: "2026-10-20" }], ["health_sleep", { start: 123, end: "2026-10-20" }],
     ["health_intraday", { metric: "hr", date: "2026-10-20" }],
+    ["health_trackers", {}], ["health_trackers", { date: 123 }],
+    ["health_log_event", {}], ["health_log_event", { tracker_id: "caffeine", value: "80" }],
+    ["health_log_event", { tracker_id: "caffeine", at: 123 }], ["health_log_event", { tracker_id: "caffeine", note: 123 }],
+    ["health_log_event", { tracker_id: "caffeine", idempotency_key: 123 }],
   ])("rejects structurally invalid arguments for %s", async (name, args) => {
     google();
     const token = await accessToken();
@@ -472,19 +502,80 @@ describe("AC3 stateless read tools and audit", () => {
     await initialize(token);
     const args = { tracker_id: "caffeine", value: 60, note: "café", idempotency_key: "connector-key-01" };
     const before = (await audit()).length;
+    const started = Math.floor(Date.now() / 1000);
     const first = await rpc(token, "tools/call", { name: "health_log_event", arguments: args });
     expect(first.error).toBeUndefined();
     expect(first.result?.isError).not.toBe(true);
     expect(first.result?.structuredContent).toMatchObject({ created: true, event: { id: "k_connector-key-01", tracker_id: "caffeine", value: 60, note_untrusted: "café" } });
+    expect(first.result?.content).toEqual([{ type: "text", text: JSON.stringify(first.result?.structuredContent) }]);
+    const stored = await env.DB.prepare("SELECT ts, created_at, tz_offset_min, local_date FROM event WHERE id = ?").bind("k_connector-key-01")
+      .first<{ ts: number; created_at: number; tz_offset_min: number; local_date: string }>();
+    expect(stored).not.toBeNull();
+    if (!stored) throw new Error("missing logged event");
+    expect(stored.created_at).toBeGreaterThanOrEqual(started);
+    expect(stored.created_at).toBeLessThanOrEqual(Math.floor(Date.now() / 1000));
+    expect(Number.isInteger(stored.created_at)).toBe(true);
+    expect(stored.ts).toBe(stored.created_at);
+    const local = new Date((stored.ts + stored.tz_offset_min * 60) * 1000).toISOString().slice(0, 10);
+    expect(stored.local_date).toBe(local);
+    const offset = new Intl.DateTimeFormat("en", { timeZone: connectorEnv.USER_TZ, timeZoneName: "longOffset" })
+      .formatToParts(new Date(stored.ts * 1000)).find((p) => p.type === "timeZoneName")?.value;
+    const match = /^GMT([+-])(\d{2}):(\d{2})$/.exec(offset ?? "");
+    expect(match).not.toBeNull();
+    if (!match) throw new Error("missing USER_TZ offset");
+    expect(stored.tz_offset_min).toBe((match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3])));
     await toolAudit("health_log_event", args, 1, before);
     const again = await rpc(token, "tools/call", { name: "health_log_event", arguments: args }, 2);
-    expect(again.result?.structuredContent).toMatchObject({ created: false });
+    expect(again.result?.structuredContent).toEqual({ ...(first.result?.structuredContent as object), created: false });
+    await toolAudit("health_log_event", args, 1, before + 1);
     expect(await env.DB.prepare("SELECT count(*) AS n FROM event").first("n")).toBe(1);
     const date = (first.result?.structuredContent as { event: { local_date: string } }).event.local_date;
     const listed = await rpc(token, "tools/call", { name: "health_trackers", arguments: { date } }, 3);
     expect(listed.result?.structuredContent).toMatchObject({ date, events: [{ id: "k_connector-key-01", value: 60 }] });
-    const bad = await rpc(token, "tools/call", { name: "health_log_event", arguments: { tracker_id: "nope" } }, 4);
+    expect(listed.result?.content).toEqual([{ type: "text", text: JSON.stringify(listed.result?.structuredContent) }]);
+    await toolAudit("health_trackers", { date }, 1, before + 2);
+    const invalid = { tracker_id: "nope", note: "owner's refused note" };
+    const bad = await rpc(token, "tools/call", { name: "health_log_event", arguments: invalid }, 4);
+    expect(bad.error).toBeUndefined();
     expect(bad.result?.isError).toBe(true);
+    expect(bad.result?.content?.[0].text).toEqual(expect.any(String));
+    expect(bad.result?.content?.[0].text).not.toBe("Unable to read health data");
+    await toolAudit("health_log_event", invalid, 0, before + 3);
+    expect((await audit()).at(-1)?.error).toBe(bad.result?.content?.[0].text);
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM event").first("n")).toBe(1);
+  });
+
+  it("returns the tracker date RangeError and audits the refused listing", async () => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    const before = (await audit()).length;
+    const args = { date: "2026-02-30" };
+    const msg = await rpc(token, "tools/call", { name: "health_trackers", arguments: args });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: expect.any(String) as unknown }] });
+    expect(msg.result?.content?.[0].text).not.toBe("Unable to read health data");
+    await toolAudit("health_trackers", args, 0, before);
+    expect((await audit()).at(-1)?.error).toBe(msg.result?.content?.[0].text);
+  });
+
+  it("returns the generic error and failed audit when a tracker insert fails", async () => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    const before = (await audit()).length;
+    await env.DB.prepare("CREATE TRIGGER fail_connector_event BEFORE INSERT ON event BEGIN SELECT RAISE(ABORT, 'private D1 error'); END").run();
+    try {
+      const args = { tracker_id: "caffeine", note: "owner's note" };
+      const msg = await rpc(token, "tools/call", { name: "health_log_event", arguments: args });
+      expect(msg.error).toBeUndefined();
+      expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: "Unable to read health data" }] });
+      await toolAudit("health_log_event", args, 0, before);
+      expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
+      expect(await env.DB.prepare("SELECT count(*) AS n FROM event").first("n")).toBe(0);
+    } finally {
+      await env.DB.prepare("DROP TRIGGER fail_connector_event").run();
+    }
   });
 
   it("keeps a successful tool response when the audit write fails", async () => {

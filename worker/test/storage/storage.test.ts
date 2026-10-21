@@ -4,8 +4,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { upsertRows } from "../../src/lib/d1";
 import { fromGoogleTime, nightOf, sleepLocalDate } from "../../src/lib/time";
 
+let migrationStart: number;
+let migrationEnd: number;
 beforeAll(async () => {
+  migrationStart = Math.floor(Date.now() / 1000);
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  migrationEnd = Math.floor(Date.now() / 1000);
 });
 
 const MM = ["metric", "source", "ts", "tz_offset_min", "value"];
@@ -70,9 +74,62 @@ describe("AC1 schema", () => {
     ]);
   });
 
+  it("T12 seeds the three tracker ids with unixepoch creation time and no schema changes", async () => {
+    const seed = env.TEST_MIGRATIONS.find((m) => m.name === "0003_tracker_seed.sql");
+    expect(seed).toBeDefined();
+    if (!seed) throw new Error("missing T12 tracker seed");
+    expect(seed.queries.length).toBeGreaterThan(0);
+    for (const query of seed.queries) {
+      const sql = query.replace(/\/\*[\s\S]*?\*\/|--[^\n]*/g, "").trim();
+      expect(sql).toMatch(/^INSERT\s+OR\s+IGNORE\s+INTO\s+tracker\b/i);
+      expect(sql).toMatch(/unixepoch\s*\(\s*\)/i);
+      expect(sql).not.toMatch(/\b(?:CREATE|ALTER|DROP)\b/i);
+    }
+    const rows = (await env.DB.prepare("SELECT * FROM tracker ORDER BY id").all()).results;
+    expect(rows).toEqual([
+      { id: "alcohol", name: "Alcohol", unit: "g", value_type: "amount", default_value: 13, min_value: 1, max_value: 200, archived_at: null, created_at: expect.any(Number) as unknown },
+      { id: "caffeine", name: "Cafeína", unit: "mg", value_type: "amount", default_value: 80, min_value: 1, max_value: 1000, archived_at: null, created_at: expect.any(Number) as unknown },
+      { id: "cigarettes", name: "Cigarrillos", unit: "u", value_type: "count", default_value: 1, min_value: 1, max_value: 20, archived_at: null, created_at: expect.any(Number) as unknown },
+    ]);
+    for (const row of rows) {
+      expect(row.created_at).toBeGreaterThanOrEqual(migrationStart);
+      expect(row.created_at).toBeLessThanOrEqual(migrationEnd);
+    }
+  });
+
+  it("T12 replays the actual seed without changing edited or archived trackers or existing events", async () => {
+    const seed = env.TEST_MIGRATIONS.find((m) => m.name === "0003_tracker_seed.sql");
+    expect(seed).toBeDefined();
+    if (!seed) throw new Error("missing T12 tracker seed");
+    const originals = (await env.DB.prepare("SELECT * FROM tracker ORDER BY id").all()).results;
+    await env.DB.batch([
+      env.DB.prepare("UPDATE tracker SET name = 'Edited', unit = 'pack', default_value = 3, min_value = NULL, max_value = 40, created_at = 17 WHERE id = 'cigarettes'"),
+      env.DB.prepare("UPDATE tracker SET archived_at = 0 WHERE id = 'caffeine'"),
+      env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at)
+        VALUES ('seed-upgrade', 'caffeine', 1, 0, '2000-01-01', 7, 'keep me', 'import', 2)`),
+    ]);
+    const snapshot = async () => [
+      (await env.DB.prepare("SELECT * FROM tracker ORDER BY id").all()).results,
+      (await env.DB.prepare("SELECT * FROM event ORDER BY id").all()).results,
+      (await env.DB.prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all()).results,
+    ];
+    const before = await snapshot();
+    try {
+      for (let i = 0; i < 2; i++) {
+        await env.DB.batch(seed.queries.map((query) => env.DB.prepare(query)));
+        expect(await snapshot()).toEqual(before);
+      }
+    } finally {
+      await env.DB.prepare("DELETE FROM event WHERE id = 'seed-upgrade'").run();
+      for (const row of originals) await env.DB.prepare(`UPDATE tracker SET name = ?, unit = ?, value_type = ?, default_value = ?,
+        min_value = ?, max_value = ?, created_at = ?, archived_at = ? WHERE id = ?`)
+        .bind(row.name, row.unit, row.value_type, row.default_value, row.min_value, row.max_value, row.created_at, row.archived_at, row.id).run();
+    }
+  });
+
   it("projects the read-only views", async () => {
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO tracker(id, name, unit, value_type, created_at) VALUES ('cigarettes','Cigarettes','unit','count',0), ('alcohol','Alcohol','g_alcohol','amount',0), ('caffeine','Caffeine','mg','amount',0)"),
+      env.DB.prepare("INSERT OR IGNORE INTO tracker(id, name, unit, value_type, created_at) VALUES ('cigarettes','Cigarettes','unit','count',0), ('alcohol','Alcohol','g_alcohol','amount',0), ('caffeine','Caffeine','mg','amount',0)"),
       env.DB.prepare("INSERT INTO event(id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at, deleted_at) VALUES ('e1','cigarettes',1,120,'2026-10-20',1,'mcp',1,NULL), ('e2','cigarettes',2,120,'2026-10-20',1,'mcp',2,5)"),
       env.DB.prepare("INSERT INTO daily_summary(local_date, rhr, computed_at) VALUES ('2026-10-20', 55, 1), ('2026-10-21', 56, 1)"),
       env.DB.prepare("INSERT INTO tracker_daily(local_date, tracker_id, total, n, evening_total) VALUES ('2026-10-20','cigarettes',3,3,2), ('2026-10-20','alcohol',24,2,24)"),
