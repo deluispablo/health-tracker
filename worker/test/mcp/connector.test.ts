@@ -368,13 +368,13 @@ describe("AC2 owner authorization and refusals", () => {
 });
 
 describe("AC3 stateless read tools and audit", () => {
-  it("initializes and lists exactly the five described tools, only the log tool writing", async () => {
+  it("initializes and lists exactly the six described tools, only the log tool writing", async () => {
     google();
     const token = await accessToken();
     await initialize(token);
     const msg = await rpc(token, "tools/list", {});
     expect(msg.error).toBeUndefined();
-    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_daily", "health_intraday", "health_log_event", "health_sleep", "health_trackers"]);
+    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_daily", "health_intraday", "health_log_event", "health_sleep", "health_status", "health_trackers"]);
     for (const tool of msg.result?.tools ?? []) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.inputSchema).toMatchObject({ type: "object" });
@@ -384,6 +384,60 @@ describe("AC3 stateless read tools and audit", () => {
     }
     const log = (msg.result?.tools ?? []).find((t) => t.name === "health_log_event")?.inputSchema as { properties: Record<string, { description?: string }> };
     for (const id of ["cigarettes", "alcohol", "caffeine"]) expect(log.properties.tracker_id.description).toContain(id);
+  });
+
+  it("describes health_status with an empty input schema and read-only annotations", async () => {
+    google();
+    const token = await accessToken();
+    const msg = await rpc(token, "tools/list", {});
+    expect(msg.error).toBeUndefined();
+    const status = msg.result?.tools?.find((tool) => tool.name === "health_status");
+    expect(status).toBeDefined();
+    expect(status?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+    expect(status?.inputSchema).toMatchObject({ type: "object", properties: {} });
+    const schema = status?.inputSchema as { properties?: object; required?: string[] } | undefined;
+    expect(Object.keys(schema?.properties ?? {})).toEqual([]);
+    expect(schema?.required ?? []).toEqual([]);
+    for (const report of [/stream|flujo|data|datos/i, /queue|cola|pending|pendiente/i, /google/i,
+      /coverage|cobertura/i, /alert|avis/i]) expect(status?.description).toMatch(report);
+  });
+
+  it("calls health_status without arguments, uses USER_TZ and current time, and audits one successful call", async () => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    const before = (await audit()).length;
+    const now = Math.floor(Date.now() / 1000);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now * 1000);
+    try {
+      const parts = new Intl.DateTimeFormat("en-CA", { timeZone: connectorEnv.USER_TZ,
+        year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+        .formatToParts(new Date(now * 1000));
+      const part = (name: string) => parts.find((p) => p.type === name)?.value ?? "";
+      const today = `${part("year")}-${part("month")}-${part("day")}`;
+      const expected = {
+        now_local: `${today}T${part("hour")}:${part("minute")}`,
+        streams: [{ stream: "sleep", latest_local: null, age_hours: null }, { stream: "daily", latest_local: null, age_hours: null }],
+        queue: { pending: 0, stuck: 0, oldest_received_local: null },
+        google: { connected: false, token_updated_local: null },
+        coverage: Array.from({ length: 14 }, (_, i) => ({
+          date: new Date(Date.parse(`${today}T00:00:00Z`) - (13 - i) * 86400000).toISOString().slice(0, 10), hr_minutes: 0,
+        })),
+        alerts: [
+          { code: "google_disconnected", message: expect.any(String) as unknown },
+          { code: "no_data_48h", message: expect.any(String) as unknown },
+          { code: "daily_stale", message: expect.any(String) as unknown },
+        ],
+      };
+      const msg = await rpc(token, "tools/call", { name: "health_status", arguments: {} });
+      expect(msg.error).toBeUndefined();
+      expect(msg.result?.isError).not.toBe(true);
+      expect(msg.result?.structuredContent).toEqual(expected);
+      expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
+      await toolAudit("health_status", {}, 1, before);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("describes the valid values of every argument so clients need not guess", async () => {
