@@ -111,6 +111,32 @@ describe("AC3 log events", () => {
     expect(await events()).toHaveLength(1);
   });
 
+  it("totals only the event's own date, on insert and on replay", async () => {
+    await stored("yesterday", 7, { date: "2026-10-20", ts: NOW - 86400 });
+    const first = await logEvent(env.DB, { tracker_id: "cigarettes", idempotency_key: "crossday_1" }, opts);
+    expect(first.day_total).toBe(1);
+    expect((await logEvent(env.DB, { tracker_id: "cigarettes", idempotency_key: "crossday_1" }, opts)).day_total).toBe(1);
+    const old = await logEvent(env.DB, { tracker_id: "cigarettes", at: "2026-10-20T10:00:00Z" }, opts);
+    expect(old).toMatchObject({ event: { local_date: "2026-10-20" }, day_total: 8 });
+  });
+
+  it("replays a soft-deleted keyed event without reviving it or counting it", async () => {
+    await stored("k_deleted_key", 2, { deleted: 0 });
+    await stored("live", 3);
+    const replay = await logEvent(env.DB, { tracker_id: "cigarettes", idempotency_key: "deleted_key" }, opts);
+    expect(replay).toMatchObject({ created: false, event: { id: "k_deleted_key", value: 2 }, day_total: 3 });
+    expect((await events()).map((r) => r.id)).toEqual(["k_deleted_key", "live"]);
+    expect(await env.DB.prepare("SELECT deleted_at FROM event WHERE id = 'k_deleted_key'").first("deleted_at")).toBe(0);
+  });
+
+  it("caps a long stored note at 280 code points in a replay without changing the row", async () => {
+    const note = "é".repeat(400);
+    await stored("k_long_note", 1, { note });
+    const replay = await logEvent(env.DB, { tracker_id: "cigarettes", idempotency_key: "long_note" }, opts);
+    expect(replay.event.note_untrusted).toBe("é".repeat(280));
+    expect(await env.DB.prepare("SELECT note FROM event WHERE id = 'k_long_note'").first("note")).toBe(note);
+  });
+
   it("replays before tracker, value, time and note validation, with the current total and a healing refresh", async () => {
     await env.DB.prepare("CREATE TRIGGER fail_daily BEFORE INSERT ON tracker_daily BEGIN SELECT RAISE(ABORT, 'rollup down'); END").run();
     const first = await logEvent(env.DB, { tracker_id: "cigarettes", idempotency_key: "replay_01" }, opts);
