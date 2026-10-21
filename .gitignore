@@ -3,3 +3,5 @@ node_modules/
 .venv/
 py/.env
 *.sqlite
+.dev.vars
+.dev.vars.*
