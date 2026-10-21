@@ -47,6 +47,9 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
   const daily = await db.prepare(`
     SELECT local_date, computed_at FROM daily_summary ORDER BY local_date DESC LIMIT 1
   `).first<{ local_date: string; computed_at: number }>();
+  const watch = await db.prepare(`
+    SELECT synced_until FROM sync_state WHERE data_type = 'watch'
+  `).first<{ synced_until: number | null }>();
   const queue = await db.prepare(`
     SELECT count(*) AS pending, count(CASE WHEN attempts >= 5 THEN 1 END) AS stuck,
       min(received_at) AS oldest FROM sync_pending
@@ -78,6 +81,9 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
   if (!fresh) alerts.push({ code: "no_data_48h", message: "Sin datos de frecuencia cardíaca en las últimas 48 horas." });
   if (queue && queue.stuck > 0) alerts.push({ code: "queue_stuck", message: "Hay elementos de la cola con cinco o más intentos." });
   if (!daily || daily.local_date < yesterday) alerts.push({ code: "daily_stale", message: "El resumen diario no está actualizado." });
+  if (google && (watch?.synced_until == null || now - watch.synced_until > 86400)) {
+    alerts.push({ code: "watch_not_syncing", message: "El reloj no se ha sincronizado en las últimas 24 h." });
+  }
   const minutesByDate = new Map(coverage.map((row) => [row.date, row.hr_minutes]));
   return {
     now_local,
@@ -85,6 +91,7 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
       ...metrics.map((row) => stream(`metric:${row.metric}`, row.ts, row.tz_offset_min)),
       stream("sleep", sleep?.ts ?? null, sleep?.tz_offset_min),
       stream("daily", daily?.computed_at ?? null),
+      stream("watch", watch?.synced_until ?? null),
     ],
     queue: {
       pending: queue?.pending ?? 0, stuck: queue?.stuck ?? 0,
