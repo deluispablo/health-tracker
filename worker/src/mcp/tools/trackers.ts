@@ -28,8 +28,7 @@ function eventOutput(row: EventRow) {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- API symmetry; listing uses stored dates and offsets.
-export async function healthTrackers(db: D1Database, { date }: { date: string }, _tz: string) {
+export async function healthTrackers(db: D1Database, { date }: { date: string }) {
   const midnight = Date.parse(`${date}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(midnight)
     || new Date(midnight).toISOString().slice(0, 10) !== date

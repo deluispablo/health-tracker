@@ -25,6 +25,10 @@ function watched() {
       const statement = target.prepare(sql);
       return new Proxy(statement, { get(stmt, method) {
         if (method === "all") return () => { calls.push(["all"]); return stmt.all(); };
+        if (method === "raw") return (options: { columnNames: true }) => {
+          calls.push(["raw", options]);
+          return stmt.raw(options);
+        };
         throw new Error(`Unexpected statement operation: ${String(method)}`);
       } });
     };
@@ -48,6 +52,7 @@ afterEach(() => { vi.restoreAllMocks(); });
 
 describe("T11 AC4 health_sql execution", () => {
   it("applies lexical then parser guards to normalized SQL, then prepares and reads exactly once without binding", async () => {
+    await env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, computed_at) VALUES ('2026-10-21', 61, 1)").run();
     const query = "/* lead */ SELECT local_date, rhr FROM v_daily; -- tail";
     const normalized = "SELECT local_date, rhr FROM v_daily";
     const order: string[] = [];
@@ -110,10 +115,11 @@ describe("T11 AC4 health_sql execution", () => {
     if (count) await env.DB.batch(dates.map((date, i) => env.DB.prepare("INSERT INTO daily_summary (local_date, steps, computed_at) VALUES (?, ?, 1)").bind(date, i)));
     const { db, calls } = watched();
     const sql = "SELECT local_date, steps FROM v_daily ORDER BY local_date";
-    expect(await healthSql(db, { query: sql })).toEqual({ columns: count ? ["local_date", "steps"] : [],
+    expect(await healthSql(db, { query: sql })).toEqual({ columns: ["local_date", "steps"],
       rows: dates.slice(0, 200).map((date, i) => [date, i]), row_count: Math.min(count, 200),
       truncated: count > 200, notes_untrusted: false });
-    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${sql}\n) LIMIT 201`], ["all"]]);
+    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${sql}\n) LIMIT 201`], ["all"],
+      ...(count ? [] : [["raw", { columnNames: true }]])]);
   });
 
   it("preserves stored cells and first-row column order, and marks note by its returned column name", async () => {
@@ -130,8 +136,31 @@ describe("T11 AC4 health_sql execution", () => {
       columns: ["note"], rows: [[null]], row_count: 1, truncated: false, notes_untrusted: true,
     });
     expect(await healthSql(env.DB, { query: "SELECT note FROM v_events WHERE 1 = 0" })).toEqual({
-      columns: [], rows: [], row_count: 0, truncated: false, notes_untrusted: false,
+      columns: ["note"], rows: [], row_count: 0, truncated: false, notes_untrusted: true,
     });
+  });
+
+  it("T32 AC1 returns ordered column names and the note flag for an empty result", async () => {
+    const query = "SELECT note, value FROM v_events WHERE 0";
+    const { db, calls } = watched();
+    expect(await healthSql(db, { query })).toEqual({
+      columns: ["note", "value"], rows: [], row_count: 0, truncated: false, notes_untrusted: true,
+    });
+    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${query}\n) LIMIT 201`],
+      ["all"], ["raw", { columnNames: true }]]);
+  });
+
+  it("T32 propagates a raw metadata failure after a successful empty all read", async () => {
+    const failure = new Error("D1 metadata sentinel");
+    const all = vi.fn().mockResolvedValue({ results: [] });
+    const raw = vi.fn().mockRejectedValue(failure);
+    const db = new Proxy(env.DB, { get(_target, property) {
+      if (property === "prepare") return () => ({ all, raw });
+      throw new Error(`Unexpected D1 operation: ${String(property)}`);
+    } });
+    await expect(healthSql(db, { query: "SELECT note, value FROM v_events WHERE 0" })).rejects.toBe(failure);
+    expect(all).toHaveBeenCalledExactlyOnceWith();
+    expect(raw).toHaveBeenCalledExactlyOnceWith({ columnNames: true });
   });
 
   it.each(["UPDATE daily_summary SET rhr = 99", "SELECT * FROM v_events; DELETE FROM event", "WITH hidden AS (SELECT * FROM secret_blob) SELECT * FROM hidden",

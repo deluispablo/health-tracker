@@ -199,7 +199,7 @@ describe("AC3 log events", () => {
     }
     await expect(logEvent(env.DB, { tracker_id: "scale", value: 0.25 }, opts)).resolves.toMatchObject({ event: { value: 0.25 } });
     await expect(logEvent(env.DB, { tracker_id: "amount", value: -100.5 }, opts)).resolves.toMatchObject({ event: { value: -100.5 } });
-    expect(await healthTrackers(env.DB, { date: "2026-10-21" }, TZ)).toMatchObject({ trackers: expect.arrayContaining([
+    expect(await healthTrackers(env.DB, { date: "2026-10-21" })).toMatchObject({ trackers: expect.arrayContaining([
       { id: "scale", name: "Scale", unit: "pt", value_type: "scale", default_value: -2.5, min_value: null, max_value: null, total: -2.25, n: 2 },
       { id: "amount", name: "Amount", unit: "ml", value_type: "amount", default_value: 0, min_value: null, max_value: null, total: -100.5, n: 2 },
       expect.objectContaining({ id: "cigarettes", default_value: 4, total: 4, n: 1 }),
@@ -466,7 +466,7 @@ describe("AC2 list trackers for a date", () => {
         ('f', 'mood', ?2, 120, '2026-10-21', 3, NULL, 'mcp', 1, NULL)`)
         .bind(at("2026-10-21T06:05:00Z"), at("2026-10-21T19:40:00Z"), at("2026-10-20T08:00:00Z")),
     ]);
-    expect(await healthTrackers(env.DB, { date: "2026-10-21" }, TZ)).toEqual({
+    expect(await healthTrackers(env.DB, { date: "2026-10-21" })).toEqual({
       date: "2026-10-21",
       events_truncated: false,
       trackers: [
@@ -485,12 +485,12 @@ describe("AC2 list trackers for a date", () => {
   it.each(["2026-02-30", "2026-10-1", "1999-12-31", "2100-01-01", ""])("rejects date %s", async (date) => {
     let reads = 0;
     const db = observedDb(() => { reads++; throw new Error("unexpected read"); });
-    await expect(healthTrackers(db, { date }, TZ)).rejects.toThrow(RangeError);
+    await expect(healthTrackers(db, { date })).rejects.toThrow(RangeError);
     expect(reads).toBe(0);
   });
 
   it.each(["2000-01-01", "2099-12-31", "2028-02-29"])("accepts date boundary or leap day %s", async (date) => {
-    await expect(healthTrackers(env.DB, { date }, TZ)).resolves.toMatchObject({ date, events: [], events_truncated: false });
+    await expect(healthTrackers(env.DB, { date })).resolves.toMatchObject({ date, events: [], events_truncated: false });
   });
 
   it("uses stored dates and offsets, keeps unrestricted stored values, caps long notes at 280 code points, and ignores stale rollups", async () => {
@@ -511,20 +511,18 @@ describe("AC2 list trackers for a date", () => {
         { id: "half", tracker_id: "cigarettes", local_time: "01:30", value: 4, note_untrusted: null },
       ],
     };
-    for (const tz of [TZ, "UTC", "Asia/Kolkata", "America/New_York"]) {
-      expect(await healthTrackers(env.DB, { date: "2026-10-21" }, tz)).toMatchObject(expected);
-    }
+    expect(await healthTrackers(env.DB, { date: "2026-10-21" })).toMatchObject(expected);
     expect(await daily()).toEqual([{ local_date: "2026-10-21", tracker_id: "cigarettes", total: 999, n: 999 }]);
   });
 
   it("returns active zero totals on an empty date and empty lists when every tracker is archived", async () => {
-    expect(await healthTrackers(env.DB, { date: "2026-10-21" }, TZ)).toMatchObject({
+    expect(await healthTrackers(env.DB, { date: "2026-10-21" })).toMatchObject({
       trackers: [expect.objectContaining({ id: "alcohol", total: 0, n: 0 }), expect.objectContaining({ id: "caffeine", total: 0, n: 0 }),
         expect.objectContaining({ id: "cigarettes", total: 0, n: 0 })], events: [], events_truncated: false,
     });
     await stored("hidden", 1);
     await env.DB.prepare("UPDATE tracker SET archived_at = 0").run();
-    expect(await healthTrackers(env.DB, { date: "2026-10-21" }, TZ)).toEqual({ date: "2026-10-21", trackers: [], events: [], events_truncated: false });
+    expect(await healthTrackers(env.DB, { date: "2026-10-21" })).toEqual({ date: "2026-10-21", trackers: [], events: [], events_truncated: false });
   });
 
   it.each([0, 49, 50, 51])("caps %i eligible events by ts then id, without capping totals", async (n) => {
@@ -536,7 +534,7 @@ describe("AC2 list trackers for a date", () => {
     await stored("outside", 100, { date: "2026-10-20", ts: NOW - 120 });
     const order = Array.from({ length: n }, (_, i) => i);
     if (n) order.unshift(order.pop() ?? 0);
-    expect(await healthTrackers(env.DB, { date: "2026-10-21" }, TZ)).toMatchObject({
+    expect(await healthTrackers(env.DB, { date: "2026-10-21" })).toMatchObject({
       events_truncated: n > 50,
       trackers: [expect.objectContaining({ id: "caffeine", total: 0, n: 0 }),
         expect.objectContaining({ id: "cigarettes", total: n * (n + 1) / 2, n })],
@@ -553,9 +551,9 @@ describe("AC2 list trackers for a date", () => {
       expect(sql).not.toContain("2026-10-21");
       queries.push(args);
     });
-    await expect(healthTrackers(db, { date: "2026-10-21" }, TZ)).resolves.toMatchObject({ events: [{ id: "one" }] });
+    await expect(healthTrackers(db, { date: "2026-10-21" })).resolves.toMatchObject({ events: [{ id: "one" }] });
     expect(queries.flat()).toContain("2026-10-21");
     const failure = new Error("D1 listing unavailable");
-    await expect(healthTrackers(observedDb(() => { throw failure; }), { date: "2026-10-21" }, TZ)).rejects.toBe(failure);
+    await expect(healthTrackers(observedDb(() => { throw failure; }), { date: "2026-10-21" })).rejects.toBe(failure);
   });
 });

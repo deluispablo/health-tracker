@@ -9,8 +9,9 @@ export async function healthSql(db: D1Database, { query }: { query: string }): P
   const verdict = viewsOnly(validated.sql);
   if (!verdict.ok) throw new RangeError(verdict.reason);
 
-  const { results } = await db.prepare(`SELECT * FROM (\n${validated.sql}\n) LIMIT 201`).all();
-  const columns = results.length ? Object.keys(results[0]) : [];
+  const statement = db.prepare(`SELECT * FROM (\n${validated.sql}\n) LIMIT 201`);
+  const { results } = await statement.all();
+  const columns = results.length ? Object.keys(results[0]) : (await statement.raw({ columnNames: true }))[0];
   const rows: unknown[][] = [];
   let characters = 2; // Include the outer JSON array brackets.
   for (const result of results.slice(0, 200)) {
