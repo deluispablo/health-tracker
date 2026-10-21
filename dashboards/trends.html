@@ -1,0 +1,349 @@
+<title>Tendencias</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  :root {
+    color-scheme: light; --bg: #f3f6f8; --panel: #ffffff; --ink: #182d39; --muted: #536975;
+    --rule: #d6e0e6; --accent: #006b83; --band: #c8e8ef; --warning: #8a5700;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark; --bg: #15232c; --panel: #1b2e39; --ink: #e3edf2; --muted: #acbec9;
+      --rule: #3a515f; --accent: #80c9dc; --band: #305564; --warning: #edbf70;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark; --bg: #15232c; --panel: #1b2e39; --ink: #e3edf2; --muted: #acbec9;
+    --rule: #3a515f; --accent: #80c9dc; --band: #305564; --warning: #edbf70;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 Barlow, sans-serif; }
+  .trends { max-width: 1080px; margin: auto; padding: 32px 0 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px)); font-variant-numeric: tabular-nums; }
+  h1, h2, h3, p, dl { margin: 0; }
+  h1 { font-size: 48px; line-height: 1.1; letter-spacing: -2px; font-weight: 600; }
+  h2 { font-size: 22px; font-weight: 600; } h3 { font-size: 18px; font-weight: 600; }
+  .eyebrow { color: var(--accent); font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: 1.8px; text-transform: uppercase; }
+  .top, .section-head, .legend { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; }
+  .top, .section-head { justify-content: space-between; } .top { margin-bottom: 24px; }
+  .subtle, .updated, dt, .empty { color: var(--muted); }
+  .subtle, .updated, dt, .legend { font-size: 13px; }
+  .updated { font-family: 'IBM Plex Mono', monospace; margin-top: 12px; }
+  button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 5px; min-height: 44px; padding: 8px 14px; cursor: pointer; }
+  button:disabled { opacity: .55; cursor: default; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .notice { color: var(--warning); font-size: 14px; }
+  .notice:not(:empty) { border-left: 2px solid var(--warning); padding: 10px 14px; margin: 12px 0; }
+  .notice button { margin-top: 8px; }
+  .legend { color: var(--muted); margin: 16px 0; }
+  .key { display: inline-block; width: 16px; height: 3px; background: var(--accent); vertical-align: middle; margin-right: 6px; }
+  .key.band { height: 10px; background: var(--band); }
+  .metric, .tracker-strip { border-top: 1px solid var(--rule); padding-top: 20px; margin-top: 20px; min-width: 0; }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
+  dd { margin: 4px 0 0; font: 500 20px 'IBM Plex Mono', monospace; overflow-wrap: anywhere; }
+  .chart { display: block; width: 100%; overflow: hidden; }
+  .chart text { fill: var(--muted); font: 11px 'IBM Plex Mono', monospace; }
+  .grid { stroke: var(--rule); stroke-width: 1; }
+  .baseline-band { fill: var(--band); }
+  .daily-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+  .daily-dot, .bar { fill: var(--accent); }
+  .empty { padding: 28px 0; }
+  .tracker { margin-top: 16px; } .tracker h3 { margin-bottom: 6px; }
+  footer { margin-top: 24px; border-top: 1px solid var(--rule); padding-top: 14px; }
+  @media (max-width: 550px) {
+    .trends { padding-top: 24px; } h1 { font-size: 40px; }
+    dd { font-size: 16px; } .stats { gap: 8px; } dt { font-size: 12px; }
+  }
+</style>
+<main class="trends" lang="es">
+  <header class="top">
+    <div><p class="eyebrow">Pixel Health / Perspectiva diaria</p><h1>Tendencias</h1><p class="subtle">90 días para ver tu ritmo.</p></div>
+    <p id="range" class="subtle"></p>
+  </header>
+  <p id="updated" class="updated" role="status">Sin actualizar</p>
+  <div id="page-notice" class="notice" role="status"></div>
+  <div id="daily-notice" class="notice" role="status"></div>
+  <div id="baseline-notice" class="notice" role="status"></div>
+  <p id="band-note" class="subtle"></p>
+  <div class="legend"><span><i class="key"></i>Valor diario</span><span><i class="key band"></i>Referencia personal · media ± 1 DE</span></div>
+  <div id="metrics"></div>
+  <section class="tracker-strip" aria-labelledby="trackers-title">
+    <div class="section-head"><h2 id="trackers-title">Trackers diarios</h2><span class="subtle">Totales en el mismo eje de fechas</span></div>
+    <div id="trackers"></div>
+  </section>
+  <div id="date-axis"></div>
+  <footer class="subtle">Europe/Madrid · Actualización automática cada 5 minutos. Los huecos indican días sin datos. En trackers, los días sin registros se dibujan como cero.</footer>
+</main>
+<script id="trends-logic">
+(() => {
+  function dateRange(end, days) {
+    const time = Date.parse(end + 'T00:00:00Z');
+    return Array.from({ length: days }, (_, i) => new Date(time - (days - 1 - i) * 86400000).toISOString().slice(0, 10));
+  }
+  function mergeDaily(payloads) {
+    const rows = new Map();
+    for (const payload of payloads) {
+      for (const values of payload?.rows ?? []) {
+        const row = Object.fromEntries(payload.columns.map((key, i) => [key, values[i] ?? null]));
+        rows.set(row.local_date, row);
+      }
+    }
+    return rows;
+  }
+  function column(rows, dates, name) { return dates.map(date => rows.get(date)?.[name] ?? null); }
+  function baseline(values, i) {
+    const history = values.slice(Math.max(0, i - 28), i).filter(Number.isFinite);
+    const n = history.length;
+    if (n < 7) return null;
+    const mean = history.reduce((a, b) => a + b, 0) / n;
+    const sd = Math.sqrt(history.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (n - 1));
+    return Number.isFinite(mean) && Number.isFinite(sd) && sd > 1e-9 ? { mean, sd, n } : null;
+  }
+  function band(metric, values, i, known = 0) {
+    if (metric === 'readiness') return { lo: -1, hi: 1 };
+    if (Math.max(0, i - 28) < known) return null;
+    const b = baseline(values, i);
+    if (!b) return null;
+    const lo = b.mean - b.sd, hi = b.mean + b.sd;
+    return metric === 'hrv' ? { lo: Math.exp(lo), hi: Math.exp(hi) } : { lo, hi };
+  }
+  function segments(values) {
+    const runs = [];
+    values.forEach((v, i) => {
+      if (v == null) return;
+      if (i === 0 || values[i - 1] == null) runs.push([i, i]);
+      else runs[runs.length - 1][1] = i;
+    });
+    return runs;
+  }
+  function weekStats(values) {
+    const recent = values.slice(-7).filter(Number.isFinite), previous = values.slice(-14, -7).filter(Number.isFinite);
+    const mean = v => v.length ? v.reduce((sum, n) => sum + n, 0) / v.length : null;
+    const mean7 = mean(recent), prevMean7 = mean(previous);
+    return { latest: recent.at(-1) ?? null, mean7, prevMean7, delta: mean7 == null || prevMean7 == null ? null : mean7 - prevMean7 };
+  }
+  function fmtValue(v, unit) { return v == null ? '—' : `${v} ${unit}`.trim(); }
+  function freshness(result, receivedAt) { return result.cache?.storedAt ?? receivedAt; }
+  globalThis.TrendLogic = { dateRange, mergeDaily, column, baseline, band, segments, weekStats, fmtValue, freshness };
+})();
+</script>
+<script>
+(async () => {
+  const L = globalThis.TrendLogic, $ = id => document.getElementById(id);
+  const today = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const stamp = at => new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'short', timeStyle: 'medium' }).format(at);
+  const number = n => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(n);
+  const value = (n, unit, signed = false) => L.fmtValue(Number.isFinite(n) ? (signed && n > 0 ? '+' : '') + number(n) : null, unit);
+  const metrics = [
+    ['hrv', 'Variabilidad · HRV', 'hrv_rmssd', 'ms'], ['rhr', 'Pulso en reposo', 'rhr', 'bpm'],
+    ['sleep', 'Sueño', 'sleep_min', 'min'], ['steps', 'Pasos', 'steps', 'pasos'],
+    ['readiness', 'Recuperación', 'readiness_proxy', 'z']
+  ];
+  const trackers = [['Cigarrillos', 'cigarettes', 'u'], ['Alcohol', 'alcohol_g', 'g'], ['Cafeína', 'caffeine_mg', 'mg']];
+  let connector = null, end = today(), states = [], stopped = false, suspended = false, ready = false;
+  const denials = new Set(['needs_reauth', 'server_not_connected', 'blocked_by_policy', 'approval_required', 'not_in_manifest',
+    'consent_required', 'not_granted', 'capability_disabled', 'capability_removed', 'user_changed']);
+  const errorCopy = {
+    needs_reauth: 'Vuelve a conectar Pixel Health en claude.ai Settings → Connectors.',
+    server_not_connected: 'Añade Pixel Health en claude.ai Settings → Connectors.',
+    selection_required: 'Elige una conexión de Pixel Health en el selector de conectores y vuelve a cargar.',
+    server_not_found: 'La conexión de Pixel Health ya no existe. Revísala en Settings → Connectors.',
+    not_in_manifest: 'Pixel Health no está permitido para esta vista. Revisa los permisos del artefacto.',
+    blocked_by_policy: 'La política de tu organización bloquea esta sección. Consulta al administrador.',
+    approval_required: 'Esta lectura necesita tu aprobación en esta vista.',
+    consent_required: 'Revisa el aviso de permisos y permite esta conexión.',
+    server_unavailable: 'Pixel Health no responde temporalmente. Puedes volver a cargar.',
+    rate_limited: 'Se ha alcanzado el límite de consultas. Espera antes de volver a cargar.',
+    tool_error: 'Pixel Health no pudo completar esta consulta.',
+    bad_request: 'No se pueden iniciar las actualizaciones. Vuelve a abrir el artefacto.',
+    transform_error: 'No se pudo preparar la consulta. Vuelve a abrir el artefacto.',
+    self_only: 'Esta consulta no está permitida para este artefacto.',
+    cancelled: 'Consulta cancelada. Puedes volver a cargar.',
+    not_granted: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Pixel Health.',
+    capability_disabled: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Pixel Health.',
+    capability_removed: 'El conector no está disponible en esta vista. Vuelve a abrir el artefacto.',
+    user_changed: 'La cuenta ha cambiado. Vuelve a abrir el artefacto para continuar.',
+    upstream_error: 'No se pudo contactar con Pixel Health. Puedes volver a cargar.'
+  };
+  function el(tag, className = '', text) {
+    const node = document.createElement(tag); node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function svgNode(tag, attrs = {}, text) {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [key, v] of Object.entries(attrs)) node.setAttribute(key, String(v));
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function current(s) { return !stopped && !suspended && states.includes(s); }
+  function dispose() { states.forEach(s => { s.unsubscribe?.(); clearTimeout(s.timer); s.timer = null; }); }
+  function load() {
+    dispose(); end = today();
+    const dates = L.dateRange(end, 118);
+    states = [
+      { kind: 'baseline', label: 'Referencia de los 28 días anteriores', input: { start: dates[0], end: dates[27] } },
+      { kind: 'daily', label: 'Últimos 90 días', input: { start: dates[28], end } }
+    ].map(s => ({ ...s, data: null, at: null, error: null, busy: false, timer: null, unsubscribe: null }));
+    for (const s of states) {
+      if (!connector) { s.error = { code: 'capability_disabled' }; continue; }
+      s.unsubscribe = connector.watchTool('Pixel Health', 'health_daily', s.input, event => {
+        if (event.type === 'data') receive(s, event.result);
+        else fail(s, event.error, true);
+      }, { cache: { staleTime: 300000, gcTime: 86400000 }, refetchInterval: 300000 });
+    }
+  }
+  function receive(s, result) {
+    if (!current(s)) return;
+    clearTimeout(s.timer); s.timer = null;
+    s.data = result.payload ?? {}; s.at = L.freshness(result, Date.now());
+    s.error = null; s.revalidating = !!result.cache?.revalidating; render();
+  }
+  function fail(s, error, mayRetry) {
+    if (!current(s)) return;
+    error = error ?? { code: 'upstream_error' };
+    if (error.code === 'user_changed') {
+      stopped = true; dispose();
+      states.forEach(state => { state.data = null; state.at = null; state.error = error; });
+    } else {
+      s.error = error; s.revalidating = false;
+      if (denials.has(error.code)) { s.data = null; s.at = null; clearTimeout(s.timer); s.timer = null; }
+    }
+    render();
+    if (current(s) && mayRetry && error.retryable === true && !denials.has(error.code) && s.timer == null) {
+      const delay = Math.max(Number(error.retryAfterMs) || (error.code === 'rate_limited' ? 3000 : 0), 700 + Math.random() * 600);
+      s.timer = setTimeout(() => { s.timer = null; read(s); }, delay);
+    }
+  }
+  async function read(s) {
+    if (!current(s) || s.busy) return;
+    clearTimeout(s.timer); s.timer = null; s.busy = true; render();
+    if (!current(s)) { s.busy = false; return; }
+    try { receive(s, await connector.callTool('Pixel Health', 'health_daily', s.input, { cache: { refresh: true, gcTime: 86400000 } })); }
+    catch (error) { fail(s, error, false); }
+    finally { s.busy = false; if (current(s)) render(); }
+  }
+  function notice(node, error, affected) {
+    node.replaceChildren();
+    if (!error) return;
+    const message = (errorCopy[error.code] || errorCopy.upstream_error) +
+      (error.code === 'tool_error' && error.message ? ' ' + error.message : '');
+    node.append(el('p', '', (affected.length === 1 ? affected[0].label + ': ' : '') + message));
+    const button = el('button', '', stopped ? 'Volver a abrir' : error.code === 'approval_required' ? 'Aprobar lectura' : 'Volver a cargar');
+    button.type = 'button'; button.disabled = affected.some(s => s.busy);
+    button.onclick = () => { if (!connector || stopped) window.location.reload(); else affected.forEach(read); };
+    node.append(button);
+  }
+  function chart(width, height, label) {
+    return svgNode('svg', { class: 'chart', width, height, viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': label });
+  }
+  function drawMetric(node, values, bands, width, x, label) {
+    if (!values.some(Number.isFinite)) { node.append(el('p', 'empty', 'Sin datos en estos 90 días.')); return; }
+    const all = values.filter(Number.isFinite).concat(bands.filter(Boolean).flatMap(b => [b.lo, b.hi]));
+    const low = Math.min(...all), high = Math.max(...all);
+    // Normalize before subtraction so finite extremes cannot overflow the chart domain.
+    const scale = Math.max(1, Math.abs(low), Math.abs(high));
+    const lo = low / scale, hi = high / scale;
+    const pad = low === high ? Math.max(1 / scale, Number.EPSILON) : (hi - lo) * .05;
+    const a = lo - pad, b = hi + pad, y = v => 124 - (v / scale - a) / (b - a) * 112;
+    const svg = chart(width, 140, label);
+    (low === high ? [low] : [low, low / 2 + high / 2, high]).forEach(v => {
+      svg.append(svgNode('line', { class: 'grid', x1: 48, x2: width - 12, y1: y(v), y2: y(v) }),
+        svgNode('text', { x: 42, y: y(v) + 4, 'text-anchor': 'end' }, new Intl.NumberFormat('es-ES', { notation: 'compact', maximumFractionDigits: 1 }).format(v)));
+    });
+    for (const [start, stop] of L.segments(bands)) {
+      if (start === stop) svg.append(svgNode('rect', { class: 'baseline-band', x: x(start) - 1, y: y(bands[start].hi), width: 2, height: y(bands[start].lo) - y(bands[start].hi) }));
+      else {
+        const indexes = Array.from({ length: stop - start + 1 }, (_, i) => start + i);
+        svg.append(svgNode('polygon', { class: 'baseline-band', points: indexes.map(i => `${x(i)},${y(bands[i].hi)}`).concat(indexes.reverse().map(i => `${x(i)},${y(bands[i].lo)}`)).join(' ') }));
+      }
+    }
+    for (const [start, stop] of L.segments(values)) {
+      if (start === stop) svg.append(svgNode('circle', { class: 'daily-dot', cx: x(start), cy: y(values[start]), r: 3 }));
+      else svg.append(svgNode('polyline', { class: 'daily-line', points: Array.from({ length: stop - start + 1 }, (_, i) => `${x(start + i)},${y(values[start + i])}`).join(' ') }));
+    }
+    node.append(svg);
+  }
+  function render() {
+    const now = today();
+    if (ready && !stopped && !suspended && now !== end) load();
+    const dates = L.dateRange(end, 90), historyDates = L.dateRange(end, 118);
+    const [baseline, daily] = states;
+    const shared = states.length === 2 && states.every(s => s.error && s.error.code === states[0].error.code);
+    notice($('page-notice'), shared ? states[0].error : null, states);
+    for (const s of states) notice($(s.kind + '-notice'), shared ? null : s.error, [s]);
+    const times = states.filter(s => s.data != null && s.at != null).map(s => s.at);
+    $('updated').textContent = (states.some(s => s.error) ? 'Datos anteriores · ' : states.some(s => s.revalidating) ? 'Actualizando · ' : '') +
+      (times.length ? 'Actualizado ' + stamp(Math.min(...times)) : 'Sin actualizar');
+    $('range').textContent = dates[0] + ' → ' + end;
+    $('band-note').textContent = baseline?.error ? 'Líneas base no disponibles para los días que necesitan el historial anterior.' :
+      'Referencia: 28 fechas anteriores, al menos 7 valores. HRV en escala logarítmica; recuperación: −1 a +1.';
+    const rows = L.mergeDaily(states.map(s => s.data));
+    const container = $('metrics'), strip = $('trackers'); container.replaceChildren(); strip.replaceChildren();
+    const width = Math.max(180, container.clientWidth), step = (width - 60) / 90;
+    const x = i => 48 + (i + .5) * step;
+    for (const [id, label, key, unit] of metrics) {
+      const node = el('section', 'metric'); node.setAttribute('aria-labelledby', id + '-title');
+      const title = el('h2', '', label); title.id = id + '-title'; node.append(title); container.append(node);
+      const values = L.column(rows, dates, key).map(v => Number.isFinite(v) ? v : null), stats = L.weekStats(values);
+      const summary = el('dl', 'stats');
+      for (const [name, n, signed] of [['Último · 7 días', stats.latest], ['Media · 7 días', stats.mean7], ['Δ semana anterior', stats.delta, true]]) {
+        const cell = el('div'); cell.append(el('dt', '', name), el('dd', '', value(n, unit, signed))); summary.append(cell);
+      }
+      node.append(summary);
+      if (!daily?.data) { node.append(el('p', 'empty', daily?.error ? 'Sin datos disponibles para estos 90 días.' : 'Esperando los datos de Pixel Health…')); continue; }
+      const history = L.column(rows, historyDates, id === 'hrv' ? 'ln_rmssd' : key);
+      const bands = dates.map((_, i) => L.band(id, history, i + 28, baseline?.data ? 0 : 28)).map(b => b && Number.isFinite(b.lo) && Number.isFinite(b.hi) ? b : null);
+      drawMetric(node, values, bands, width, x, label + ' · ' + unit + ' · ' + dates[0] + ' a ' + end);
+    }
+    for (const [label, key, unit] of trackers) {
+      const node = el('article', 'tracker'); node.append(el('h3', '', label + ' · ' + unit)); strip.append(node);
+      if (!daily?.data) { node.append(el('p', 'empty', daily?.error ? 'Totales no disponibles.' : 'Esperando los totales…')); continue; }
+      const values = L.column(rows, dates, key).map(v => Number.isFinite(v) ? v : 0);
+      const low = Math.min(0, ...values), high = Math.max(0, ...values);
+      if (low === high) { node.append(el('p', 'empty', 'Sin registros en estos 90 días')); continue; }
+      const scale = Math.max(Math.abs(low), Math.abs(high));
+      const y = v => 6 + (high / scale - v / scale) / (high / scale - low / scale) * 56;
+      const svg = chart(width, 70, label + ' · ' + unit + ' · ' + dates[0] + ' a ' + end);
+      svg.append(svgNode('line', { class: 'grid', x1: 48, x2: width - 12, y1: y(0), y2: y(0) }));
+      values.forEach((v, i) => {
+        const bar = svgNode('rect', { class: 'bar', x: x(i) - step * .4, y: Math.min(y(v), y(0)), width: step * .8, height: Math.abs(y(v) - y(0)) });
+        bar.append(svgNode('title', {}, dates[i] + ': ' + value(v, unit))); svg.append(bar);
+      });
+      node.append(svg, el('p', 'subtle', 'Rango: ' + value(low, unit) + ' a ' + value(high, unit)));
+    }
+    const axis = chart(width, 36, 'Fechas compartidas · ' + dates[0] + ' a ' + end);
+    [0, 22, 44, 67, 89].forEach((i, j) => {
+      axis.append(svgNode('line', { class: 'grid', x1: x(i), x2: x(i), y1: 0, y2: 5 }),
+        svgNode('text', { x: x(i), y: 23, 'text-anchor': j === 0 ? 'start' : j === 4 ? 'end' : 'middle' }, dates[i].slice(8) + '/' + dates[i].slice(5, 7)));
+    });
+    $('date-axis').replaceChildren(axis);
+  }
+  let observedWidth = 0;
+  const observer = new ResizeObserver(entries => {
+    const width = entries[0].contentRect.width;
+    if (width !== observedWidth) { observedWidth = width; render(); }
+  });
+  observer.observe($('metrics'));
+  setInterval(() => { if (!suspended && !stopped && today() !== end) render(); }, 60000);
+  window.addEventListener('pagehide', () => { suspended = true; dispose(); });
+  window.addEventListener('pageshow', event => {
+    if (event.persisted && !stopped) { suspended = false; load(); render(); }
+  });
+  render();
+  try {
+    if (window.claude) {
+      const claude = window.claude;
+      const mcp = await claude.use("mcp");
+      connector = mcp;
+    }
+    ready = true;
+    if (!suspended) { load(); render(); }
+  } catch (error) {
+    ready = true; load(); states.forEach(s => fail(s, error, false));
+  }
+})();
+</script>
