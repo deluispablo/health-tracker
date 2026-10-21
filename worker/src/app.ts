@@ -48,6 +48,29 @@ export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps):
       clientSecret: env.GOOGLE_CLIENT_SECRET, refreshToken, sleep: deps.sleep,
     });
     await drainSyncPending(env, client, { now: () => now });
+    if (Math.floor(now / 300) % 6 === 0) {
+      try {
+        let syncedUntil: number | null = null;
+        let lastError: string | null = null;
+        try {
+          const lastSyncTime = await client.watchLastSync();
+          if (lastSyncTime !== null) {
+            const parsed = Date.parse(lastSyncTime);
+            if (!Number.isFinite(parsed)) throw new Error(`invalid lastSyncTime: ${lastSyncTime}`);
+            syncedUntil = Math.floor(parsed / 1000);
+          }
+        } catch (error) {
+          lastError = String(error instanceof Error ? error.message : error).slice(0, 200);
+        }
+        await env.DB.prepare(`
+          INSERT INTO sync_state (data_type, synced_until, last_ok_at, last_error) VALUES ('watch', ?, ?, ?)
+          ON CONFLICT (data_type) DO UPDATE SET
+            synced_until = CASE WHEN excluded.last_error IS NULL THEN excluded.synced_until ELSE sync_state.synced_until END,
+            last_ok_at = CASE WHEN excluded.last_error IS NULL THEN excluded.last_ok_at ELSE sync_state.last_ok_at END,
+            last_error = excluded.last_error
+        `).bind(syncedUntil, lastError === null ? now : null, lastError).run();
+      } catch { /* Watch persistence failures must not skip the rollups. */ }
+    }
   }
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",
