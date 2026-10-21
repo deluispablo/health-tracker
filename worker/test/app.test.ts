@@ -134,8 +134,56 @@ describe("AC3 routes", () => {
     for (const [method, path] of [["GET", "/webhooks/google"], ["POST", "/google/connect"], ["POST", "/google/callback"]] as const) {
       expect((await route(req(method, path), appEnv(), deps(google().fetch))).status).toBe(405);
     }
-    for (const path of ["/", "/webhooks", "/google", "/webhooks/google/x", "/mcp"]) {
+    for (const path of ["/privacy/", "/privacy/x", "/unknown", "/webhooks", "/google", "/webhooks/google/x", "/mcp"]) {
       expect((await route(req("GET", path), appEnv(), deps(google().fetch))).status).toBe(404);
+    }
+  });
+});
+
+describe("T20 public pages", () => {
+  const getPage = (path: string, method = "GET") => route(
+    new Request(`https://pixel.deluispablo.com${path}`, { method }), appEnv(), deps(google().fetch),
+  );
+
+  it("AC1 serves the Spanish private single-user homepage with a privacy link", async () => {
+    const res = await getPage("/");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    for (const text of ['lang="es"', "Pixel Health", "privado", "datos de salud personales", "único usuario", 'href="/privacy"']) {
+      expect(html).toContain(text);
+    }
+  });
+
+  it("AC2 serves the complete privacy policy", async () => {
+    const res = await getPage("/privacy");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    for (const text of [
+      "único usuario personal: su propio desarrollador", "Google Health", "solo lectura",
+      "cuenta de Cloudflare del propio propietario", "eventos que registra el propietario: café, alcohol y tabaco",
+      "solo salen hacia el asistente que conectes y autorices", "cuando tú, como propietario, lo solicites",
+      "nunca se venden, se comparten ni se utilizan para publicidad", "revocar el acceso",
+      'href="https://myaccount.google.com/permissions"', "deluispablo@gmail.com",
+    ]) expect(html).toContain(text);
+  });
+
+  it.each(["/", "/privacy"])("AC3/AC4 serves GET and bodyless HEAD with matching cache and security headers at %s", async (path) => {
+    const get = await getPage(path);
+    const head = await getPage(path, "HEAD");
+    expect(head.status).toBe(get.status);
+    expect(await head.text()).toBe("");
+    expect([...head.headers]).toEqual([...get.headers]);
+    expect(get.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(get.headers.get("cache-control")).toBe("public, max-age=3600");
+    expect(get.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(get.headers.get("content-security-policy")).toBe("default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    const html = await get.text();
+    expect(html).not.toMatch(/<script\b|<(?:link|img|iframe)\b|\bsrc=/i);
+  });
+
+  it.each(["POST", "PUT", "PATCH", "DELETE", "OPTIONS"])("AC3 rejects %s on both pages", async (method) => {
+    for (const path of ["/", "/privacy"]) {
+      expect((await getPage(path, method)).status).toBe(405);
     }
   });
 });
