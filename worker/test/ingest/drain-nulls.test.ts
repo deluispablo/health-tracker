@@ -33,7 +33,7 @@ beforeEach(async () => {
 
 describe("AC1 no fake zeros", () => {
   it("skips null, empty-string and boolean values instead of storing 0", async () => {
-    for (const t of ["daily-resting-heart-rate", "daily-oxygen-saturation", "daily-sleep-temperature-derivations", "active-zone-minutes", "steps"]) {
+    for (const t of ["daily-resting-heart-rate", "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "steps"]) {
       await queue(t, "2026-10-06T10:00:00Z", "2026-10-08T10:00:00Z");
     }
     const client = fakeClient({
@@ -41,7 +41,14 @@ describe("AC1 no fake zeros", () => {
         { dailyRestingHeartRate: { date: date("2026-10-06"), beatsPerMinute: null } },
         { dailyRestingHeartRate: { date: date("2026-10-07"), beatsPerMinute: "" } },
         { dailyRestingHeartRate: { date: date("2026-10-08"), beatsPerMinute: "61" } }],
-      "daily-oxygen-saturation": [{ dailyOxygenSaturation: { date: date("2026-10-06"), averagePercentage: true } }],
+      "daily-oxygen-saturation": [
+        { dailyOxygenSaturation: { date: date("2026-10-06"), averagePercentage: true } },
+        { dailyOxygenSaturation: { date: date("2026-10-07"), averagePercentage: "  " } },
+        { dailyOxygenSaturation: { date: date("2026-10-08"), averagePercentage: ["3"] } }],
+      "daily-respiratory-rate": [
+        { dailyRespiratoryRate: { date: date("2026-10-06"), breathsPerMinute: [] } },
+        { dailyRespiratoryRate: { date: date("2026-10-07"), breathsPerMinute: [0] } },
+        { dailyRespiratoryRate: { date: date("2026-10-08"), breathsPerMinute: { valueOf: () => 5 } } }],
       "daily-sleep-temperature-derivations": [
         { dailySleepTemperatureDerivations: { date: date("2026-10-06"), nightlyTemperatureCelsius: 34.4, baselineTemperatureCelsius: null } },
         { dailySleepTemperatureDerivations: { date: date("2026-10-07"), nightlyTemperatureCelsius: null, baselineTemperatureCelsius: 34 } },
@@ -69,12 +76,13 @@ describe("AC1 no fake zeros", () => {
       sleep: {
         interval: { startTime: "2026-10-06T21:15:00Z", startUtcOffset: "7200s", endTime: "2026-10-07T04:48:00Z", endUtcOffset: "7200s" },
         metadata: { mainSleep: true },
-        summary: { minutesAsleep: "", minutesInSleepPeriod: null, minutesToFallAsleep: "3",
-          stagesSummary: [{ type: "DEEP", minutes: null }, { type: "REM", minutes: "" }, { type: "LIGHT", minutes: "0" }] },
+        summary: { minutesAsleep: "", minutesInSleepPeriod: null, minutesToFallAsleep: "3", minutesAwake: " ",
+          stagesSummary: [{ type: "DEEP", minutes: null }, { type: "REM", minutes: "" }, { type: "LIGHT", minutes: "0" }, { type: "AWAKE", minutes: ["4"] }] },
       },
     }]);
     await drainSyncPending(drainEnv(), client, opts);
     expect(await env.DB.prepare("SELECT minutes_asleep, minutes_in_bed, latency_min, deep_min, rem_min, light_min FROM sleep_session").first())
       .toEqual({ minutes_asleep: null, minutes_in_bed: null, latency_min: 3, deep_min: null, rem_min: null, light_min: 0 });
+    expect(await env.DB.prepare("SELECT awake_min FROM sleep_session").first()).toEqual({ awake_min: null });
   });
 });
