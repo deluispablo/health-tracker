@@ -11,8 +11,7 @@ interface Status {
   coverage: { date: string; hr_minutes: number }[];
   alerts: { code: string; message: string }[];
 }
-// Keep the missing-module red from cascading into unrelated unsafe-any lint errors.
-const readStatus = healthStatus as (db: D1Database, options: { now: number; tz: string }) => Promise<Status>;
+const readStatus: (db: D1Database, options: { now: number; tz: string }) => Promise<Status> = healthStatus;
 const at = (iso: string) => Date.parse(iso) / 1000;
 const NOW = at("2026-10-21T08:00:00Z");
 const options = { now: NOW, tz: "Europe/Madrid" };
