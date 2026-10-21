@@ -31,7 +31,7 @@ function guarded(): [D1Database, Seen] {
         return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(st) : v;
       } });
     };
-    if (p === "batch" || p === "exec" || p === "dump") return () => { seen.other.push(String(p)); throw new Error(`unexpected ${String(p)}`); };
+    if (p === "batch" || p === "exec" || p === "dump") return () => { seen.other.push(p); throw new Error(`unexpected ${p}`); };
     const v: unknown = Reflect.get(t, p);
     return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
   } });
@@ -93,6 +93,22 @@ describe("AC1 health_daily", () => {
     expect(seen.sql[0]).not.toMatch(/2026-10-0/);
     expect(seen.binds).toEqual([["2026-10-01", "2026-10-02"]]);
     expect(seen.other).toEqual([]);
+  });
+
+  it("rejects when the D1 read fails instead of reporting empty coverage", async () => {
+    const broken = new Proxy(env.DB, { get(t, p) {
+      if (p === "prepare") return (q: string) => {
+        const stmt = t.prepare(q);
+        return new Proxy(stmt, { get(st, sp) {
+          if (sp === "bind") return (...a: unknown[]) => ({ ...st.bind(...a), all: () => Promise.reject(new Error("D1 down")) });
+          const v: unknown = Reflect.get(st, sp);
+          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(st) : v;
+        } });
+      };
+      const v: unknown = Reflect.get(t, p);
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+    } });
+    await expect(healthDaily(broken, { start: "2026-10-01", end: "2026-10-02" })).rejects.toThrow("D1 down");
   });
 
   it("returns values exactly as stored and counts days with a row even when its metrics are NULL or zero", async () => {
