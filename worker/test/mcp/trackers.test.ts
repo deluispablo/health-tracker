@@ -398,7 +398,7 @@ describe("AC2 list trackers for a date", () => {
       date: "2026-10-21", events_truncated: false,
       trackers: expect.arrayContaining([expect.objectContaining({ id: "cigarettes", total: 1.5, n: 3 })]) as unknown,
       events: [
-        { id: "zero", tracker_id: "cigarettes", local_time: "23:30", value: 0, note_untrusted: [...note].slice(0, 280).join("") },
+        { id: "zero", tracker_id: "cigarettes", local_time: "23:30", value: 0, note_untrusted: Array.from(note).slice(0, 280).join("") },
         { id: "negative", tracker_id: "cigarettes", local_time: "21:00", value: -2.5, note_untrusted: null },
         { id: "half", tracker_id: "cigarettes", local_time: "01:30", value: 4, note_untrusted: null },
       ],
