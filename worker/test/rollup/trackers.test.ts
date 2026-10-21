@@ -16,7 +16,7 @@ const snapshot = async () => [await rows(), (await env.DB.prepare("SELECT count(
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
-  await env.DB.prepare(`INSERT INTO tracker (id, name, unit, value_type, created_at) VALUES
+  await env.DB.prepare(`INSERT OR IGNORE INTO tracker (id, name, unit, value_type, created_at) VALUES
     ('cigarettes', 'Cigarettes', 'u', 'count', 1), ('alcohol', 'Alcohol', 'g', 'amount', 1), ('caffeine', 'Caffeine', 'mg', 'amount', 1)`).run();
   await env.DB.prepare("INSERT INTO tracker (id, name, unit, value_type, created_at, archived_at) VALUES ('mood', 'Mood', 'pt', 'scale', 1, 2)").run();
 });

@@ -241,7 +241,7 @@ async function toolAudit(name: string, args: object, ok: number, before: number)
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
 beforeEach(async () => {
   await env.DB.batch(["audit_log", "sleep_stage", "sleep_session", "metric_daily", "metric_minute", "daily_summary", "tracker_daily",
-    "sync_pending", "sync_state", "secret_blob", "oauth_state"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
+    "sync_pending", "sync_state", "secret_blob", "oauth_state", "event"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
   const { keys } = await env.OAUTH_KV.list();
   await Promise.all(keys.map((key) => env.OAUTH_KV.delete(key.name)));
 });
@@ -368,18 +368,22 @@ describe("AC2 owner authorization and refusals", () => {
 });
 
 describe("AC3 stateless read tools and audit", () => {
-  it("initializes and lists exactly the three described read-only tools", async () => {
+  it("initializes and lists exactly the five described tools, only the log tool writing", async () => {
     google();
     const token = await accessToken();
     await initialize(token);
     const msg = await rpc(token, "tools/list", {});
     expect(msg.error).toBeUndefined();
-    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_daily", "health_intraday", "health_sleep"]);
+    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_daily", "health_intraday", "health_log_event", "health_sleep", "health_trackers"]);
     for (const tool of msg.result?.tools ?? []) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.inputSchema).toMatchObject({ type: "object" });
-      expect(tool.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+      expect(tool.annotations).toMatchObject(tool.name === "health_log_event"
+        ? { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+        : { readOnlyHint: true, openWorldHint: false });
     }
+    const log = (msg.result?.tools ?? []).find((t) => t.name === "health_log_event")?.inputSchema as { properties: Record<string, { description?: string }> };
+    for (const id of ["cigarettes", "alcohol", "caffeine"]) expect(log.properties.tracker_id.description).toContain(id);
   });
 
   it("describes the valid values of every argument so clients need not guess", async () => {
@@ -460,6 +464,27 @@ describe("AC3 stateless read tools and audit", () => {
     await initialize(token);
     const msg = await rpc(token, "tools/call", { name, arguments: args });
     expect(Boolean(msg.error) || msg.result?.isError === true).toBe(true);
+  });
+
+  it("logs an event through MCP once per idempotency key, audits it, and lists it for the day", async () => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    const args = { tracker_id: "caffeine", value: 60, note: "café", idempotency_key: "connector-key-01" };
+    const before = (await audit()).length;
+    const first = await rpc(token, "tools/call", { name: "health_log_event", arguments: args });
+    expect(first.error).toBeUndefined();
+    expect(first.result?.isError).not.toBe(true);
+    expect(first.result?.structuredContent).toMatchObject({ created: true, event: { id: "k_connector-key-01", tracker_id: "caffeine", value: 60, note_untrusted: "café" } });
+    await toolAudit("health_log_event", args, 1, before);
+    const again = await rpc(token, "tools/call", { name: "health_log_event", arguments: args }, 2);
+    expect(again.result?.structuredContent).toMatchObject({ created: false });
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM event").first("n")).toBe(1);
+    const date = (first.result?.structuredContent as { event: { local_date: string } }).event.local_date;
+    const listed = await rpc(token, "tools/call", { name: "health_trackers", arguments: { date } }, 3);
+    expect(listed.result?.structuredContent).toMatchObject({ date, events: [{ id: "k_connector-key-01", value: 60 }] });
+    const bad = await rpc(token, "tools/call", { name: "health_log_event", arguments: { tracker_id: "nope" } }, 4);
+    expect(bad.result?.isError).toBe(true);
   });
 
   it("keeps a successful tool response when the audit write fails", async () => {
