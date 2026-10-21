@@ -192,6 +192,21 @@ describe("T11 BOM, NUL and shell file functions are refused", () => {
   ])("refuses %s", refuses);
 });
 
+describe("T11 blob literals and ASCII-only case folding", () => {
+  it.each(["SELECT X'AB''secret_blob'", "SELECT x'00'", "SELECT X'AB' FROM v_daily", "SELECT 1 FROM v_daily WHERE x'00' = 1"])(
+    "refuses blob literal %s", refuses,
+  );
+
+  it.each(["SELECT x FROM v_daily", "SELECT x, 'a' FROM v_daily", "SELECT 1 AS wor\u212Aout", "SELECT 'wor\u212Aout'"])(
+    "accepts %s", accepts,
+  );
+
+  it("still refuses ASCII case variants of denied names", () => {
+    refuses("SELECT * FROM WORKOUT");
+    refuses("SELECT * FROM 'Secret_Blob'");
+  });
+});
+
 describe("T11 parameter tokens are refused", () => {
   it.each([
     "SELECT $a(') AS x, name FROM sqlite_master --'", "SELECT :a(') AS x, * FROM audit_log --'",
