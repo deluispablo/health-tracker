@@ -12,6 +12,7 @@ import { healthSleep } from "./tools/sleep";
 import { healthSql } from "./tools/sql";
 import { healthStatus } from "./tools/status";
 import { healthTrackers, logEvent } from "./tools/trackers";
+import { healthTrend } from "./tools/trend";
 import { healthWorkouts } from "./tools/workouts";
 
 export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionContext): Promise<Response> {
@@ -111,6 +112,16 @@ export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionCon
       max_lag: z.number().int().optional().describe("Integer from 0 to 7; default 3. Returns lags 0 through max_lag, reading y through end + max_lag; r is null with fewer than 5 pairs or zero variance."),
     }, annotations,
   }, (args) => call("health_correlate", args, () => healthCorrelate(env.DB, args)));
+  server.registerTool("health_trend", {
+    description: "Summarize a daily metric by ISO week or calendar month, with sample SD and z relative to the requested range's daily baseline.",
+    inputSchema: {
+      metric: z.string().describe(`Metric name: ${ANALYSIS_NAMES.join(", ")}. Missing or non-finite behaviors count as 0; missing or non-finite outcomes are excluded.`),
+      period: z.string().describe("Period: week (ISO week starting Monday) or month (calendar month). Partial periods include only requested dates."),
+      ...analysisDates,
+    }, annotations,
+  }, (args) => call("health_trend", args, () => healthTrend(env.DB, {
+    ...args, period: args.period as Parameters<typeof healthTrend>[1]["period"],
+  })));
   server.registerTool("health_sql", {
     description: `Read-only SQL: one SELECT or WITH statement, at most 4000 characters and 500 returned rows (truncated signals more rows).
 Views and columns:
