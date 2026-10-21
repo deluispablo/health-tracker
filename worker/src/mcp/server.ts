@@ -7,6 +7,7 @@ import { audit } from "../lib/audit";
 import { DAILY_COLUMNS, healthDaily } from "./tools/daily";
 import { healthIntraday } from "./tools/intraday";
 import { healthSleep } from "./tools/sleep";
+import { healthStatus } from "./tools/status";
 import { healthTrackers, logEvent } from "./tools/trackers";
 
 export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionContext): Promise<Response> {
@@ -25,6 +26,12 @@ export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionCon
       audit(ctx, env.DB, { kind: "tool", name, args, started, error });
     }
   };
+  server.registerTool("health_status", {
+    description: "Read stream freshness, pending and stuck queue counts, Google connection, 14-day HR coverage and alerts.",
+    inputSchema: {}, annotations,
+  }, (args) => call("health_status", args, () => healthStatus(env.DB, {
+    now: Math.floor(Date.now() / 1000), tz: env.USER_TZ,
+  })));
   server.registerTool("health_daily", {
     description: "Read daily health summaries for up to 90 dates.",
     inputSchema: {
