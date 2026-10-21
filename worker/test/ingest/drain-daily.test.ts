@@ -25,6 +25,7 @@ function fakeClient(replies: { steps?: Reply; rhr?: Reply } = {}) {
         calls.push({ method: "listDaily", type, start, end });
         return answer(replies.rhr);
       },
+      reconcile: () => Promise.reject(new Error("unexpected reconcile")),
     },
   };
 }

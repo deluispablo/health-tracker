@@ -20,6 +20,7 @@ function fakeClient(points: RollUpPoint[] | Error = []) {
       },
       dailyRollUp: () => Promise.reject(new Error("unexpected dailyRollUp")),
       listDaily: () => Promise.reject(new Error("unexpected listDaily")),
+      reconcile: () => Promise.reject(new Error("unexpected reconcile")),
     },
   };
 }
@@ -140,6 +141,7 @@ describe("AC2 one 60-minute window per invocation", () => {
       },
       dailyRollUp: () => Promise.reject(new Error("unexpected dailyRollUp")),
       listDaily: () => Promise.reject(new Error("unexpected listDaily")),
+      reconcile: () => Promise.reject(new Error("unexpected reconcile")),
     };
     expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 1, failed: 0 });
     expect(await pending()).toEqual([{ data_type: "heart-rate", start_ts: t, end_ts: t + 60, operation: "UPSERT", received_at: NOW, attempts: 0 }]);
