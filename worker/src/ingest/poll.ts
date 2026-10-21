@@ -2,7 +2,7 @@ import { upsertStatements } from "../lib/d1";
 
 export const RECONCILE_TYPES = [
   "heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
-  "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes",
+  "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise",
 ];
 
 export async function enqueueReconcile(db: D1Database, now: number): Promise<number> {

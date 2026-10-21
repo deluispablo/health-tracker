@@ -12,6 +12,7 @@ import { healthSleep } from "./tools/sleep";
 import { healthSql } from "./tools/sql";
 import { healthStatus } from "./tools/status";
 import { healthTrackers, logEvent } from "./tools/trackers";
+import { healthWorkouts } from "./tools/workouts";
 
 export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionContext): Promise<Response> {
   const server = new McpServer({ name: "pixel-health", version: "0.1.0" });
@@ -52,6 +53,13 @@ export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionCon
       end: z.string().describe("End date in YYYY-MM-DD format; inclusive range must contain 1 to 31 dates."),
     }, annotations,
   }, (args) => call("health_sleep", args, () => healthSleep(env.DB, args)));
+  server.registerTool("health_workouts", {
+    description: "Read workouts for up to 31 dates, with session-local start/end times, duration in minutes, average heart rate in bpm, kcal, active zone minutes and distance in meters.",
+    inputSchema: {
+      start: z.string().describe("Start date in YYYY-MM-DD format; inclusive range must contain 1 to 31 dates."),
+      end: z.string().describe("End date in YYYY-MM-DD format; inclusive range must contain 1 to 31 dates."),
+    }, annotations,
+  }, (args) => call("health_workouts", args, () => healthWorkouts(env.DB, args)));
   server.registerTool("health_intraday", {
     description: "Read intraday heart rate at 1m, 5m or 1h resolution.",
     inputSchema: {

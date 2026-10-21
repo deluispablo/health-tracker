@@ -967,7 +967,7 @@ describe("AC4 existing routes and both crons through the default export", () => 
       data_type: string; start_ts: number; end_ts: number; operation: string;
     }>()).results;
     expect(rows.map((r) => r.data_type)).toEqual(["active-zone-minutes", "daily-heart-rate-variability", "daily-oxygen-saturation",
-      "daily-respiratory-rate", "daily-resting-heart-rate", "daily-sleep-temperature-derivations", "heart-rate", "sleep", "steps"]);
+      "daily-respiratory-rate", "daily-resting-heart-rate", "daily-sleep-temperature-derivations", "exercise", "heart-rate", "sleep", "steps"]);
     for (const row of rows) {
       expect(row.operation).toBe("UPSERT");
       expect(row.end_ts - row.start_ts).toBe(48 * 3600);

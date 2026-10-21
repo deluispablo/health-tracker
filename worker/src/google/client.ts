@@ -55,6 +55,15 @@ function parseInstant(s: string): number {
   return Date.parse(s);
 }
 
+/** Returned exercise instants accept arbitrary fractions, truncated to milliseconds. */
+export function parseExerciseInstant(value: unknown): number {
+  if (typeof value !== "string" || !RFC3339.test(value)) return NaN;
+  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value.slice(0, 10)
+    || Number(value.slice(11, 13)) > 23 || Number(value.slice(14, 16)) > 59 || Number(value.slice(17, 19)) > 59) return NaN;
+  return Date.parse(value);
+}
+
 /** Sortable key: whole seconds, then the fraction padded to ns (orders beyond ms precision). */
 function syncKey(t: string): string {
   const m = /^(.*?)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)$/.exec(t);
@@ -126,8 +135,21 @@ export function createGoogleClient(o: GoogleClientOptions) {
 
     async reconcile(type: string, start: string, end: string): Promise<unknown[]> {
       if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(type)) throw new RangeError("invalid data type");
-      if (!(parseInstant(end) > parseInstant(start))) throw new RangeError("reconcile range must be valid with end after start");
-      const field = type === "sleep" || type === "exercise" ? "interval.end_time" : "sample_time.physical_time";
+      const a = parseInstant(start);
+      const b = parseInstant(end);
+      if (!(b > a)) throw new RangeError("reconcile range must be valid with end after start");
+      if (type === "exercise") {
+        const civil = (ms: number) => new Date(ms).toISOString().slice(0, 19);
+        const items = await listPages(type, "interval.civil_start_time",
+          civil(Math.floor((a - 14 * 3600000) / 1000) * 1000),
+          civil(Math.ceil((b + 14 * 3600000) / 1000) * 1000), ":reconcile");
+        return items.filter((item) => {
+          const point = item as { exercise?: { interval?: { startTime?: unknown } } } | null;
+          const time = parseExerciseInstant(point?.exercise?.interval?.startTime);
+          return time >= a && time < b;
+        });
+      }
+      const field = type === "sleep" ? "interval.end_time" : "sample_time.physical_time";
       return listPages(type, field, start, end, ":reconcile");
     },
 

@@ -7,8 +7,7 @@ interface Workout {
   local_date: string; type: string; start_local: string; end_local: string; tz_offset_min: number;
   duration_min: number | null; avg_hr: number | null; kcal: number | null; azm: number | null; distance_m: number | null;
 }
-// Keep the absent-module red confined to the import until T10f implements this API.
-const query = healthWorkouts as (db: D1Database, args: { start: string; end: string }) => Promise<{ workouts: Workout[]; count: number }>;
+const query: (db: D1Database, args: { start: string; end: string }) => Promise<{ workouts: Workout[]; count: number }> = healthWorkouts;
 const at = (iso: string) => Date.parse(iso) / 1000;
 async function seed(id: string, date = "2026-10-02", start = "2026-10-02T12:19:23Z", end = "2026-10-02T13:14:34Z", offset = 120, source = "gh", type = "CARDIO_WORKOUT") {
   await env.DB.prepare(`INSERT INTO workout (source_id, source, type, start_ts, end_ts, tz_offset_min, local_date,

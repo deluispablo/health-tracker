@@ -1,4 +1,5 @@
 import type { createGoogleClient, DailyRollUpPoint, RollUpPoint } from "../google/client";
+import { parseExerciseInstant } from "../google/client";
 import { upsertStatements } from "../lib/d1";
 import { sleepLocalDate } from "../lib/time";
 
@@ -64,7 +65,7 @@ export async function drainSyncPending(
   let processed = 0;
   let failed = 0;
   for (const type of ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
-    "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes"]) {
+    "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"]) {
     const row = await db.prepare(`SELECT * FROM sync_pending
       WHERE data_type = ? AND attempts < 5
       ORDER BY received_at, start_ts, operation, end_ts LIMIT 1`).bind(type).first<PendingRow>();
@@ -77,7 +78,50 @@ export async function drainSyncPending(
     const statements: D1PreparedStatement[] = [];
     let advance: number | undefined;
 
-    if (type === "sleep") {
+    if (type === "exercise") {
+      const end = Math.min(row.end_ts + 60, row.start_ts + 7 * 86400);
+      let items: unknown[];
+      try {
+        items = await client.reconcile(type, new Date(row.start_ts * 1000).toISOString(), new Date(end * 1000).toISOString());
+      } catch {
+        await db.prepare(`UPDATE sync_pending SET attempts = attempts + 1 WHERE ${predicate}`).bind(...key).run();
+        failed++;
+        continue;
+      }
+
+      const now = opts.now?.() ?? Math.floor(Date.now() / 1000);
+      const answer = new Map<string, unknown[]>();
+      for (const item of items) {
+        const payload = object(item);
+        const exercise = object(payload.exercise);
+        const interval = object(exercise.interval);
+        const start = parseExerciseInstant(interval.startTime);
+        const finish = parseExerciseInstant(interval.endTime);
+        const offset = interval.startUtcOffset;
+        if (typeof payload.dataPointName !== "string" || !payload.dataPointName
+          || typeof exercise.exerciseType !== "string" || !exercise.exerciseType
+          || !Number.isFinite(start) || !Number.isFinite(finish) || finish <= start
+          || typeof offset !== "string" || !/^-?\d+s$/.test(offset)) continue;
+        const tz = Number(offset.slice(0, -1)) / 60;
+        if (!Number.isInteger(tz)) continue;
+        const startTs = Math.floor(start / 1000);
+        const endTs = Math.floor(finish / 1000);
+        const metrics = object(exercise.metricsSummary);
+        const duration = exercise.activeDuration;
+        const distance = readNumber(metrics.distanceMillimeters);
+        answer.set(payload.dataPointName, [payload.dataPointName, "gh", exercise.exerciseType, startTs, endTs, tz,
+          new Date((startTs + tz * 60) * 1000).toISOString().slice(0, 10),
+          typeof duration === "string" && /^\d+(\.\d+)?s$/.test(duration)
+            ? Number(duration.slice(0, -1)) / 60 : (endTs - startTs) / 60,
+          readNumber(metrics.averageHeartRateBeatsPerMinute), null, readNumber(metrics.caloriesKcal),
+          readNumber(metrics.activeZoneMinutes), distance === null ? null : distance / 1000, now]);
+      }
+      statements.push(db.prepare("DELETE FROM workout WHERE source = 'gh' AND start_ts >= ? AND start_ts < ?").bind(row.start_ts, end),
+        ...upsertStatements(db, "workout",
+          ["source_id", "source", "type", "start_ts", "end_ts", "tz_offset_min", "local_date", "duration_min", "avg_hr", "max_hr",
+            "kcal", "azm", "distance_m", "updated_at"], ["source_id"], [...answer.values()]));
+      if (end < row.end_ts + 60) advance = end;
+    } else if (type === "sleep") {
       const end = Math.min(row.end_ts + 60, row.start_ts + 7 * 86400);
       let items: unknown[];
       try {
