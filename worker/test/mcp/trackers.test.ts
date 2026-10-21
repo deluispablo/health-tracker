@@ -191,6 +191,7 @@ describe("AC3 log events", () => {
     [{ tracker_id: "alcohol", value: "10" }], [{ tracker_id: "alcohol", value: null }],
     [{ tracker_id: "alcohol", value: 0 }], [{ tracker_id: "caffeine", value: 1001 }],
     [{ tracker_id: "caffeine", note: 42 }], [{ tracker_id: "caffeine", note: null }],
+    [{ tracker_id: "caffeine", at: "2026-10-21T10:05:00.0001Z" }], [{ tracker_id: "caffeine", at: "2026-10-21T10:00:00.1234Z" }],
   ])("rejects %j before any write", async (args) => {
     await env.DB.batch([
       env.DB.prepare("INSERT INTO tracker (id, name, unit, value_type, created_at, archived_at) VALUES ('mood', 'Mood', 'pt', 'scale', 1, 2)"),
@@ -384,7 +385,7 @@ describe("AC2 list trackers for a date", () => {
     await expect(healthTrackers(env.DB, { date }, TZ)).resolves.toMatchObject({ date, events: [], events_truncated: false });
   });
 
-  it("uses stored dates and offsets, keeps unrestricted stored values and notes, and ignores stale rollups", async () => {
+  it("uses stored dates and offsets, keeps unrestricted stored values, caps long notes at 280 code points, and ignores stale rollups", async () => {
     const note = "  " + "😀".repeat(281) + "  ";
     await stored("zero", 0, { ts: at("2026-10-20T23:30:00Z"), offset: 0, origin: "import", note });
     await stored("negative", -2.5, { ts: at("2026-10-21T02:00:00Z"), offset: -300, origin: "artifact" });
@@ -397,7 +398,7 @@ describe("AC2 list trackers for a date", () => {
       date: "2026-10-21", events_truncated: false,
       trackers: expect.arrayContaining([expect.objectContaining({ id: "cigarettes", total: 1.5, n: 3 })]) as unknown,
       events: [
-        { id: "zero", tracker_id: "cigarettes", local_time: "23:30", value: 0, note_untrusted: note },
+        { id: "zero", tracker_id: "cigarettes", local_time: "23:30", value: 0, note_untrusted: [...note].slice(0, 280).join("") },
         { id: "negative", tracker_id: "cigarettes", local_time: "21:00", value: -2.5, note_untrusted: null },
         { id: "half", tracker_id: "cigarettes", local_time: "01:30", value: 4, note_untrusted: null },
       ],
