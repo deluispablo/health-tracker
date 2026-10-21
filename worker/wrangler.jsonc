@@ -5,7 +5,7 @@
   "compatibility_date": "2026-08-22",
   "triggers": { "crons": ["*/5 * * * *", "30 4 * * *"] },
   "vars": { "USER_TZ": "Europe/Madrid", "ALLOWED_EMAIL": "deluispablo@gmail.com" },
-  // Placeholder ids: replace with the output of `wrangler d1 create` and `wrangler kv namespace create`.
+  // Top-level ids are placeholders for local tests; deploy with `--env production`.
   "d1_databases": [
     {
       "binding": "DB",
@@ -20,37 +20,21 @@
     },
   ],
   "env": {
-    "staging": {
-      "triggers": { "crons": ["*/5 * * * *", "30 4 * * *"] },
-      "vars": { "USER_TZ": "Europe/Madrid", "ALLOWED_EMAIL": "deluispablo@gmail.com" },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "pixel-health-staging",
-          "database_id": "REPLACE_WITH_STAGING_D1_DATABASE_ID",
-        },
-      ],
-      "kv_namespaces": [
-        {
-          "binding": "OAUTH_KV",
-          "id": "REPLACE_WITH_STAGING_KV_NAMESPACE_ID",
-        },
-      ],
-    },
     "production": {
+      "routes": [{ "pattern": "pixel.deluispablo.com", "custom_domain": true }],
       "triggers": { "crons": ["*/5 * * * *", "30 4 * * *"] },
       "vars": { "USER_TZ": "Europe/Madrid", "ALLOWED_EMAIL": "deluispablo@gmail.com" },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "pixel-health-production",
-          "database_id": "REPLACE_WITH_PRODUCTION_D1_DATABASE_ID",
+          "database_id": "02f9a8d5-eea1-4ba5-ad4e-91ea3099e8aa",
         },
       ],
       "kv_namespaces": [
         {
           "binding": "OAUTH_KV",
-          "id": "REPLACE_WITH_PRODUCTION_KV_NAMESPACE_ID",
+          "id": "b865db2e28f8409e9d1b9b9e347ba681",
         },
       ],
     },
