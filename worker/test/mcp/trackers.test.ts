@@ -1,8 +1,11 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { healthTrackers, logEvent } from "../../src/mcp/tools/trackers";
+import { deleteEvent, healthTrackers, logEvent } from "../../src/mcp/tools/trackers";
 
+const emotions = ["genial", "bien", "tranquilo", "cansado", "estresado", "ansioso", "triste", "enfadado"];
+const moodRows = emotions.map((emotion) => ({ id: `mood_${emotion}`, name: `Ánimo: ${emotion}`, unit: "u",
+  value_type: "count", default_value: 1, min_value: 1, max_value: 1 })).sort((a, b) => a.id.localeCompare(b.id));
 const TZ = "Europe/Madrid";
 const at = (iso: string) => Date.parse(iso) / 1000;
 const NOW = at("2026-10-21T10:00:00Z");
@@ -59,9 +62,11 @@ beforeAll(async () => {
 beforeEach(async () => {
   await env.DB.batch([env.DB.prepare("DROP TRIGGER IF EXISTS fail_daily"), env.DB.prepare("DROP TRIGGER IF EXISTS fail_event"),
     env.DB.prepare("DELETE FROM tracker_daily"), env.DB.prepare("DELETE FROM event"),
-    env.DB.prepare("DELETE FROM tracker WHERE id NOT IN ('cigarettes', 'alcohol', 'caffeine')"),
+    env.DB.prepare(`DELETE FROM tracker WHERE id NOT IN ('cigarettes', 'alcohol', 'caffeine', ${emotions.map(() => "?").join(", ")})`)
+      .bind(...emotions.map((emotion) => `mood_${emotion}`)),
     env.DB.prepare(`UPDATE tracker SET archived_at = NULL, default_value = CASE id
-      WHEN 'cigarettes' THEN 1 WHEN 'alcohol' THEN 13 WHEN 'caffeine' THEN 80 END`)]);
+      WHEN 'cigarettes' THEN 1 WHEN 'alcohol' THEN 13 WHEN 'caffeine' THEN 80 ELSE 1 END,
+      min_value = 1, max_value = CASE id WHEN 'cigarettes' THEN 20 WHEN 'alcohol' THEN 200 WHEN 'caffeine' THEN 1000 ELSE 1 END`)]);
 });
 
 describe("AC1 seeded trackers", () => {
@@ -71,6 +76,7 @@ describe("AC1 seeded trackers", () => {
       { id: "alcohol", name: "Alcohol", unit: "g", value_type: "amount", default_value: 13, min_value: 1, max_value: 200, archived_at: null },
       { id: "caffeine", name: "Cafeína", unit: "mg", value_type: "amount", default_value: 80, min_value: 1, max_value: 1000, archived_at: null },
       { id: "cigarettes", name: "Cigarrillos", unit: "u", value_type: "count", default_value: 1, min_value: 1, max_value: 20, archived_at: null },
+      ...moodRows.map((row) => ({ ...row, archived_at: null })),
     ]);
   });
 });
@@ -473,6 +479,7 @@ describe("AC2 list trackers for a date", () => {
         { id: "alcohol", name: "Alcohol", unit: "g", value_type: "amount", default_value: 13, min_value: 1, max_value: 200, total: 12.5, n: 1 },
         { id: "caffeine", name: "Cafeína", unit: "mg", value_type: "amount", default_value: 80, min_value: 1, max_value: 1000, total: 0, n: 0 },
         { id: "cigarettes", name: "Cigarrillos", unit: "u", value_type: "count", default_value: 1, min_value: 1, max_value: 20, total: 3, n: 2 },
+        ...moodRows.map((row) => ({ ...row, total: 0, n: 0 })),
       ],
       events: [
         { id: "a", tracker_id: "cigarettes", local_time: "08:05", value: 2, note_untrusted: null },
@@ -518,7 +525,8 @@ describe("AC2 list trackers for a date", () => {
   it("returns active zero totals on an empty date and empty lists when every tracker is archived", async () => {
     expect(await healthTrackers(env.DB, { date: "2026-10-21" })).toMatchObject({
       trackers: [expect.objectContaining({ id: "alcohol", total: 0, n: 0 }), expect.objectContaining({ id: "caffeine", total: 0, n: 0 }),
-        expect.objectContaining({ id: "cigarettes", total: 0, n: 0 })], events: [], events_truncated: false,
+        expect.objectContaining({ id: "cigarettes", total: 0, n: 0 }),
+        ...moodRows.map((row) => ({ ...row, total: 0, n: 0 }))], events: [], events_truncated: false,
     });
     await stored("hidden", 1);
     await env.DB.prepare("UPDATE tracker SET archived_at = 0").run();
@@ -537,7 +545,8 @@ describe("AC2 list trackers for a date", () => {
     expect(await healthTrackers(env.DB, { date: "2026-10-21" })).toMatchObject({
       events_truncated: n > 50,
       trackers: [expect.objectContaining({ id: "caffeine", total: 0, n: 0 }),
-        expect.objectContaining({ id: "cigarettes", total: n * (n + 1) / 2, n })],
+        expect.objectContaining({ id: "cigarettes", total: n * (n + 1) / 2, n }),
+        ...moodRows.map((row) => ({ ...row, total: 0, n: 0 }))],
       events: order.slice(0, 50).map((i) => ({ id: `cap-${String(i).padStart(2, "0")}`, tracker_id: "cigarettes",
         local_time: i === n - 1 ? "11:59" : "12:00", value: i + 1, note_untrusted: null })),
     });
@@ -555,5 +564,152 @@ describe("AC2 list trackers for a date", () => {
     expect(queries.flat()).toContain("2026-10-21");
     const failure = new Error("D1 listing unavailable");
     await expect(healthTrackers(observedDb(() => { throw failure; }), { date: "2026-10-21" })).rejects.toBe(failure);
+  });
+});
+
+describe("T33 AC3 mood events", () => {
+  it.each(emotions)("logs %s with default 1 through the tracker pipeline", async (emotion) => {
+    const tracker_id = `mood_${emotion}`;
+    const first = await logEvent(env.DB, { tracker_id }, opts);
+    expect(first).toMatchObject({ created: true, event: { tracker_id, value: 1 }, day_total: 1 });
+    const second = await logEvent(env.DB, { tracker_id, value: 1 }, opts);
+    expect(second.day_total).toBe(2);
+    expect(await daily()).toEqual([{ local_date: "2026-10-21", tracker_id, total: 2, n: 2 }]);
+    expect(await healthTrackers(env.DB, { date: "2026-10-21" })).toMatchObject({
+      trackers: expect.arrayContaining([expect.objectContaining({ id: tracker_id, total: 2, n: 2 })]) as unknown,
+      events: expect.arrayContaining([expect.objectContaining({ id: first.event.id, tracker_id, value: 1 }),
+        expect.objectContaining({ id: second.event.id, tracker_id, value: 1 })]) as unknown,
+    });
+    for (const value of [0, 2, 1.5]) await expect(logEvent(env.DB, { tracker_id, value }, opts)).rejects.toThrow(RangeError);
+    expect(await events()).toHaveLength(2);
+  });
+});
+
+describe("T33 AC1 delete event", () => {
+  const deletedAt = async (id: string) => env.DB.prepare("SELECT deleted_at FROM event WHERE id = ?").bind(id).first("deleted_at");
+
+  it("soft-deletes in one batch, rebuilds the stored day and returns the exact live tracker total", async () => {
+    const note = "  " + "😀".repeat(300);
+    await stored("imported ' event", -2.5, { ts: 1, offset: -300, date: "2026-10-20", note, origin: "import" });
+    await stored("sibling", 3.25, { date: "2026-10-20", origin: "artifact" });
+    await stored("deleted", 99, { date: "2026-10-20", deleted: 0 });
+    await stored("other-tracker", 80, { date: "2026-10-20", tracker: "caffeine" });
+    await stored("other-day", 100);
+    await env.DB.batch([
+      env.DB.prepare("UPDATE tracker SET archived_at = 1, min_value = 10, max_value = 10 WHERE id = 'cigarettes'"),
+      env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES ('2026-10-20', 'cigarettes', 999, 99, 999), ('2026-10-21', 'cigarettes', 777, 77, 777)"),
+    ]);
+    const before = await events();
+    const batches: string[][] = [];
+    const db = observedDb((sql, args, inBatch) => {
+      if (!inBatch) { expect(sql).toMatch(/^\s*SELECT\b/i); expect(sql).not.toMatch(/SUM\s*\(/i); }
+      expect(sql).not.toContain("imported ' event");
+      if (/^\s*UPDATE\s+event/i.test(sql)) expect(args).toContain("imported ' event");
+    }, (sql) => { batches.push(sql); });
+    const out = await deleteEvent(db, { event_id: "imported ' event" }, { now: NOW });
+    expect(out).toEqual({ deleted: true, day_total: 3.25, event: { id: "imported ' event", tracker_id: "cigarettes",
+      local_date: "2026-10-20", local_time: "19:00", value: -2.5, note_untrusted: Array.from(note).slice(0, 280).join("") } });
+    expect(await deletedAt("imported ' event")).toBe(NOW);
+    expect(await events()).toEqual(before);
+    expect(batches.map((batch) => batch.length)).toEqual([4]);
+    expect(batches[0][0]).toMatch(/^\s*UPDATE\s+event/i);
+    expect(batches[0][1]).toMatch(/^\s*DELETE FROM tracker_daily/i);
+    expect(batches[0][2]).toMatch(/^\s*INSERT INTO tracker_daily/i);
+    expect(batches[0][3]).toMatch(/^\s*SELECT COALESCE\(SUM\(value\), 0\)/i);
+    expect(await daily()).toEqual([
+      { local_date: "2026-10-20", tracker_id: "caffeine", total: 80, n: 1 },
+      { local_date: "2026-10-20", tracker_id: "cigarettes", total: 3.25, n: 1 },
+      { local_date: "2026-10-21", tracker_id: "cigarettes", total: 777, n: 77 },
+    ]);
+    await stored("new-sibling", 2, { date: "2026-10-20" });
+    const readOnly = observedDb((sql) => { expect(sql).toMatch(/^\s*SELECT\b/i); });
+    expect(await deleteEvent(readOnly, { event_id: out.event.id }, { now: NOW + 10 })).toEqual({ ...out, deleted: false, day_total: 5.25 });
+    expect(await deletedAt(out.event.id)).toBe(NOW);
+    expect((await daily()).find((r) => r.local_date === "2026-10-20" && r.tracker_id === "cigarettes")?.total).toBe(3.25);
+  });
+
+  it.each([undefined, null, 123, "", "x".repeat(81), "unknown", " exact-id", "exact-id "])("rejects unknown or malformed id %j without writes", async (event_id) => {
+    await stored("exact-id", 1);
+    const db = observedDb((sql) => { expect(sql).toMatch(/^\s*SELECT\b/i); });
+    const result = deleteEvent(db, { event_id } as Parameters<typeof deleteEvent>[1], { now: NOW });
+    await expect(result).rejects.toThrow(RangeError);
+    await expect(result).rejects.toMatchObject({ message: "event_id must name an existing event" });
+    expect(await deletedAt("exact-id")).toBeNull();
+    expect(await daily()).toEqual([]);
+  });
+
+  it.each([undefined, "Z".repeat(64)])("accepts the logger's generated and keyed ids (%s), removing the last event", async (idempotency_key) => {
+    const logged = await logEvent(env.DB, { tracker_id: "cigarettes", idempotency_key }, opts);
+    expect(await deleteEvent(env.DB, { event_id: logged.event.id }, { now: NOW })).toEqual({ deleted: true, event: logged.event, day_total: 0 });
+    expect(await daily()).toEqual([]);
+    expect((await healthTrackers(env.DB, { date: "2026-10-21" })).events).toEqual([]);
+    expect(await logEvent(env.DB, { tracker_id: "cigarettes", idempotency_key: idempotency_key ?? "unused_key" }, opts))
+      .toMatchObject({ created: idempotency_key === undefined });
+  });
+
+  it("treats deleted_at = 0 as already deleted and returns numeric zero without writes", async () => {
+    await stored("deleted-zero", 5, { deleted: 0 });
+    const db = observedDb((sql) => { expect(sql).toMatch(/^\s*SELECT\b/i); });
+    expect(await deleteEvent(db, { event_id: "deleted-zero" }, { now: NOW })).toMatchObject({ deleted: false, day_total: 0 });
+    expect(await deletedAt("deleted-zero")).toBe(0);
+  });
+
+  it.each(["not-a-date", "2026-02-30", "1999-12-31", "2100-01-01"])("skips refresh for invalid stored date %s", async (date) => {
+    await stored("bad-date", 2, { date });
+    await stored("sibling", 3, { date });
+    const batches: string[][] = [];
+    const db = observedDb(() => {}, (sql) => { batches.push(sql); });
+    expect(await deleteEvent(db, { event_id: "bad-date" }, { now: NOW })).toMatchObject({ deleted: true, day_total: 3, event: { local_date: date } });
+    expect(batches.map((batch) => batch.length)).toEqual([2]);
+    expect(await daily()).toEqual([]);
+  });
+
+  it("returns null local_time for an unrepresentable stored timestamp on deletion and retry", async () => {
+    await stored("bad-ts", 1, { ts: 9000000000000 });
+    for (const deleted of [true, false]) {
+      expect(await deleteEvent(env.DB, { event_id: "bad-ts" }, { now: NOW })).toEqual({ deleted, day_total: 0,
+        event: { id: "bad-ts", tracker_id: "cigarettes", local_date: "2026-10-21", local_time: null, value: 1, note_untrusted: null } });
+    }
+  });
+
+  it("allows exactly one deletion under a forced two-caller race and preserves the winner timestamp", async () => {
+    await stored("race", 1);
+    let arrivals = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const db = observedDb(async (sql) => {
+      if (/^\s*UPDATE\s+event/i.test(sql)) {
+        if (++arrivals === 2) release();
+        await gate;
+      }
+    });
+    const results = await Promise.all([NOW, NOW + 10].map((now) => deleteEvent(db, { event_id: "race" }, { now })));
+    expect(arrivals).toBe(2);
+    expect(results.map((r) => r.deleted).sort()).toEqual([false, true]);
+    expect(results[0].event).toEqual(results[1].event);
+    expect(results.map((r) => r.day_total)).toEqual([0, 0]);
+    expect(await deletedAt("race")).toBe(results[0].deleted ? NOW : NOW + 10);
+    expect(await daily()).toEqual([]);
+  });
+
+  it.each(["update", "refresh", "total"])("rolls back deletion and rollups when %s fails, then succeeds on retry", async (stage) => {
+    await stored("target", 1);
+    await stored("sibling", 2);
+    await env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES ('2026-10-21', 'cigarettes', 999, 99, 999)").run();
+    const before = [await events(), await daily()];
+    if (stage !== "total") await env.DB.prepare(stage === "update"
+      ? "CREATE TRIGGER fail_event BEFORE UPDATE ON event BEGIN SELECT RAISE(ABORT, 'delete down'); END"
+      : "CREATE TRIGGER fail_daily BEFORE INSERT ON tracker_daily BEGIN SELECT RAISE(ABORT, 'rollup down'); END").run();
+    const db = new Proxy(env.DB, { get(t, p) {
+      if (p === "prepare" && stage === "total") return (sql: string) => t.prepare(sql.replace("COALESCE(SUM(value), 0)", "COALESCE(SUM(value), 0) + json_extract('broken', '$')"));
+      const value: unknown = Reflect.get(t, p);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
+    } });
+    await expect(deleteEvent(db, { event_id: "target" }, { now: NOW })).rejects.toThrow();
+    expect([await events(), await daily()]).toEqual(before);
+    expect(await deletedAt("target")).toBeNull();
+    await env.DB.batch([env.DB.prepare("DROP TRIGGER IF EXISTS fail_event"), env.DB.prepare("DROP TRIGGER IF EXISTS fail_daily")]);
+    expect(await deleteEvent(env.DB, { event_id: "target" }, { now: NOW })).toMatchObject({ deleted: true, day_total: 2 });
+    expect(await daily()).toEqual([{ local_date: "2026-10-21", tracker_id: "cigarettes", total: 2, n: 1 }]);
   });
 });

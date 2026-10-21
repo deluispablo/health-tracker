@@ -85,7 +85,7 @@ describe("AC1 schema", () => {
       expect(sql).toMatch(/unixepoch\s*\(\s*\)/i);
       expect(sql).not.toMatch(/\b(?:CREATE|ALTER|DROP)\b/i);
     }
-    const rows = (await env.DB.prepare("SELECT * FROM tracker ORDER BY id").all()).results;
+    const rows = (await env.DB.prepare("SELECT * FROM tracker WHERE id IN ('alcohol', 'caffeine', 'cigarettes') ORDER BY id").all()).results;
     expect(rows).toEqual([
       { id: "alcohol", name: "Alcohol", unit: "g", value_type: "amount", default_value: 13, min_value: 1, max_value: 200, archived_at: null, created_at: expect.any(Number) as unknown },
       { id: "caffeine", name: "Cafeína", unit: "mg", value_type: "amount", default_value: 80, min_value: 1, max_value: 1000, archived_at: null, created_at: expect.any(Number) as unknown },

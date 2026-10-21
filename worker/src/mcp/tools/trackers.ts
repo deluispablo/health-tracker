@@ -21,9 +21,10 @@ interface EventRow {
 }
 
 function eventOutput(row: EventRow) {
+  const local = new Date((row.ts + row.tz_offset_min * 60) * 1000);
   return {
     id: row.id, tracker_id: row.tracker_id,
-    local_time: new Date((row.ts + row.tz_offset_min * 60) * 1000).toISOString().slice(11, 16),
+    local_time: Number.isFinite(local.getTime()) ? local.toISOString().slice(11, 16) : null,
     value: row.value, note_untrusted: row.note === null ? null : Array.from(row.note).slice(0, 280).join(""),
   };
 }
@@ -52,8 +53,8 @@ export async function healthTrackers(db: D1Database, { date }: { date: string })
 }
 
 function eventById(db: D1Database, id: string) {
-  return db.prepare("SELECT id, tracker_id, ts, tz_offset_min, local_date, value, note FROM event WHERE id = ?")
-    .bind(id).first<EventRow>();
+  return db.prepare("SELECT id, tracker_id, ts, tz_offset_min, local_date, value, note, deleted_at FROM event WHERE id = ?")
+    .bind(id).first<EventRow & { deleted_at: number | null }>();
 }
 
 function dayTotalStatement(db: D1Database, event: EventRow) {
@@ -67,13 +68,17 @@ function logOutput(event: EventRow, created: boolean, total: D1Result<{ total: n
   return { created, event: { ...eventOutput(event), local_date: event.local_date }, day_total: total.results[0].total };
 }
 
-async function logResult(db: D1Database, event: EventRow, created: boolean) {
-  const date = event.local_date;
+function storedDateRefresh(db: D1Database, date: string) {
   const midnight = Date.parse(`${date}T00:00:00Z`);
   const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(midnight)
     && new Date(midnight).toISOString().slice(0, 10) === date && date >= "2000-01-01" && date <= "2099-12-31";
-  const refresh = validDate ? trackerDailyStatements(db, date, date) : [];
-  const results = await db.batch<{ total: number }>([...refresh, dayTotalStatement(db, event)]);
+  return validDate ? trackerDailyStatements(db, date, date) : [];
+}
+
+async function logResult(db: D1Database, event: EventRow, created: boolean) {
+  const results = await db.batch<{ total: number }>([
+    ...storedDateRefresh(db, event.local_date), dayTotalStatement(db, event),
+  ]);
   return logOutput(event, created, results[results.length - 1]);
 }
 
@@ -145,4 +150,25 @@ export async function logEvent(db: D1Database, args: {
     return logResult(db, existing, false);
   }
   return logOutput(event, true, results[results.length - 1]);
+}
+
+export async function deleteEvent(db: D1Database, { event_id }: { event_id: string }, { now }: { now: number }) {
+  if (typeof event_id !== "string" || event_id.length < 1 || event_id.length > 80) {
+    throw new RangeError("event_id must name an existing event");
+  }
+  const event = await eventById(db, event_id);
+  if (!event) throw new RangeError("event_id must name an existing event");
+  const live = event.deleted_at === null;
+  const results = await db.batch<{ total: number }>([
+    ...(live ? [
+      db.prepare("UPDATE event SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL").bind(now, event_id),
+      ...storedDateRefresh(db, event.local_date),
+    ] : []),
+    dayTotalStatement(db, event),
+  ]);
+  return {
+    deleted: live && results[0].meta.changes > 0,
+    event: { ...eventOutput(event), local_date: event.local_date },
+    day_total: results[results.length - 1].results[0].total,
+  };
 }

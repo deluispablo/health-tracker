@@ -84,7 +84,7 @@ Repository layout (planned):
 
 ## MCP tools
 
-Planned tool set. All tools are read-only except `health_log_event`, which only inserts.
+Twelve tools. All are read-only except `health_log_event`, which inserts, and `health_delete_event`, which soft-deletes a logged event while keeping its history.
 
 | Tool | Access | Returns |
 |---|---|---|
@@ -98,7 +98,10 @@ Planned tool set. All tools are read-only except `health_log_event`, which only 
 | `health_correlate` | read | Lagged correlations after pre-whitening, with caveats |
 | `health_trackers` | read | List of manual trackers |
 | `health_log_event` | insert only | Creates one tracker event and returns it |
+| `health_delete_event` | soft delete | Undoes a logged event by its returned `event.id`; returns the event and current day total |
 | `health_sql` | read (advanced) | A single `SELECT` over read-only views, row-limited |
+
+Mood emotions are count trackers: `mood_genial`, `mood_bien`, `mood_tranquilo`, `mood_cansado`, `mood_estresado`, `mood_ansioso`, `mood_triste` and `mood_enfadado`. Each defaults to 1 with limits 1–1; use `health_log_event` to record several emotions per day and `health_sql` over `v_events` to analyze them.
 
 ## Getting started
 

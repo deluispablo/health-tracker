@@ -370,22 +370,29 @@ describe("AC2 owner authorization and refusals", () => {
 });
 
 describe("AC3 stateless read tools and audit", () => {
-  it("initializes and lists exactly the eleven described tools, only the log tool writing", async () => {
+  it("initializes and lists exactly twelve described tools, with log and delete writing", async () => {
     google();
     const token = await accessToken();
     await initialize(token);
     const msg = await rpc(token, "tools/list", {});
     expect(msg.error).toBeUndefined();
-    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_intraday", "health_log_event", "health_sleep", "health_sql", "health_status", "health_trackers", "health_trend", "health_workouts"]);
+    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_delete_event", "health_intraday", "health_log_event", "health_sleep", "health_sql", "health_status", "health_trackers", "health_trend", "health_workouts"]);
     for (const tool of msg.result?.tools ?? []) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.inputSchema).toMatchObject({ type: "object" });
       expect(tool.annotations).toMatchObject(tool.name === "health_log_event"
         ? { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
-        : { readOnlyHint: true, openWorldHint: false });
+        : tool.name === "health_delete_event"
+          ? { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
+          : { readOnlyHint: true, openWorldHint: false });
     }
     const log = (msg.result?.tools ?? []).find((t) => t.name === "health_log_event")?.inputSchema as { properties: Record<string, { description?: string }> };
-    for (const id of ["cigarettes", "alcohol", "caffeine"]) expect(log.properties.tracker_id.description).toContain(id);
+    for (const id of ["cigarettes", "alcohol", "caffeine", ...["genial", "bien", "tranquilo", "cansado", "estresado", "ansioso", "triste", "enfadado"].map((emotion) => `mood_${emotion}`)]) expect(log.properties.tracker_id.description).toContain(id);
+    const deletion = msg.result?.tools?.find((t) => t.name === "health_delete_event");
+    expect(deletion?.description).toMatch(/remov/i);
+    expect(deletion?.description).toMatch(/no longer count/i);
+    expect(deletion?.description).toMatch(/history/i);
+    expect(deletion?.inputSchema).toMatchObject({ required: ["event_id"], properties: { event_id: { type: "string", minLength: 1, maxLength: 80, description: expect.stringContaining("event.id") as unknown } } });
   });
 
   it("describes health_status with an empty input schema and read-only annotations", async () => {
@@ -1224,5 +1231,61 @@ describe("T26 AC4 output limits through the authenticated connector", () => {
     expect(msg.result?.isError).not.toBe(true);
     expect(msg.result?.structuredContent).toMatchObject({ rows: [["2026-10-01", 50], ["2026-10-07", 60], ["2026-10-08", 80]], truncated: false });
     await toolAudit("health_sql", args, 1, before);
+  });
+});
+
+describe("T33 AC2 delete connector", () => {
+  it("deletes and retries through the health:read grant, returning both JSON forms and auditing each call", async () => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    const logged = await rpc(token, "tools/call", { name: "health_log_event", arguments: { tracker_id: "cigarettes" } });
+    expect(logged.result?.isError).not.toBe(true);
+    expect(logged.result?.structuredContent).toMatchObject({ created: true, event: { tracker_id: "cigarettes" } });
+    const event = (logged.result?.structuredContent as { event: { id: string; local_date: string } }).event;
+    const args = { event_id: event.id };
+    const started = Math.floor(Date.now() / 1000);
+    for (const deleted of [true, false]) {
+      const before = (await audit()).length;
+      const msg = await rpc(token, "tools/call", { name: "health_delete_event", arguments: args });
+      expect(msg.error).toBeUndefined();
+      expect(msg.result?.isError).not.toBe(true);
+      expect(msg.result?.structuredContent).toEqual({ deleted, event, day_total: 0 });
+      expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
+      await toolAudit("health_delete_event", args, 1, before);
+    }
+    const deletedAt = await env.DB.prepare("SELECT deleted_at FROM event WHERE id = ?").bind(event.id).first<number>("deleted_at");
+    expect(deletedAt).toBeGreaterThanOrEqual(started);
+    expect(deletedAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000));
+    const listing = await rpc(token, "tools/call", { name: "health_trackers", arguments: { date: event.local_date } });
+    expect(listing.result?.structuredContent).toMatchObject({ events: [] });
+  });
+
+  it("returns the exact unknown-id error and one failed tool audit", async () => {
+    google();
+    const token = await accessToken();
+    const args = { event_id: "unknown-id" };
+    const before = (await audit()).length;
+    const msg = await rpc(token, "tools/call", { name: "health_delete_event", arguments: args });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: "event_id must name an existing event" }] });
+    await toolAudit("health_delete_event", args, 0, before);
+    expect((await audit()).at(-1)?.error).toBe("event_id must name an existing event");
+  });
+
+  it.each([{}, { event_id: 123 }, { event_id: "" }, { event_id: "x".repeat(81) }])("rejects SDK-invalid arguments %j without a tool audit or event change", async (args) => {
+    google();
+    const token = await accessToken();
+    const logged = await rpc(token, "tools/call", { name: "health_log_event", arguments: { tracker_id: "caffeine" } });
+    expect(logged.result?.isError).toBeFalsy();
+    const events = (await env.DB.prepare("SELECT * FROM event").all()).results;
+    const before = await audit();
+    const msg = await rpc(token, "tools/call", { name: "health_delete_event", arguments: args });
+    expect(Boolean(msg.error) || msg.result?.isError === true).toBe(true);
+    // Argument validation names the field; a missing tool would answer "not found" instead.
+    expect(JSON.stringify(msg)).toMatch(/event_id/);
+    expect(JSON.stringify(msg)).not.toMatch(/not found/i);
+    expect(await audit()).toEqual(before);
+    expect((await env.DB.prepare("SELECT * FROM event").all()).results).toEqual(events);
   });
 });
