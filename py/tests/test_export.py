@@ -16,10 +16,11 @@ NOW = datetime(2026, 10, 21, tzinfo=UTC)
 SQL = "\n".join(f'CREATE TABLE "{name}" (id INTEGER);' for name in export.REQUIRED_TABLES)
 SQL += '\nCREATE TABLE "extra" (value TEXT); INSERT INTO extra VALUES (\'hello\');'
 BASE = "pixel-health-2026-10-21"
+WRANGLER_URL = "https://example.r2.cloudflarestorage.com/db.sql?X-Amz-Signature=abc"
 
 
 def runner(contents=SQL, *, failure=False):
-    def run(command, *, cwd, check):
+    def run(command, *, cwd, check, capture_output=False, text=False):
         assert command[:9] == [
             "npx", "wrangler", "d1", "export", "pixel-health-production", "--env",
             "production", "--remote", "--output",
@@ -42,6 +43,54 @@ def seed_pairs(directory, count=10):
     for number in range(1, count + 1):
         for suffix in ("sql", "json"):
             (directory / f"pixel-health-2026-09-{number:02}.{suffix}").write_text("old")
+
+
+def test_wrangler_captures_text_and_checks_exit_status(tmp_path):
+    options = {}
+
+    def run(command, **kwargs):
+        options.update(kwargs)
+        return runner()(command, **kwargs)
+
+    assert invoke(tmp_path, run=run) == 0
+    assert options["check"] is True
+    assert options.get("capture_output") is True
+    assert options.get("text") is True
+
+
+def test_success_never_prints_wrangler_output(tmp_path, capsys):
+    def run(command, *, cwd, check, capture_output=False, text=False):
+        runner()(command, cwd=cwd, check=check)
+        if not capture_output:
+            print(WRANGLER_URL)
+            print(WRANGLER_URL, file=sys.stderr)
+        return subprocess.CompletedProcess(command, 0, stdout=WRANGLER_URL, stderr=WRANGLER_URL)
+
+    assert invoke(tmp_path, run=run) == 0
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""
+
+
+def test_failed_wrangler_redacts_both_streams_without_publishing_or_pruning(tmp_path, capsys):
+    seed_pairs(tmp_path)
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    stderr_url = WRANGLER_URL.replace("https://", "http://")
+
+    def run(command, *, cwd, check, capture_output=False, text=False):
+        raise subprocess.CalledProcessError(
+            1, command, output=f"Download: {WRANGLER_URL}\n",
+            stderr=f"D1 export failed: {stderr_url}\n",
+        )
+
+    assert invoke(tmp_path, run=run) == 1
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before
+    captured = capsys.readouterr()
+    assert "D1 export failed: <url>" in captured.err
+    assert "Download: <url>" in captured.err
+    for output in (captured.out, captured.err):
+        assert "X-Amz-" not in output
+        assert WRANGLER_URL not in output
+        assert stderr_url not in output
 
 
 def test_success_manifest_and_same_day_replacement(tmp_path, monkeypatch):

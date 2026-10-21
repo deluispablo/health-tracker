@@ -45,6 +45,8 @@ def main(argv=None, *, run=subprocess.run, now=None):
              "production", "--remote", "--output", str(sql.resolve())],
             cwd=WORKER,
             check=True,
+            capture_output=True,
+            text=True,
         )
         contents = sql.read_bytes()
         with sqlite3.connect(":memory:") as database:
@@ -75,7 +77,13 @@ def main(argv=None, *, run=subprocess.run, now=None):
         os.replace(sql, directory / f"pixel-health-{day}.sql")
         os.replace(temporary[1], directory / f"pixel-health-{day}.json")
     except Exception as error:
-        print(f"Export failed: {error}", file=sys.stderr)
+        message = str(error)
+        if isinstance(error, subprocess.CalledProcessError):
+            message = re.sub(
+                r"https?://\S+", "<url>",
+                f"{message}\n{error.stderr or ''}\n{error.stdout or ''}",
+            )
+        print(f"Export failed: {message}", file=sys.stderr)
         status = 1
     finally:
         for path in temporary:
