@@ -13,13 +13,15 @@ const appEnv = () => ({
 });
 
 interface Call { url: string; method: string; body: string }
-function google(rollup: unknown[] = []) {
+function google(rollup: unknown[] = [], lastSyncTime: string | null = "2026-10-21T04:00:00Z") {
   const calls: Call[] = [];
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const req = new Request(input, init);
     calls.push({ url: req.url, method: req.method, body: await req.text() });
     if (req.url === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "at", expires_in: 3599 });
     if (req.url.endsWith("dataPoints:rollUp")) return Response.json({ rollupDataPoints: rollup });
+    if (req.url.endsWith("/pairedDevices")) return Response.json({ pairedDevices: lastSyncTime === null ? []
+      : [{ deviceVersion: "Pixel Watch 3", lastSyncTime }] });
     return new Response("unexpected", { status: 500 });
   };
   return { fetch, calls };
@@ -37,7 +39,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await env.DB.batch(["sync_pending", "sync_state", "metric_minute", "daily_summary", "tracker_daily", "secret_blob", "oauth_state"]
+  await env.DB.batch(["sync_pending", "sync_state", "metric_minute", "metric_daily", "daily_summary", "tracker_daily", "event", "secret_blob", "oauth_state"]
     .map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
   const { keys } = await env.OAUTH_KV.list();
   await Promise.all(keys.map((k) => env.OAUTH_KV.delete(k.name)));
@@ -50,7 +52,10 @@ describe("AC1 five-minute cron", () => {
       .bind(at("2026-10-20T21:00:00Z"), at("2026-10-20T21:01:00Z"), NOW - 60).run();
     const g = google([{ startTime: "2026-10-20T21:00:00Z", endTime: "2026-10-20T21:01:00Z", heartRate: { beatsPerMinuteAvg: 61, beatsPerMinuteMin: 60, beatsPerMinuteMax: 62 } }]);
     await handleScheduled("*/5 * * * *", appEnv(), deps(g.fetch));
-    expect(g.calls.map((c) => new URL(c.url).pathname)).toEqual(["/token", "/v4/users/me/dataTypes/heart-rate/dataPoints:rollUp"]);
+    expect(g.calls.map((c) => new URL(c.url).pathname)).toEqual(["/token", "/v4/users/me/dataTypes/heart-rate/dataPoints:rollUp", "/v4/users/me/pairedDevices"]);
+    expect(await env.DB.prepare("SELECT * FROM sync_state WHERE data_type = 'watch'").first()).toEqual({
+      data_type: "watch", synced_until: at("2026-10-21T04:00:00Z"), last_ok_at: NOW, last_error: null,
+    });
     expect((await env.DB.prepare("SELECT metric, ts, value FROM metric_minute").all()).results).toEqual([{ metric: "hr", ts: at("2026-10-20T21:00:00Z"), value: 61 }]);
     expect((await env.DB.prepare("SELECT local_date, hr_wear_min, computed_at FROM daily_summary ORDER BY local_date").all()).results).toEqual([
       { local_date: "2026-10-19", hr_wear_min: 0, computed_at: NOW }, { local_date: "2026-10-20", hr_wear_min: 1, computed_at: NOW },
@@ -91,6 +96,145 @@ describe("AC1 five-minute cron", () => {
       await expect(handleScheduled("*/5 * * * *", appEnv(), deps(failing))).rejects.toThrow();
     } finally {
       await env.DB.prepare("DROP TRIGGER fail_q").run();
+    }
+  });
+});
+
+describe("T10e AC1/AC2 watch sync in the five-minute cron", () => {
+  const previous = { data_type: "watch", synced_until: NOW - 7200, last_ok_at: NOW - 1800, last_error: "previous error" };
+  const other = { data_type: "sleep", synced_until: 123, last_ok_at: 456, last_error: "unrelated" };
+  const state = () => env.DB.prepare("SELECT * FROM sync_state WHERE data_type = 'watch'").first();
+  const seedWatch = () => env.DB.prepare("INSERT INTO sync_state (data_type, synced_until, last_ok_at, last_error) VALUES (?, ?, ?, ?)")
+    .bind(previous.data_type, previous.synced_until, previous.last_ok_at, previous.last_error).run();
+
+  beforeEach(async () => {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO sync_state (data_type, synced_until, last_ok_at, last_error) VALUES (?, ?, ?, ?)")
+        .bind(other.data_type, other.synced_until, other.last_ok_at, other.last_error),
+      env.DB.prepare("INSERT INTO metric_daily (metric, local_date, value, updated_at) VALUES ('steps', '2026-10-21', 8123, 1)"),
+      env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at)
+        VALUES ('watch-rollup', 'caffeine', ?, 120, '2026-10-21', 80, 'mcp', ?)`).bind(NOW, NOW),
+    ]);
+  });
+
+  async function rollupsCompleted(now = NOW) {
+    expect((await env.DB.prepare("SELECT local_date, steps, computed_at FROM daily_summary ORDER BY local_date").all()).results).toEqual([
+      { local_date: "2026-10-19", steps: null, computed_at: now },
+      { local_date: "2026-10-20", steps: null, computed_at: now },
+      { local_date: "2026-10-21", steps: 8123, computed_at: now },
+    ]);
+    expect((await env.DB.prepare("SELECT local_date, tracker_id, total, n FROM tracker_daily").all()).results)
+      .toEqual([{ local_date: "2026-10-21", tracker_id: "caffeine", total: 80, n: 1 }]);
+    expect(await env.DB.prepare("SELECT * FROM sync_state WHERE data_type = 'sleep'").first()).toEqual(other);
+  }
+
+  it.each(["2026-10-21T04:30:00Z", "2026-10-21T04:30:27Z", "2026-10-21T04:34:59Z", "2026-10-21T05:00:27Z"])(
+    "samples throughout a due five-minute bucket at %s, honours offsets and floors fractional seconds", async (iso) => {
+      await storeRefreshToken();
+      const instant = "2026-10-21T08:15:09.987+05:30";
+      const g = google([], instant);
+      const now = at(iso);
+      await handleScheduled("*/5 * * * *", appEnv(), { ...deps(g.fetch), now: () => now });
+      expect(g.calls.filter((c) => new URL(c.url).pathname.endsWith("/pairedDevices"))).toHaveLength(1);
+      expect(await state()).toEqual({ data_type: "watch", synced_until: Math.floor(Date.parse(instant) / 1000), last_ok_at: now, last_error: null });
+      await rollupsCompleted(now);
+    },
+  );
+
+  it.each(["2026-10-21T04:29:59Z", "2026-10-21T04:35:00Z", "2026-10-21T04:59:59Z"])(
+    "preserves every watch column and makes no pairedDevices request on a non-due run at %s", async (iso) => {
+      await storeRefreshToken();
+      await seedWatch();
+      const g = google();
+      const now = at(iso);
+      await handleScheduled("*/5 * * * *", appEnv(), { ...deps(g.fetch), now: () => now });
+      expect(g.calls).toEqual([]);
+      expect(await state()).toEqual(previous);
+      await rollupsCompleted(now);
+    },
+  );
+
+  it("preserves every watch column on a due run without a token", async () => {
+    await seedWatch();
+    const g = google();
+    await handleScheduled("*/5 * * * *", appEnv(), deps(g.fetch));
+    expect(g.calls).toEqual([]);
+    expect(await state()).toEqual(previous);
+    await rollupsCompleted();
+  });
+
+  it("replaces success, preserves it on failure, recovers and clears it on a null result", async () => {
+    await storeRefreshToken();
+    await seedWatch();
+    const first = "2026-10-21T04:15:00Z";
+    await handleScheduled("*/5 * * * *", appEnv(), deps(google([], first).fetch));
+    expect(await state()).toEqual({ data_type: "watch", synced_until: at(first), last_ok_at: NOW, last_error: null });
+    const failure = new Error("watch's \"private\" failure " + "x".repeat(210));
+    const failFetch: typeof fetch = () => Promise.reject(failure);
+    await handleScheduled("*/5 * * * *", appEnv(), { ...deps(failFetch), now: () => NOW + 1800 });
+    expect(await state()).toEqual({ data_type: "watch", synced_until: at(first), last_ok_at: NOW, last_error: failure.message.slice(0, 200) });
+    await rollupsCompleted(NOW + 1800);
+    const recovered = "2026-10-21T05:15:00Z";
+    await handleScheduled("*/5 * * * *", appEnv(), { ...deps(google([], recovered).fetch), now: () => NOW + 3600 });
+    expect(await state()).toEqual({ data_type: "watch", synced_until: at(recovered), last_ok_at: NOW + 3600, last_error: null });
+    await handleScheduled("*/5 * * * *", appEnv(), { ...deps(google([], null).fetch), now: () => NOW + 5400 });
+    expect(await state()).toEqual({ data_type: "watch", synced_until: null, last_ok_at: NOW + 5400, last_error: null });
+    await rollupsCompleted(NOW + 5400);
+  });
+
+  it("stores a successful null result on the first watch lookup", async () => {
+    await storeRefreshToken();
+    const g = google([], null);
+    await handleScheduled("*/5 * * * *", appEnv(), deps(g.fetch));
+    expect(await state()).toEqual({ data_type: "watch", synced_until: null, last_ok_at: NOW, last_error: null });
+    await rollupsCompleted();
+  });
+
+  it.each([
+    new Error("watch's \"failure\" " + "e".repeat(210)),
+    "watch's \"rejected string\" " + "s".repeat(210),
+    42,
+  ])("creates only error state on a first-call rejection: %s", async (failure) => {
+    await storeRefreshToken();
+    const g = google();
+    const fetch: typeof globalThis.fetch = (input, init) => new Request(input, init).url.endsWith("/pairedDevices")
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- The spec requires handling non-Error rejections.
+      ? Promise.reject(failure) : g.fetch(input, init);
+    await handleScheduled("*/5 * * * *", appEnv(), deps(fetch));
+    await rollupsCompleted();
+    expect(await state()).toEqual({ data_type: "watch", synced_until: null, last_ok_at: null,
+      last_error: String(failure instanceof Error ? failure.message : failure).slice(0, 200) });
+  });
+
+  it.each(["not-a-date", "invalid 'quoted' \"timestamp\" " + "x".repeat(210)])(
+    "preserves prior state and records the specified error for an unparseable lastSyncTime: %s", async (value) => {
+      await storeRefreshToken();
+      await seedWatch();
+      await handleScheduled("*/5 * * * *", appEnv(), deps(google([], value).fetch));
+      await rollupsCompleted();
+      expect(await state()).toEqual({ ...previous, last_error: `invalid lastSyncTime: ${value}`.slice(0, 200) });
+    },
+  );
+
+  it.each([false, true])("swallows a watch upsert failure and still completes both rollups (lookup rejects: %s)", async (reject) => {
+    await storeRefreshToken();
+    await seedWatch();
+    await env.DB.prepare(`CREATE TRIGGER fail_watch_write BEFORE INSERT ON sync_state
+      WHEN NEW.data_type = 'watch' BEGIN SELECT RAISE(ABORT, 'watch write unavailable'); END`).run();
+    const g = google();
+    const calls: string[] = [];
+    const fetch: typeof globalThis.fetch = (input, init) => {
+      const url = new Request(input, init).url;
+      calls.push(url);
+      return reject && url.endsWith("/pairedDevices") ? Promise.reject(new Error("watch lookup failed")) : g.fetch(input, init);
+    };
+    try {
+      await handleScheduled("*/5 * * * *", appEnv(), deps(fetch));
+      await rollupsCompleted();
+      expect(await state()).toEqual(previous);
+      expect(calls.filter((url) => url.endsWith("/pairedDevices"))).toHaveLength(1);
+    } finally {
+      await env.DB.prepare("DROP TRIGGER fail_watch_write").run();
     }
   });
 });

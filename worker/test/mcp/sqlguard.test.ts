@@ -22,7 +22,7 @@ const deniedNames = [
   "metric_minute", "metric_hour", "metric_daily", "metric_def", "sleep_session", "sleep_stage", "workout",
   "tracker", "event", "daily_summary", "tracker_daily", "sync_pending", "sync_state", "secret_blob",
   "audit_log", "oauth_state", "d1_migrations", "sqlite_master", "sqlite_schema", "sqlite_custom",
-  "pragma_custom", "_cf_custom", "sqlite_", "pragma_", "_cf_", "main", "temp", "temporary",
+  "pragma_custom", "_cf_custom", "sqlite_", "pragma_", "_cf_", "main", "temp", "temporary", "dbstat", "fsdir", "zipfile",
 ];
 
 beforeAll(async () => {
@@ -77,7 +77,7 @@ describe("T11 AC2 tokenized keywords and dangerous functions", () => {
 
   it.each(["load_extension", "readfile", "writefile", "edit", "fts3_tokenizer", "sqlite_version"])(
     "refuses function %s, including quoted calls and intervening comments", (name) => {
-      for (const fn of [name, name.toUpperCase(), `"${name}"`, `[${name}]`, `\`${name}\``]) {
+      for (const fn of [name, name.toUpperCase(), `"${name}"`, `[${name}]`, `\`${name}\``, `'${name}'`, `'${name.toUpperCase()}'`]) {
         refuses(`SELECT ${fn} ('x')`);
         refuses(`SELECT (SELECT ${fn}/**/('x') FROM v_events)`);
       }
@@ -179,6 +179,48 @@ describe("T11 AC3c lexical boundaries without SQL grammar parsing", () => {
     expect(commented.length).toBe(4001);
     refuses(commented);
   });
+});
+
+describe("T11 BOM, NUL and shell file functions are refused", () => {
+  it.each([
+    "SELECT * FROM \uFEFFsecret_blob", "SELECT \uFEFFsqlite_version()", "SELECT \uFEFF$label",
+    "\uFEFFSELECT 1", "SELECT 1\uFEFF", "SELECT '\uFEFF'", "SELECT 1\u0000", "SELECT 'a\u0000'",
+    "SELECT * FROM fsdir('/etc')", "SELECT * FROM zipfile('x.zip')", "SELECT sqlar_uncompress(x, 1) FROM v_events",
+    "SELECT sqlar_compress('x')",
+    "SELECT readfile \v('/etc/hosts')", "SELECT readfile \t\v('/etc/hosts')", "SELECT edit \v('a', 'true')",
+    "SELECT * FROM fsdir \v('/etc')", "SELECT name FROM 'fsdir'('worker/package.json')",
+    "SELECT * FROM 'FsDir' /* x */ ('.')", "SELECT name, length(data) FROM fsdir WHERE path='/etc/hosts'",
+    "SELECT * FROM fsdir f WHERE f.path = '/etc/hosts'", "SELECT * FROM zipfile WHERE z = '/x.zip'", "SELECT * FROM 'zipfile'\n('x.zip')", "SELECT\v1", "SELECT 1\u0001", "SELECT 1\u001f", "SELECT 1\u007f",
+  ])("refuses %s", refuses);
+});
+
+describe("T11 blob literals and ASCII-only case folding", () => {
+  it.each(["SELECT X'AB''secret_blob'", "SELECT x'00'", "SELECT X'AB' FROM v_daily", "SELECT 1 FROM v_daily WHERE x'00' = 1"])(
+    "refuses blob literal %s", refuses,
+  );
+
+  it.each(["SELECT x FROM v_daily", "SELECT x, 'a' FROM v_daily", "SELECT 1 AS wor\u212Aout", "SELECT 'wor\u212Aout'"])(
+    "accepts %s", accepts,
+  );
+
+  it("still refuses ASCII case variants of denied names", () => {
+    refuses("SELECT * FROM WORKOUT");
+    refuses("SELECT * FROM 'Secret_Blob'");
+  });
+});
+
+describe("T11 parameter tokens are refused", () => {
+  it.each([
+    "SELECT $a(') AS x, name FROM sqlite_master --'", "SELECT :a(') AS x, * FROM audit_log --'",
+    "SELECT @a(') AS x, * FROM secret_blob --'", "SELECT #a(') AS x, * FROM event --'",
+    "SELECT ?", "SELECT ?1", "SELECT :n", "SELECT @n", "SELECT $n", "SELECT $a::b", "SELECT 1 FROM v_daily WHERE rhr > ?", "SELECT $label FROM v_events",
+  ])("refuses %s", refuses);
+
+  it.each(["SELECT '?', ':a', '$x', '@y', '#z'", 'SELECT "a?b" FROM v_daily', "SELECT 1 -- ? $x :y", "SELECT event$label, \"$label\" FROM v_events"])(
+    "allows parameter characters inside literals, quoted identifiers and comments: %s", (sql) => {
+      expect(validateReadOnlyQuery(sql)).toMatchObject({ ok: true });
+    },
+  );
 });
 
 describe("T11 SQLite token boundaries", () => {

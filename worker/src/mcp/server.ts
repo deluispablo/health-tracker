@@ -4,6 +4,8 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ConnectorEnv } from "../app";
 import { audit } from "../lib/audit";
+import { BEHAVIORS, healthCompare, OUTCOMES } from "./tools/compare";
+import { ANALYSIS_NAMES, healthCorrelate } from "./tools/correlate";
 import { DAILY_COLUMNS, healthDaily } from "./tools/daily";
 import { healthIntraday } from "./tools/intraday";
 import { healthSleep } from "./tools/sleep";
@@ -75,6 +77,29 @@ export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionCon
   }, (args) => call("health_log_event", args, () => logEvent(env.DB, args, {
     now: Math.floor(Date.now() / 1000), tz: env.USER_TZ,
   })));
+  const analysisDates = {
+    start: z.string().describe("Start date in YYYY-MM-DD format, between 2000-01-01 and 2099-12-31; inclusive range must contain 1 to 365 dates."),
+    end: z.string().describe("End date in YYYY-MM-DD format, between 2000-01-01 and 2099-12-31; inclusive range must contain 1 to 365 dates."),
+  };
+  server.registerTool("health_compare", {
+    description: "Compare outcome means across behavior groups with Welch 95% confidence intervals. Associational, not causal; sleep uses wake dates.",
+    inputSchema: {
+      behavior: z.string().describe(`Behavior name: ${BEHAVIORS.join(", ")}. Missing or non-finite totals count as 0; totals at or below 0 share the zero group.`),
+      outcome: z.string().describe(`Outcome name: ${OUTCOMES.join(", ")}. Missing or non-finite outcomes are excluded.`),
+      ...analysisDates,
+      lag_days: z.number().int().optional().describe("Integer from 0 to 7; default 1. Behavior on D pairs with outcome on D + lag_days, including dates after end."),
+      bins: z.array(z.number()).optional().describe("1 to 5 ascending positive finite thresholds, inclusive at each upper bound. Defaults: cigarettes [5, 10], alcohol_g [20, 40], caffeine_mg [200, 400]."),
+    }, annotations,
+  }, (args) => call("health_compare", args, () => healthCompare(env.DB, args)));
+  server.registerTool("health_correlate", {
+    description: "Correlate dated series after AR(1) prewhitening with x's coefficient; positive lags pair x on D with y on D + lag. Associational, not causal.",
+    inputSchema: {
+      x: z.string().describe(`Name distinct from y: ${ANALYSIS_NAMES.join(", ")}. Estimates phi over start through end; missing behaviors count as 0 and missing outcomes are excluded.`),
+      y: z.string().describe(`Name distinct from x: ${ANALYSIS_NAMES.join(", ")}. Filtered with x's phi; missing behaviors count as 0 and missing outcomes are excluded.`),
+      ...analysisDates,
+      max_lag: z.number().int().optional().describe("Integer from 0 to 7; default 3. Returns lags 0 through max_lag, reading y through end + max_lag; r is null with fewer than 5 pairs or zero variance."),
+    }, annotations,
+  }, (args) => call("health_correlate", args, () => healthCorrelate(env.DB, args)));
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   return transport.handleRequest(request);
