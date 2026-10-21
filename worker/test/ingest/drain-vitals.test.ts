@@ -224,9 +224,9 @@ describe("AC1 value edge cases", () => {
 });
 
 describe("AC2 order and isolation", () => {
-  it("runs all nine types in order, the oldest eligible row of each", async () => {
+  it("runs all ten types in order, the oldest eligible row of each", async () => {
     const all = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability", "daily-oxygen-saturation",
-      "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes"];
+      "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"];
     for (const t of all) {
       await queue(t, "2026-10-07T10:00:00Z", "2026-10-07T10:30:00Z", NOW - 30);
       await queue(t, "2026-10-06T10:00:00Z", "2026-10-06T10:30:00Z", NOW - 90);
@@ -238,11 +238,11 @@ describe("AC2 order and isolation", () => {
     client.dailyRollUp = record("rollup", client.dailyRollUp.bind(client));
     client.reconcile = record("reconcile", () => Promise.resolve([] as never));
     client.rollUpHeartRate = record("hr", () => Promise.resolve([] as never));
-    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 9, failed: 0 });
+    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 10, failed: 0 });
     expect(order).toEqual([
       "hr:2026-10-06T10:00:00.000Z:2026-10-06T10:30:00.000Z", "rollup:steps:2026-10-06", "list:daily-resting-heart-rate:2026-10-06",
       "reconcile:sleep:2026-10-06T10:00:00.000Z", "list:daily-heart-rate-variability:2026-10-06", "list:daily-oxygen-saturation:2026-10-06",
-      "list:daily-respiratory-rate:2026-10-06", "list:daily-sleep-temperature-derivations:2026-10-06", "rollup:active-zone-minutes:2026-10-06"]);
+      "list:daily-respiratory-rate:2026-10-06", "list:daily-sleep-temperature-derivations:2026-10-06", "rollup:active-zone-minutes:2026-10-06", "reconcile:exercise:2026-10-06T10:00:00.000Z"]);
     expect((await pending()).every((r) => r.start_ts === at("2026-10-07T10:00:00Z"))).toBe(true);
   });
 

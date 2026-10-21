@@ -246,7 +246,7 @@ describe("AC2 daily cron", () => {
     const g = google();
     await handleScheduled("30 4 * * *", appEnv(), deps(g.fetch));
     expect(g.calls).toEqual([]);
-    expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first()).toEqual({ n: 9 });
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first()).toEqual({ n: 10 });
     expect((await env.DB.prepare("SELECT state FROM oauth_state ORDER BY state").all()).results).toEqual([{ state: "edge" }, { state: "live" }]);
   });
 

@@ -8,7 +8,7 @@ const NOW = at("2026-10-21T04:30:27Z");
 const START = at("2026-10-19T04:30:00Z");
 const END = at("2026-10-21T04:30:00Z");
 const TYPES = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability", "daily-oxygen-saturation",
-  "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes"];
+  "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"];
 
 const pending = async () => (await env.DB.prepare(
   "SELECT data_type, start_ts, end_ts, operation, received_at, attempts FROM sync_pending ORDER BY data_type, start_ts").all()).results;
@@ -25,7 +25,7 @@ beforeEach(async () => {
 describe("AC1 48-hour reconcile", () => {
   it("queues the last 48 minute-aligned hours for every drained type and records it in sync_state", async () => {
     expect(RECONCILE_TYPES).toEqual(TYPES);
-    expect(await enqueueReconcile(env.DB, NOW)).toBe(9);
+    expect(await enqueueReconcile(env.DB, NOW)).toBe(10);
     expect(await pending()).toEqual([...TYPES].sort().map((t) => ({ data_type: t, start_ts: START, end_ts: END, operation: "UPSERT", received_at: NOW, attempts: 0 })));
     expect(await state()).toEqual([...TYPES].sort().map((t) => ({ data_type: t, synced_until: END, last_ok_at: null, last_error: null })));
   });
@@ -51,7 +51,7 @@ describe("AC1 48-hour reconcile", () => {
 
   it("treats a NULL synced_until as never reconciled and keeps the row's other columns", async () => {
     await env.DB.prepare("INSERT INTO sync_state (data_type, synced_until, last_ok_at, last_error) VALUES ('sleep', NULL, 7, 'e')").run();
-    expect(await enqueueReconcile(env.DB, NOW)).toBe(9);
+    expect(await enqueueReconcile(env.DB, NOW)).toBe(10);
     expect((await state()).find((r) => r.data_type === "sleep")).toEqual({ data_type: "sleep", synced_until: END, last_ok_at: 7, last_error: "e" });
   });
 
@@ -62,7 +62,7 @@ describe("AC1 48-hour reconcile", () => {
     // synced_until (END) > now - 20 h  <=>  now < END + 20 h: skipped; at now = END + 20 h it is due.
     expect(await enqueueReconcile(env.DB, END + 20 * 3600 - 1)).toBe(0);
     expect(await state()).toEqual(before);
-    expect(await enqueueReconcile(env.DB, END + 20 * 3600)).toBe(9);
+    expect(await enqueueReconcile(env.DB, END + 20 * 3600)).toBe(10);
   });
 
   it("leaves other queued work unchanged", async () => {
@@ -75,7 +75,7 @@ describe("AC1 48-hour reconcile", () => {
     for (const [type, start, end, op, received, attempts] of rows) {
       expect(all).toContainEqual({ data_type: type, start_ts: start, end_ts: end, operation: op, received_at: received, attempts });
     }
-    expect(all).toHaveLength(12);
+    expect(all).toHaveLength(13);
   });
 
   it("writes queue rows and sync_state atomically, whichever write fails", async () => {

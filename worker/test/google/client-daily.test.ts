@@ -44,7 +44,7 @@ describe("AC1 reconcile", () => {
     expect(urls[1]?.searchParams.get("pageToken")).toBe("p/2");
   });
 
-  it("filters interval types (sleep, exercise) on interval end time", async () => {
+  it("keeps sleep on interval end time while exercise uses widened civil start time", async () => {
     const { fetch, calls } = scripted(token, json({}), json({ dataPoints: [] }));
     const c = client(fetch);
     expect(await c.reconcile("sleep", "2026-10-10T00:00:00Z", "2026-10-21T00:00:00Z")).toEqual([]);
@@ -52,7 +52,7 @@ describe("AC1 reconcile", () => {
     expect(new URL(calls[1]?.url ?? "").searchParams.get("filter")).toBe(
       'sleep.interval.end_time >= "2026-10-10T00:00:00Z" AND sleep.interval.end_time < "2026-10-21T00:00:00Z"');
     expect(new URL(calls[2]?.url ?? "").searchParams.get("filter")).toBe(
-      'exercise.interval.end_time >= "2026-10-10T00:00:00Z" AND exercise.interval.end_time < "2026-10-21T00:00:00Z"');
+      'exercise.interval.civil_start_time >= "2026-10-09T10:00:00" AND exercise.interval.civil_start_time < "2026-10-21T14:00:00"');
   });
 
   it("rejects bad or reversed instants without calling Google", async () => {

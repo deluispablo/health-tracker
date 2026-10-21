@@ -240,7 +240,7 @@ async function toolAudit(name: string, args: object, ok: number, before: number)
 
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
 beforeEach(async () => {
-  await env.DB.batch(["audit_log", "sleep_stage", "sleep_session", "metric_daily", "metric_minute", "daily_summary", "tracker_daily",
+  await env.DB.batch(["audit_log", "workout", "sleep_stage", "sleep_session", "metric_daily", "metric_minute", "daily_summary", "tracker_daily",
     "sync_pending", "sync_state", "secret_blob", "oauth_state", "event"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
   const { keys } = await env.OAUTH_KV.list();
   await Promise.all(keys.map((key) => env.OAUTH_KV.delete(key.name)));
@@ -368,13 +368,13 @@ describe("AC2 owner authorization and refusals", () => {
 });
 
 describe("AC3 stateless read tools and audit", () => {
-  it("initializes and lists exactly the nine described tools, only the log tool writing", async () => {
+  it("initializes and lists exactly the ten described tools, only the log tool writing", async () => {
     google();
     const token = await accessToken();
     await initialize(token);
     const msg = await rpc(token, "tools/list", {});
     expect(msg.error).toBeUndefined();
-    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_intraday", "health_log_event", "health_sleep", "health_sql", "health_status", "health_trackers"]);
+    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_intraday", "health_log_event", "health_sleep", "health_sql", "health_status", "health_trackers", "health_workouts"]);
     for (const tool of msg.result?.tools ?? []) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.inputSchema).toMatchObject({ type: "object" });
@@ -519,6 +519,9 @@ describe("AC3 stateless read tools and audit", () => {
     ["health_daily", { start: "2026-02-30", end: "2026-03-01" }, "date must be a real calendar date in YYYY-MM-DD format"],
     ["health_daily", { start: "2026-01-01", end: "2026-04-01" }, "range must contain 1 to 90 dates"],
     ["health_sleep", { start: "2026-01-01", end: "2026-02-01" }, "range must contain 1 to 31 dates"],
+    ["health_workouts", { start: "2026-01-01", end: "2026-02-01" }, "range must contain 1 to 31 dates"],
+    ["health_workouts", { start: "2026-10-03", end: "2026-10-02" }, "range must contain 1 to 31 dates"],
+    ["health_workouts", { start: "2026-02-30", end: "2026-03-01" }, "date must be a real calendar date in YYYY-MM-DD format"],
     ["health_intraday", { metric: "hr", date: "2026-02-30", resolution: "1m" }, "date must be a real YYYY-MM-DD date between 2000-01-01 and 2099-12-31"],
     ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["nope"] }, "metrics must be distinct names from DAILY_COLUMNS"],
     ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: [] }, "metrics must be distinct names from DAILY_COLUMNS"],
@@ -534,11 +537,13 @@ describe("AC3 stateless read tools and audit", () => {
     expect(msg.error).toBeUndefined();
     expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: message }] });
     await toolAudit(name, args, 0, before);
+    expect((await audit()).at(-1)?.error).toBe(message);
   });
 
   it.each([
     ["health_daily", { end: "2026-10-20" }], ["health_sleep", { start: 123, end: "2026-10-20" }],
     ["health_intraday", { metric: "hr", date: "2026-10-20" }],
+    ["health_workouts", {}], ["health_workouts", { start: 123, end: "2026-10-02" }],
     ["health_trackers", {}], ["health_trackers", { date: 123 }],
     ["health_log_event", {}], ["health_log_event", { tracker_id: "caffeine", value: "80" }],
     ["health_log_event", { tracker_id: "caffeine", at: 123 }], ["health_log_event", { tracker_id: "caffeine", note: 123 }],
@@ -982,5 +987,75 @@ describe("AC4 existing routes and both crons through the default export", () => 
     expect(await env.DB.prepare("SELECT steps FROM daily_summary WHERE local_date = ?").bind(date).first()).toEqual({ steps: 8123 });
     expect(await env.DB.prepare("SELECT count(*) AS n FROM daily_summary").first("n")).toBe(3);
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("T10f AC6 workouts through the authenticated connector", () => {
+  it("describes both inclusive date fields and registers a read-only health_workouts tool", async () => {
+    google();
+    const token = await accessToken();
+    const msg = await rpc(token, "tools/list", {});
+    expect(msg.error).toBeUndefined();
+    const tool = msg.result?.tools?.find((t) => t.name === "health_workouts");
+    expect(tool).toBeDefined();
+    expect(tool?.description).toMatch(/workout|exercise/i);
+    expect(tool?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+    const schema = tool?.inputSchema as { required: string[]; properties: Record<string, { type: string; description: string }> } | undefined;
+    expect(schema).toBeDefined();
+    expect(schema?.required.slice().sort()).toEqual(["end", "start"]);
+    for (const field of ["start", "end"]) {
+      expect(schema?.properties[field]).toMatchObject({ type: "string" });
+      expect(schema?.properties[field]?.description).toMatch(/YYYY-MM-DD/);
+      expect(schema?.properties[field]?.description).toMatch(/inclusive/i);
+      expect(schema?.properties[field]?.description).toMatch(/31/);
+    }
+  });
+
+  it("returns workout JSON text and structured content and audits exactly one successful read without mutation", async () => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    await env.DB.prepare(`INSERT INTO workout (source_id, source, type, start_ts, end_ts, tz_offset_min, local_date,
+      duration_min, avg_hr, max_hr, kcal, azm, distance_m, updated_at)
+      VALUES ('probe', 'gh', 'CARDIO_WORKOUT', ?, ?, 120, '2026-10-02', ?, 119, NULL, 336, 40, NULL, 1)`)
+      .bind(Date.parse("2026-10-02T12:19:23Z") / 1000, Date.parse("2026-10-02T13:14:34Z") / 1000, 3311 / 60).run();
+    const beforeRows = (await env.DB.prepare("SELECT * FROM workout").all()).results;
+    const before = (await audit()).length;
+    const args = { start: "2026-10-02", end: "2026-10-02" };
+    const expected = { workouts: [{ local_date: "2026-10-02", type: "CARDIO_WORKOUT", start_local: "2026-10-02T14:19",
+      end_local: "2026-10-02T15:14", tz_offset_min: 120, duration_min: 55.2, avg_hr: 119, kcal: 336, azm: 40, distance_m: null }], count: 1 };
+    const msg = await rpc(token, "tools/call", { name: "health_workouts", arguments: args });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result?.isError).not.toBe(true);
+    expect(msg.result?.structuredContent).toEqual(expected);
+    expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(expected) }]);
+    await toolAudit("health_workouts", args, 1, before);
+    expect((await env.DB.prepare("SELECT * FROM workout").all()).results).toEqual(beforeRows);
+  });
+
+  it("returns the generic tool error and failed audit when the workout read fails", async () => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    const before = (await audit()).length;
+    const broken = new Proxy(env.DB, { get(target, key) {
+      if (key === "prepare") return (sql: string) => {
+        const statement = target.prepare(sql);
+        if (!/FROM\s+workout\b/i.test(sql)) return statement;
+        return new Proxy(statement, { get(st, prop) {
+          if (prop === "bind") return () => ({ all: () => Promise.reject(new Error("private workout D1 error")) });
+          const value: unknown = Reflect.get(st, prop);
+          return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(st) : value;
+        } });
+      };
+      const value: unknown = Reflect.get(target, key);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    } });
+    const args = { start: "2026-10-02", end: "2026-10-02" };
+    const msg = await rpc(token, "tools/call", { name: "health_workouts", arguments: args }, 1, { ...connectorEnv, DB: broken });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: "Unable to read health data" }] });
+    await toolAudit("health_workouts", args, 0, before);
+    expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
   });
 });

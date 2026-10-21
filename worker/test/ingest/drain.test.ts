@@ -165,7 +165,7 @@ describe("AC2 one 60-minute window per invocation", () => {
 
   it("leaves rows of other data types untouched", async () => {
     await queue("weight", at("2026-10-20T00:00:00Z"), at("2026-10-20T08:00:00Z"));
-    await queue("exercise", at("2026-10-20T10:00:00Z"), at("2026-10-20T10:15:00Z"));
+    await queue("weight", at("2026-10-20T10:00:00Z"), at("2026-10-20T10:15:00Z"));
     const { client, calls } = fakeClient();
     expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 0, failed: 0 });
     expect(calls).toHaveLength(0);
