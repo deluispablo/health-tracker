@@ -987,7 +987,7 @@ describe("AC4 existing routes and both crons through the default export", () => 
     await handlers.scheduled({ cron: "*/5 * * * *" } as ScheduledController, connectorEnv, ctx);
     await waitOnExecutionContext(ctx);
     expect(await env.DB.prepare("SELECT steps FROM daily_summary WHERE local_date = ?").bind(date).first()).toEqual({ steps: 8123 });
-    expect(await env.DB.prepare("SELECT count(*) AS n FROM daily_summary").first("n")).toBe(3);
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM daily_summary").first("n")).toBe(1);
     expect(fetch).not.toHaveBeenCalled();
   });
 });

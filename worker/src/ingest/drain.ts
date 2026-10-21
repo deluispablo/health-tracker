@@ -54,6 +54,39 @@ function readNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+const utcDate = (ts: number): string => new Date(ts * 1000).toISOString().slice(0, 10);
+
+function dirtyStatements(db: D1Database, first: string, last: string, sessions?: {
+  table: "sleep_session" | "workout"; timestamp: "start_ts" | "end_ts";
+  start: number; end: number; written: [string, string][];
+}): D1PreparedStatement[] {
+  const bindings: unknown[] = [first, last];
+  let stored = "";
+  if (sessions) {
+    bindings.push(JSON.stringify(sessions.written), sessions.start, sessions.end);
+    stored = `
+      UNION SELECT local_date FROM ${sessions.table}
+        WHERE source = 'gh' AND ${sessions.timestamp} >= ?4 AND ${sessions.timestamp} < ?5
+      UNION SELECT local_date FROM ${sessions.table}
+        WHERE source_id IN (SELECT json_extract(value, '$[0]') FROM json_each(?3))
+      UNION SELECT json_extract(value, '$[1]') FROM json_each(?3)`;
+  }
+  return [
+    // A persistent sequence prevents delete/reinsert from reusing a version held by another cron.
+    db.prepare("UPDATE rollup_seq SET n = n + 1 WHERE id = 1"),
+    db.prepare(`WITH RECURSIVE dates(local_date) AS (
+      SELECT ?1 WHERE ?1 <= ?2
+      UNION ALL SELECT date(local_date, '+1 day') FROM dates WHERE local_date < ?2
+    )
+    INSERT INTO rollup_dirty (local_date, version)
+    SELECT local_date, (SELECT n FROM rollup_seq WHERE id = 1)
+    FROM (SELECT local_date FROM dates ${stored})
+    WHERE local_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+      AND date(local_date, '+0 days') = local_date AND local_date BETWEEN '2000-01-01' AND '2099-12-31'
+    ON CONFLICT(local_date) DO UPDATE SET version = excluded.version`).bind(...bindings),
+  ];
+}
+
 export async function drainSyncPending(
   env: DrainEnv, client: Pick<ReturnType<typeof createGoogleClient>, "rollUpHeartRate" | "dailyRollUp" | "listDaily" | "reconcile">,
   opts: { now?: () => number } = {},
@@ -110,7 +143,10 @@ export async function drainSyncPending(
             readNumber(metrics.averageHeartRateBeatsPerMinute), null, readNumber(metrics.caloriesKcal),
             readNumber(metrics.activeZoneMinutes), distance === null ? null : distance / 1000, now]);
         }
-        statements.push(db.prepare("DELETE FROM workout WHERE source = 'gh' AND start_ts >= ? AND start_ts < ?").bind(row.start_ts, end),
+        statements.push(...dirtyStatements(db, utcDate(row.start_ts - 14 * 3600), utcDate(end + 14 * 3600), {
+          table: "workout", timestamp: "start_ts", start: row.start_ts, end,
+          written: [...answer].map(([id, values]) => [id, values[6] as string]),
+        }), db.prepare("DELETE FROM workout WHERE source = 'gh' AND start_ts >= ? AND start_ts < ?").bind(row.start_ts, end),
           ...upsertStatements(db, "workout",
             ["source_id", "source", "type", "start_ts", "end_ts", "tz_offset_min", "local_date", "duration_min", "avg_hr", "max_hr",
               "kcal", "azm", "distance_m", "updated_at"], ["source_id"], [...answer.values()]));
@@ -153,7 +189,10 @@ export async function drainSyncPending(
             readNumber(summary.minutesToFallAsleep), now], stages });
         }
 
-        statements.push(db.prepare(`DELETE FROM sleep_stage WHERE session_id IN
+        statements.push(...dirtyStatements(db, utcDate(row.start_ts - 14 * 3600), utcDate(end + 14 * 3600), {
+          table: "sleep_session", timestamp: "end_ts", start: row.start_ts, end,
+          written: [...answer].map(([id, item]) => [id, item.session[5] as string]),
+        }), db.prepare(`DELETE FROM sleep_stage WHERE session_id IN
           (SELECT source_id FROM sleep_session WHERE source = 'gh' AND end_ts >= ? AND end_ts < ?)`)
           .bind(row.start_ts, end),
         db.prepare("DELETE FROM sleep_session WHERE source = 'gh' AND end_ts >= ? AND end_ts < ?").bind(row.start_ts, end));
@@ -204,14 +243,15 @@ export async function drainSyncPending(
           if (!validDate(point.date) || point.date < first || point.date >= end || value === null || !Number.isFinite(value)) return [];
           return [[metric, point.date, value, "gh", null, now]];
         });
-        statements.push(db.prepare(`DELETE FROM metric_daily
+        statements.push(...dirtyStatements(db, first, addDays(end, -1)), db.prepare(`DELETE FROM metric_daily
           WHERE metric = ? AND source = 'gh' AND local_date >= ? AND local_date < ?`).bind(metric, first, end),
           ...upsertStatements(db, "metric_daily", ["metric", "local_date", "value", "source", "source_id", "updated_at"],
             ["metric", "source", "local_date"], rows));
         // Start early enough to re-read the boundary date in every zone, including across DST.
         if (end < fullEnd) advance = midnight(end) - 14 * 3600;
       } else if (row.operation === "DELETE") {
-        statements.push(db.prepare(`DELETE FROM metric_minute
+        statements.push(...dirtyStatements(db, utcDate(row.start_ts - 14 * 3600), utcDate(row.end_ts + 14 * 3600)),
+          db.prepare(`DELETE FROM metric_minute
           WHERE metric = 'hr' AND source = 'gh' AND ts >= ? AND ts < ?`).bind(row.start_ts, row.end_ts));
       } else {
         const start = Math.floor(row.start_ts / 60) * 60;
@@ -226,7 +266,8 @@ export async function drainSyncPending(
           const offsetMin = offset ? (offset[1] === "+" ? 1 : -1) * (Number(offset[2]) * 60 + Number(offset[3])) : 0;
           return ["hr", point.ts, offsetMin, point.avg, point.min, point.max, null, "gh"];
         });
-        statements.push(...upsertStatements(db, "metric_minute",
+        statements.push(...dirtyStatements(db, utcDate(start - 14 * 3600), utcDate(end + 14 * 3600)),
+          ...upsertStatements(db, "metric_minute",
           ["metric", "ts", "tz_offset_min", "value", "vmin", "vmax", "n", "source"], ["metric", "source", "ts"], rows));
 
         if (end < roundedEnd) advance = end;

@@ -39,14 +39,14 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await env.DB.batch(["sync_pending", "sync_state", "metric_minute", "metric_daily", "daily_summary", "tracker_daily", "event", "secret_blob", "oauth_state"]
+  await env.DB.batch(["rollup_dirty", "sync_pending", "sync_state", "metric_minute", "metric_daily", "daily_summary", "tracker_daily", "event", "secret_blob", "oauth_state"]
     .map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
   const { keys } = await env.OAUTH_KV.list();
   await Promise.all(keys.map((k) => env.OAUTH_KV.delete(k.name)));
 });
 
 describe("AC1 five-minute cron", () => {
-  it("drains the queue with the stored token, then recomputes the summaries for local D-2..D", async () => {
+  it("drains the queue with the stored token, then recomputes the touched dates through today", async () => {
     await storeRefreshToken();
     await env.DB.prepare("INSERT INTO sync_pending (data_type, start_ts, end_ts, operation, received_at) VALUES ('heart-rate', ?, ?, 'UPSERT', ?)")
       .bind(at("2026-10-20T21:00:00Z"), at("2026-10-20T21:01:00Z"), NOW - 60).run();
@@ -58,7 +58,7 @@ describe("AC1 five-minute cron", () => {
     });
     expect((await env.DB.prepare("SELECT metric, ts, value FROM metric_minute").all()).results).toEqual([{ metric: "hr", ts: at("2026-10-20T21:00:00Z"), value: 61 }]);
     expect((await env.DB.prepare("SELECT local_date, hr_wear_min, computed_at FROM daily_summary ORDER BY local_date").all()).results).toEqual([
-      { local_date: "2026-10-19", hr_wear_min: 0, computed_at: NOW }, { local_date: "2026-10-20", hr_wear_min: 1, computed_at: NOW },
+      { local_date: "2026-10-20", hr_wear_min: 1, computed_at: NOW },
       { local_date: "2026-10-21", hr_wear_min: 0, computed_at: NOW }]);
     expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first()).toEqual({ n: 0 });
   });
@@ -69,14 +69,14 @@ describe("AC1 five-minute cron", () => {
     await handleScheduled("*/5 * * * *", appEnv(), deps(g.fetch));
     expect(g.calls).toEqual([]);
     expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first()).toEqual({ n: 1 });
-    expect(await env.DB.prepare("SELECT count(*) AS n FROM daily_summary").first()).toEqual({ n: 3 });
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM daily_summary").first()).toEqual({ n: 1 });
   });
 
   it("uses the local date of USER_TZ: just after local midnight the window moves forward", async () => {
     // 22:30Z on 20 Oct is 00:30 on 21 Oct in Madrid.
     await handleScheduled("*/5 * * * *", appEnv(), { ...deps(google().fetch), now: () => at("2026-10-20T22:30:00Z") });
     expect((await env.DB.prepare("SELECT local_date FROM daily_summary ORDER BY local_date").all()).results.map((r) => r.local_date))
-      .toEqual(["2026-10-19", "2026-10-20", "2026-10-21"]);
+      .toEqual(["2026-10-21"]);
   });
 
   it("rejects and skips the summaries when the stored token cannot be decrypted", async () => {
@@ -119,8 +119,6 @@ describe("T10e AC1/AC2 watch sync in the five-minute cron", () => {
 
   async function rollupsCompleted(now = NOW) {
     expect((await env.DB.prepare("SELECT local_date, steps, computed_at FROM daily_summary ORDER BY local_date").all()).results).toEqual([
-      { local_date: "2026-10-19", steps: null, computed_at: now },
-      { local_date: "2026-10-20", steps: null, computed_at: now },
       { local_date: "2026-10-21", steps: 8123, computed_at: now },
     ]);
     expect((await env.DB.prepare("SELECT local_date, tracker_id, total, n FROM tracker_daily").all()).results)
@@ -173,13 +171,13 @@ describe("T10e AC1/AC2 watch sync in the five-minute cron", () => {
     const failFetch: typeof fetch = () => Promise.reject(failure);
     await handleScheduled("*/5 * * * *", appEnv(), { ...deps(failFetch), now: () => NOW + 1800 });
     expect(await state()).toEqual({ data_type: "watch", synced_until: at(first), last_ok_at: NOW, last_error: failure.message.slice(0, 200) });
-    await rollupsCompleted(NOW + 1800);
+    await rollupsCompleted();
     const recovered = "2026-10-21T05:15:00Z";
     await handleScheduled("*/5 * * * *", appEnv(), { ...deps(google([], recovered).fetch), now: () => NOW + 3600 });
     expect(await state()).toEqual({ data_type: "watch", synced_until: at(recovered), last_ok_at: NOW + 3600, last_error: null });
     await handleScheduled("*/5 * * * *", appEnv(), { ...deps(google([], null).fetch), now: () => NOW + 5400 });
     expect(await state()).toEqual({ data_type: "watch", synced_until: null, last_ok_at: NOW + 5400, last_error: null });
-    await rollupsCompleted(NOW + 5400);
+    await rollupsCompleted();
   });
 
   it("stores a successful null result on the first watch lookup", async () => {

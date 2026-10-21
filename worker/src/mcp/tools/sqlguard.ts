@@ -10,7 +10,7 @@ const forbiddenFunctions = new Set([
 const forbiddenNames = new Set([
   "metric_minute", "metric_hour", "metric_daily", "metric_def", "sleep_session", "sleep_stage", "workout",
   "tracker", "event", "daily_summary", "tracker_daily", "sync_pending", "sync_state", "secret_blob",
-  "audit_log", "oauth_state", "d1_migrations", "main", "temp", "temporary", "dbstat", "fsdir", "zipfile",
+  "audit_log", "oauth_state", "rollup_dirty", "rollup_seq", "d1_migrations", "main", "temp", "temporary", "dbstat", "fsdir", "zipfile",
 ]);
 
 interface Token {

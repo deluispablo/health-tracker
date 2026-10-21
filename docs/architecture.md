@@ -31,7 +31,7 @@ Freshness is bounded by how fast the watch syncs to the Google Health app, not b
 
 ## Runtime wiring
 
-`worker/src/index.ts` delegates HTTP requests to `app.ts` and runs scheduled work through `ctx.waitUntil`. Every five minutes, the app loads the encrypted Google refresh token and drains the queue when a token exists, then recomputes daily and tracker summaries for local D−2 through D in `USER_TZ`. A token-load or drain rejection fails the run before summaries. At 04:30 UTC it enqueues the 48-hour reconcile and deletes expired OAuth states; unknown cron expressions throw.
+`worker/src/index.ts` delegates HTTP requests to `app.ts` and runs scheduled work through `ctx.waitUntil`. Every five minutes, the app loads the encrypted Google refresh token and drains the queue when a token exists, then recomputes touched daily summaries and rebuilds tracker summaries for local D−2 through D in `USER_TZ`. A token-load or drain rejection fails the run before summaries. At 04:30 UTC it enqueues the 48-hour reconcile and deletes expired OAuth states; unknown cron expressions throw.
 
 After the drain, runs where `Math.floor(now / 300) % 6 === 0` sample the watch's latest sync every 30 minutes when a Google token exists. One upsert to `sync_state('watch')` stores the floored epoch-second `lastSyncTime`, `last_ok_at` and a cleared error; no paired watch stores a null timestamp. Lookup or timestamp-parse failures preserve the previous successful timestamp and record the first 200 characters of the error. Watch write failures are swallowed so both rollups still run. Non-due runs and runs without a token leave watch state untouched.
 
@@ -51,12 +51,17 @@ The Worker and the offline tooling do not import each other. They share data onl
 ## Storage
 
 - Schema lives in `worker/migrations/`; `0002_oauth_state.sql` adds Google consent state. Times are epoch seconds UTC plus `tz_offset_min` per row; `local_date` is derived from both.
+- `0005_rollup_dirty.sql` adds `rollup_dirty(local_date, version)` and the single-row `rollup_seq(id = 1, n)`, seeded at zero. Each marking statement increments this persistent sequence in the same batch and uses its value for inserted and updated marks; clearing a date never resets the sequence.
 - A sleep session is dated by its wake day. Behaviour on day D is compared with the night D to D+1 (`nightOf`).
 - `worker/src/lib/time.ts` converts Google `physicalTime` and `utcOffset` and rejects malformed input.
 - `worker/src/lib/d1.ts` `upsertRows` writes with `ON CONFLICT DO UPDATE`, so replays are idempotent. It binds at most 100 parameters per statement and sends all chunks in one `DB.batch`.
 - Views `v_daily`, `v_events`, `v_sleep` and `v_workouts` are read-only projections for the SQL tool.
 
 ## Daily summary
+
+Every successful drain batch marks its covered dates in `rollup_dirty` atomically with data writes and queue removal or advancement. Heart-rate, sleep and exercise mark every UTC date from the actual window's start minus 14 hours through its end plus 14 hours, inclusive. Steps, active-zone-minutes and the five daily-list types mark exactly their civil replacement dates, without widening. Before deleting or replacing sleep sessions and workouts, the batch also marks their stored dates, including replaced source IDs outside the window, and marks every newly written session's date regardless of offset size. Failed types leave no marks. Only real canonical `YYYY-MM-DD` dates in `2000-01-01` through `2099-12-31` are marked; date ranges use a recursive CTE, and ID/date lists use one JSON parameter to keep statement bindings bounded.
+
+After draining, cron removes invalid marks and reads the eligible dirty dates and versions. It adds today's `USER_TZ` date when today's summary is missing. With no eligible dates it skips the daily recompute; future marks remain queued. Otherwise the inclusive range starts at the earliest date and ends at the earliest of the latest date plus 28 days, today, or the start plus 365 days. This refreshes the scores whose history includes changed data. After success it clears only marks whose entire 28-day tail (capped at today) was processed and whose versions still match the snapshot. Re-marks during recompute survive, including delete/reinsert interleavings within the same second; recompute failures retain the dirty work. A large backlog can postpone today's bootstrap, and dates with unfinished tails remain for subsequent ticks, which may repeat some dates. Tracker recomputation remains D−2 through D even when the daily rollup is idle.
 
 `worker/src/rollup/daily.ts` recomputes an inclusive range of 1–366 real calendar dates. One atomic D1 batch first upserts every date's base columns, then updates its z-scores and readiness proxy. Daily metrics and heart-rate wear minutes use source `gh`; sleep and workouts include every source. Main sleep is the non-nap session with the longest time in bed (NULL last), then latest end and descending source id. Its own offset supplies local bedtime and wake time. Missing inputs clear previous values; dates outside the range remain untouched.
 

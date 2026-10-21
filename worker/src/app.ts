@@ -75,10 +75,30 @@ export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps):
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(now * 1000);
-  const to = ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
-  const from = new Date(Date.parse(`${to}T00:00:00Z`) - 2 * 86400000).toISOString().slice(0, 10);
-  await recomputeDailySummary(env.DB, from, to, now);
-  await recomputeTrackerDaily(env.DB, from, to);
+  const today = ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
+  const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+  await env.DB.prepare(`DELETE FROM rollup_dirty WHERE (
+    local_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+    AND date(local_date, '+0 days') = local_date AND local_date BETWEEN '2000-01-01' AND '2099-12-31'
+  ) IS NOT TRUE`).run();
+  const { results: dirty } = await env.DB.prepare("SELECT local_date, version FROM rollup_dirty WHERE local_date <= ? ORDER BY local_date")
+    .bind(today).all<{ local_date: string; version: number }>();
+  const dates = dirty.map((row) => row.local_date);
+  if (!await env.DB.prepare("SELECT 1 FROM daily_summary WHERE local_date = ?").bind(today).first()) dates.push(today);
+  if (dates.length) {
+    const from = dates[0];
+    const to = [addDays(dates[dates.length - 1], 28), today, addDays(from, 365)].sort()[0];
+    await recomputeDailySummary(env.DB, from, to, now);
+    // Clear only complete score tails whose versions still match the pre-recompute snapshot.
+    const cleared = dirty.filter((row) => {
+      const tail = addDays(row.local_date, 28);
+      return (tail < today ? tail : today) <= to;
+    });
+    await env.DB.prepare(`DELETE FROM rollup_dirty WHERE (local_date, version) IN (
+      SELECT json_extract(value, '$.local_date'), json_extract(value, '$.version') FROM json_each(?)
+    )`).bind(JSON.stringify(cleared)).run();
+  }
+  await recomputeTrackerDaily(env.DB, addDays(today, -2), today);
 }
 
 export async function route(request: Request, env: AppEnv, deps: AppDeps): Promise<Response> {
