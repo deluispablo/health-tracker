@@ -890,7 +890,6 @@ describe("T11 AC5 health_sql through the authenticated connector", () => {
   });
 
   it.each(["UPDATE daily_summary SET rhr = 99", "SELECT * FROM unknown_relation", "SELECT * FROM main.v_daily"])("returns the exact first guard refusal and audits failure for %s", async (query) => {
-    type Verdict = { ok: true; sql: string } | { ok: false; reason: string };
     const lexical = await import("../../src/mcp/tools/sqlguard");
     const parser = await import("../../src/mcp/tools/sqlviews");
     const validated = lexical.validateReadOnlyQuery(query);
