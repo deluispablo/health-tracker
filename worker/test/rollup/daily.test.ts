@@ -11,14 +11,20 @@ async function daily(metric: string, date: string, value: number, source = "gh")
   await env.DB.prepare("INSERT INTO metric_daily (metric, local_date, value, source, updated_at) VALUES (?, ?, ?, ?, 1)")
     .bind(metric, date, value, source).run();
 }
-async function sleep(id: string, start: string, end: string, localDate: string, f: Partial<Record<string, number>> = {}) {
-  await env.DB.prepare(`INSERT INTO sleep_session (source_id, start_ts, end_ts, tz_offset_min, local_date, is_nap, minutes_asleep,
-    minutes_in_bed, efficiency, deep_min, rem_min, light_min, awake_min, latency_min, updated_at) VALUES (?, ?, ?, 120, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`)
-    .bind(id, at(start), at(end), localDate, f.is_nap ?? 0, f.asleep ?? null, f.in_bed ?? null, f.eff ?? null, f.deep ?? null,
+async function sleep(id: string, start: string, end: string, localDate: string, f: Partial<Record<string, number>> = {}, source = "gh") {
+  await env.DB.prepare(`INSERT INTO sleep_session (source_id, source, start_ts, end_ts, tz_offset_min, local_date, is_nap, minutes_asleep,
+    minutes_in_bed, efficiency, deep_min, rem_min, light_min, awake_min, latency_min, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`)
+    .bind(id, source, at(start), at(end), f.tz ?? 120, localDate, f.is_nap ?? 0, f.asleep ?? null, f.in_bed ?? null, f.eff ?? null, f.deep ?? null,
       f.rem ?? null, f.light ?? null, f.awake ?? null, f.latency ?? null).run();
 }
-async function minute(ts: number, tz = 120, metric = "hr") {
-  await env.DB.prepare("INSERT INTO metric_minute (metric, ts, tz_offset_min, value) VALUES (?, ?, ?, 60)").bind(metric, ts, tz).run();
+async function minute(ts: number, tz = 120, metric = "hr", source = "gh") {
+  await env.DB.prepare("INSERT INTO metric_minute (metric, ts, tz_offset_min, value, source) VALUES (?, ?, ?, 60, ?)").bind(metric, ts, tz, source).run();
+}
+const snapshot = async () => (await env.DB.prepare("SELECT * FROM daily_summary ORDER BY local_date").all()).results;
+async function summary(date: string, f: Record<string, number | null>) {
+  const cols = Object.keys(f);
+  await env.DB.prepare(`INSERT INTO daily_summary (local_date, ${cols.join(", ")}, computed_at) VALUES (?, ${cols.map(() => "?").join(", ")}, 1)`)
+    .bind(date, ...Object.values(f)).run();
 }
 const row = async (date: string) => env.DB.prepare("SELECT * FROM daily_summary WHERE local_date = ?").bind(date).first();
 
@@ -93,8 +99,100 @@ describe("AC1 base columns", () => {
     for (const [a, b] of bad) {
       await expect(recomputeDailySummary(env.DB, a, b, NOW)).rejects.toThrow(RangeError);
     }
+    await summary("2026-10-02", { steps: 5 });
+    const before = await snapshot();
+    for (const [a, b] of bad) {
+      await expect(recomputeDailySummary(env.DB, a, b, NOW)).rejects.toThrow(RangeError);
+      expect(await snapshot()).toEqual(before);
+    }
     await expect(recomputeDailySummary(env.DB, "2025-01-01", "2026-01-01", NOW)).resolves.toBe(366);
-    expect((await env.DB.prepare("SELECT count(*) AS n FROM daily_summary WHERE local_date < '2025-01-01'").first<{ n: number }>())?.n).toBe(0);
+  });
+});
+
+describe("AC1 selection edge cases", () => {
+  const D = "2026-10-07";
+
+  it("clears base columns and z-scores whose inputs disappeared", async () => {
+    await summary(D, { rhr: 60, steps: 900, sleep_min: 400, z_rhr: 1, z_ln_rmssd: 1, z_sleep: 1, readiness_proxy: 1 });
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect(await row(D)).toEqual(expect.objectContaining({ rhr: null, steps: null, sleep_min: null, z_rhr: null, z_ln_rmssd: null, z_sleep: null, readiness_proxy: null }));
+  });
+
+  it("keeps zeros, keeps non-positive HRV with a null log", async () => {
+    await daily("hrv_rmssd", D, 0);
+    await daily("steps", D, 0);
+    await daily("azm", D, 0);
+    await sleep("z", "2026-10-06T22:00:00Z", "2026-10-07T05:00:00Z", D, { asleep: 0, in_bed: 420 });
+    await daily("hrv_rmssd", "2026-10-08", -1);
+    await recomputeDailySummary(env.DB, D, "2026-10-08", NOW);
+    expect(await row(D)).toEqual(expect.objectContaining({ hrv_rmssd: 0, ln_rmssd: null, steps: 0, azm: 0, sleep_min: 0 }));
+    expect(await row("2026-10-08")).toEqual(expect.objectContaining({ hrv_rmssd: -1, ln_rmssd: null }));
+  });
+
+  it("orders main sleep by time in bed (NULL last), then latest end, then source id, copying one session only", async () => {
+    await sleep("a", "2026-10-06T21:00:00Z", "2026-10-07T03:00:00Z", D, { asleep: 300 });
+    await sleep("b", "2026-10-06T22:00:00Z", "2026-10-07T04:00:00Z", D, { in_bed: 100, eff: 90 });
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect(await row(D)).toEqual(expect.objectContaining({ sleep_min: null, sleep_eff: 90, waketime_local: "06:00" }));
+    await env.DB.prepare("DELETE FROM sleep_session").run();
+    await sleep("x", "2026-10-06T22:00:00Z", "2026-10-07T04:00:00Z", D, { asleep: 1, in_bed: 300 });
+    await sleep("y", "2026-10-06T22:00:00Z", "2026-10-07T04:00:00Z", D, { asleep: 2, in_bed: 300 });
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect((await row(D))?.sleep_min).toBe(2);
+  });
+
+  it("uses each session's own offset, including negative and half-hour ones, and leaves nap-only dates without sleep", async () => {
+    await sleep("neg", "2026-10-07T03:00:00Z", "2026-10-07T10:30:00Z", D, { asleep: 400, in_bed: 450, tz: -300 });
+    await sleep("nap", "2026-10-08T12:00:00Z", "2026-10-08T13:00:00Z", "2026-10-08", { is_nap: 1, asleep: 50, in_bed: 60, tz: 330 });
+    await recomputeDailySummary(env.DB, D, "2026-10-08", NOW);
+    expect([(await row(D))?.bedtime_local, (await row(D))?.waketime_local]).toEqual(["22:00", "05:30"]);
+    expect(await row("2026-10-08")).toEqual(expect.objectContaining({ sleep_min: null, bedtime_local: null }));
+  });
+
+  it("reads metric_daily and metric_minute from gh only but sleep and workouts from every source", async () => {
+    await daily("steps", D, 50, "manual");
+    await minute(at("2026-10-07T10:00:00Z"), 120, "hr", "manual");
+    await minute(at("2026-10-07T10:00:00Z"), -330);
+    await minute(at("2026-10-07T03:00:00Z"), -330);
+    await sleep("m", "2026-10-06T22:00:00Z", "2026-10-07T05:00:00Z", D, { asleep: 333, in_bed: 420 }, "manual");
+    await env.DB.prepare("INSERT INTO workout (source_id, source, type, start_ts, end_ts, tz_offset_min, local_date, duration_min, updated_at) VALUES ('w', 'manual', 'RUN', 0, 1, 120, ?, 20, 1)").bind(D).run();
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect(await row(D)).toEqual(expect.objectContaining({ steps: null, hr_wear_min: 1, sleep_min: 333, workout_min: 20 }));
+  });
+
+  it("does all the work in one batch with at most 100 bound parameters per statement", async () => {
+    const batches: number[] = [];
+    const binds: number[] = [];
+    const spy = new Proxy(env.DB, {
+      get(target, prop) {
+        if (prop === "batch") return (stmts: D1PreparedStatement[]) => { batches.push(stmts.length); return target.batch(stmts); };
+        if (prop === "prepare") return (sql: string) => {
+          const stmt = target.prepare(sql);
+          return new Proxy(stmt, { get(t, p) {
+            if (p === "bind") return (...args: unknown[]) => { binds.push(args.length); return t.bind(...args); };
+            if (p === "run" || p === "first" || p === "all" || p === "raw") throw new Error(`unexpected ${p} outside the batch`);
+            const v: unknown = Reflect.get(t, p);
+            return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+          } });
+        };
+        const v: unknown = Reflect.get(target, prop);
+        return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+      },
+    });
+    await recomputeDailySummary(spy, "2025-01-01", "2026-01-01", NOW);
+    expect(batches).toHaveLength(1);
+    expect(Math.max(0, ...binds)).toBeLessThanOrEqual(100);
+  });
+
+  it("rejects and rolls back the base upsert when the z-score update fails", async () => {
+    await daily("steps", D, 10);
+    await env.DB.prepare("CREATE TRIGGER fail_z BEFORE UPDATE ON daily_summary BEGIN SELECT RAISE(ABORT, 'z failed'); END").run();
+    try {
+      await expect(recomputeDailySummary(env.DB, D, D, NOW)).rejects.toThrow();
+    } finally {
+      await env.DB.prepare("DROP TRIGGER fail_z").run();
+    }
+    expect(await snapshot()).toEqual([]);
   });
 });
 
@@ -145,6 +243,36 @@ describe("AC2 baselines and readiness", () => {
     expect(r?.z_ln_rmssd).not.toBeNull();
     expect(r?.z_sleep).toBeNull();
     expect(r?.readiness_proxy).toBeNull();
+  });
+
+  it("uses stored summaries outside the range as history, not raw inputs", async () => {
+    for (let i = 1; i <= 7; i++) await summary(day(D, -i), { rhr: [60, 62, 64, 60, 62, 64, 62][i - 1] ?? 0 });
+    await daily("rhr", day(D, -1), 500);
+    await daily("rhr", D, 65);
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect((await row(D))?.z_rhr).toBeCloseTo(3 / Math.sqrt(16 / 6), 9);
+  });
+
+  it("includes D-28, handles sparse and longer histories, and keeps sibling z-scores when one is missing", async () => {
+    const days = [28, 20, 15, 10, 5, 3, 1];
+    for (const [i, k] of days.entries()) await summary(day(D, -k), { rhr: [60, 62, 64, 60, 62, 64, 62][i] ?? 0, sleep_min: 420, ln_rmssd: 3 });
+    await daily("rhr", D, 65);
+    await daily("hrv_rmssd", D, 30);
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect(await row(D)).toEqual(expect.objectContaining({ z_rhr: expect.closeTo(3 / Math.sqrt(16 / 6), 9) as unknown, z_ln_rmssd: null, z_sleep: null, readiness_proxy: null }));
+    const xs = [60, 62, 64, 60, 62, 64, 62, 70, 58, 61];
+    await env.DB.prepare("DELETE FROM daily_summary").run();
+    for (const [i, x] of xs.entries()) await summary(day(D, -(i + 1)), { rhr: x });
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const sd = Math.sqrt(xs.reduce((a, x) => a + (x - mean) ** 2, 0) / (xs.length - 1));
+    expect((await row(D))?.z_rhr).toBeCloseTo((65 - mean) / sd, 9);
+  });
+
+  it("gives null z when today's value is missing even with a full history", async () => {
+    for (let i = 1; i <= 7; i++) await summary(day(D, -i), { rhr: 60 + i });
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect((await row(D))?.z_rhr).toBeNull();
   });
 
   it("uses summaries computed earlier in the same call (oldest date first)", async () => {
