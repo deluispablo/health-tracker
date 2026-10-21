@@ -166,6 +166,16 @@ describe("AC1 sleep sessions", () => {
     expect((await stages()).map((r) => [r.start_ts, r.end_ts, r.stage])).toEqual([[at("2026-10-06T22:00:00Z"), at("2026-10-06T22:30:00Z"), "LIGHT"]]);
   });
 
+  it("keeps only the last returned version of a duplicated session, stages included", async () => {
+    await queue(at("2026-10-06T21:00:00Z"), at("2026-10-07T05:00:00Z"));
+    const first = session("dup", "2026-10-06T21:15:00Z", "2026-10-07T04:48:00Z");
+    const last = session("dup", "2026-10-06T21:20:00Z", "2026-10-07T04:48:00Z", {
+      summary: summary({ minutesAsleep: "300" }), stages: [stage("2026-10-06T21:20:00Z", "2026-10-07T04:48:00Z", "LIGHT")] });
+    await drainSyncPending(drainEnv(), fakeClient([first, last]).client, opts);
+    expect((await sessions()).map((r) => [r.start_ts, r.minutes_asleep])).toEqual([[at("2026-10-06T21:20:00Z"), 300]]);
+    expect((await stages()).map((r) => [r.start_ts, r.stage])).toEqual([[at("2026-10-06T21:20:00Z"), "LIGHT"]]);
+  });
+
   it("stores a night with more stages than one D1 statement can bind", async () => {
     await queue(at("2026-10-06T21:00:00Z"), at("2026-10-07T05:00:00Z"));
     const base = at("2026-10-06T21:15:00Z");
