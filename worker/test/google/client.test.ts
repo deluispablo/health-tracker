@@ -171,6 +171,22 @@ describe("AC3 heart-rate rollUp", () => {
       range: { startTime: "2026-10-20T18:00:00Z", endTime: "2026-10-20T21:00:00Z" }, windowSize: "60s" });
   });
 
+  it("T23 AC2 drops points unless timestamp and all three HR values are finite numbers", async () => {
+    const valid = item(25, 0, 0, 0);
+    const invalid = [null, {}, { ...valid, heartRate: undefined }, { ...valid, heartRate: null },
+      { ...valid, startTime: "not-a-date" },
+      ...["beatsPerMinuteAvg", "beatsPerMinuteMin", "beatsPerMinuteMax"].flatMap((field) =>
+        [undefined, null, "61", true, "overflow", "-overflow"].map((value) => ({
+          ...valid, heartRate: { ...valid.heartRate, [field]: value },
+        }))),
+    ];
+    const body = JSON.stringify({ rollupDataPoints: [...invalid, valid] })
+      .replaceAll('"overflow"', "1e400").replaceAll('"-overflow"', "-1e400");
+    const { fetch } = scripted(token(), () => new Response(body));
+    expect(await client(fetch).rollUpHeartRate("2026-10-20T18:00:00Z", "2026-10-20T21:00:00Z", 60))
+      .toEqual([{ ts: Date.UTC(2026, 9, 20, 20, 25) / 1000, avg: 0, min: 0, max: 0 }]);
+  });
+
   it("returns [] for an empty response and supports other minute windows", async () => {
     const { fetch, calls } = scripted(token(), json({}), json({ rollupDataPoints: [] }));
     const c = client(fetch);
@@ -228,6 +244,23 @@ describe("AC4 retries and errors", () => {
     await client(fetch, sleeps).watchLastSync();
     expect(calls).toHaveLength(5);
     expect(sleeps).toEqual([2000, 1000, 2000]);
+  });
+
+  it.each(["0", "2", "10", "11", "86400", "9".repeat(400)])("T23 AC6 caps Retry-After %s at 10 seconds for token and API retries", async (ra) => {
+    const sleeps: number[] = [];
+    const retry = json({}, 429, { "retry-after": ra });
+    const { fetch, calls } = scripted(retry, retry, retry, token(), retry, retry, retry, devices());
+    expect(await client(fetch, sleeps).watchLastSync()).toBeNull();
+    expect(sleeps).toEqual(Array<number>(6).fill(Math.min(Number(ra) * 1000, 10_000)));
+    expect(calls).toHaveLength(8);
+  });
+
+  it.each(["-1", "1.5", "garbage", "Wed, 21 Oct 2026 10:00:00 GMT", ""])("T23 AC6 keeps exponential fallback for Retry-After %s", async (ra) => {
+    const sleeps: number[] = [];
+    const retry = json({}, 503, { "retry-after": ra });
+    const { fetch } = scripted(token(), retry, retry, retry, devices());
+    await client(fetch, sleeps).watchLastSync();
+    expect(sleeps).toEqual([500, 1000, 2000]);
   });
 
   it("honours a later Retry-After and retries the token refresh too", async () => {

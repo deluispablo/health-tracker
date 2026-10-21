@@ -76,7 +76,7 @@ export function createGoogleClient(o: GoogleClientOptions) {
       const res = await o.fetch(url, init);
       if ((res.status !== 429 && res.status < 500) || n === MAX_RETRIES) return res;
       const ra = res.headers.get("retry-after");
-      await o.sleep(ra !== null && /^\d+$/.test(ra) ? Number(ra) * 1000 : 500 * 2 ** n);
+      await o.sleep(ra !== null && /^\d+$/.test(ra) ? Math.min(Number(ra) * 1000, 10_000) : 500 * 2 ** n);
     }
   }
 
@@ -175,13 +175,14 @@ export function createGoogleClient(o: GoogleClientOptions) {
       const span = parseInstant(end) - parseInstant(start);
       if (!(span > 0 && span <= MAX_ROLLUP_MS)) throw new RangeError("rollUp range must be valid, end after start, at most 14 days");
       if (!Number.isInteger(windowSec) || windowSec <= 0 || windowSec % 60 !== 0) throw new RangeError("rollUp window must be a positive multiple of 60 s");
-      const res = await api<{ rollupDataPoints?: { startTime: string; heartRate: { beatsPerMinuteAvg: number; beatsPerMinuteMin: number; beatsPerMinuteMax: number } }[] }>(
+      const res = await api<{ rollupDataPoints?: ({ startTime?: string;
+        heartRate?: { beatsPerMinuteAvg?: number; beatsPerMinuteMin?: number; beatsPerMinuteMax?: number } | null } | null)[] }>(
         `${API}/dataTypes/heart-rate/dataPoints:rollUp`,
         { method: "POST", body: JSON.stringify({ range: { startTime: start, endTime: end }, windowSize: `${String(windowSec)}s` }) });
       return (res.rollupDataPoints ?? []).map((p) => ({
-        ts: Date.parse(p.startTime) / 1000,
-        avg: p.heartRate.beatsPerMinuteAvg, min: p.heartRate.beatsPerMinuteMin, max: p.heartRate.beatsPerMinuteMax,
-      }));
+        ts: Date.parse(p?.startTime ?? "") / 1000,
+        avg: p?.heartRate?.beatsPerMinuteAvg, min: p?.heartRate?.beatsPerMinuteMin, max: p?.heartRate?.beatsPerMinuteMax,
+      })).filter((point): point is RollUpPoint => [point.ts, point.avg, point.min, point.max].every(Number.isFinite));
     },
 
     /** lastSyncTime (as sent) of the most recently synced watch, or null. */

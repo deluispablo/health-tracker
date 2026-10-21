@@ -1,5 +1,5 @@
 import { decryptSecret, encryptSecret } from "../lib/crypto";
-import { upsertRows } from "../lib/d1";
+import { upsertRows, upsertStatements } from "../lib/d1";
 
 interface GoogleConnectEnv {
   DB: D1Database;
@@ -87,10 +87,15 @@ export async function finishGoogleConnect(request: Request, env: GoogleConnectEn
     return new Response("Invalid token response", { status: 400 });
   }
   if (!allowedIdentity(tokens.id_token, env, now)) return new Response("Account forbidden", { status: 403 });
+  const scopes = typeof tokens.scope === "string" ? tokens.scope.split(" ") : [];
+  if (!SCOPES.every((scope) => scopes.includes(scope))) return new Response("Missing scopes", { status: 400 });
   try {
     const { iv, ciphertext } = await encryptSecret(env.TOKEN_ENC_KEY, tokens.refresh_token);
-    await upsertRows(env.DB, "secret_blob", ["name", "iv", "ciphertext", "updated_at"], ["name"],
-      [["google_refresh_token", iv, ciphertext, now]]);
+    await env.DB.batch([
+      ...upsertStatements(env.DB, "secret_blob", ["name", "iv", "ciphertext", "updated_at"], ["name"],
+        [["google_refresh_token", iv, ciphertext, now]]),
+      env.DB.prepare("UPDATE sync_pending SET attempts = 0 WHERE attempts >= 5"),
+    ]);
   } catch { return new Response("Connection unavailable", { status: 500 }); }
   return new Response("Google connected");
 }

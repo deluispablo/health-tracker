@@ -271,7 +271,8 @@ describe("T10f AC3 exercise queue and failures", () => {
     await queue();
     const before = [await rows(), await pending()];
     await env.DB.prepare(`CREATE TRIGGER fail_workouts BEFORE ${target} BEGIN SELECT RAISE(ABORT, 'batch failed'); END`).run();
-    await expect(drainSyncPending(drainEnv(), fakeClient([workout()]).client, opts)).rejects.toThrow();
-    expect([await rows(), await pending()]).toEqual(before);
+    expect(await drainSyncPending(drainEnv(), fakeClient([workout()]).client, opts)).toEqual({ processed: 0, failed: 1 });
+    expect(await rows()).toEqual(before[0]);
+    expect(await pending()).toEqual(before[1].map((row) => ({ ...row, attempts: 1 })));
   });
 });

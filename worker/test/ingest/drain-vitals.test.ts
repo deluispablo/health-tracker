@@ -176,18 +176,20 @@ describe.each(VITALS)("AC1 inherited daily rules: $type", (t) => {
     expect((await pending()).map((r) => r.attempts)).toEqual([5]);
   });
 
-  it("rejects with nothing changed when the batch or the attempt write fails", async () => {
+  it("counts a batch failure and rejects if the attempt write fails, preserving stored data", async () => {
     await env.DB.prepare("INSERT INTO metric_daily (metric, local_date, value, updated_at) VALUES (?, '2026-10-06', 9, 1)").bind(t.metric).run();
     await queue(t.type, "2026-10-06T10:00:00Z", "2026-10-06T11:00:00Z");
     for (const [event, reply] of [["DELETE", []], ["UPDATE", new Error("503")]] as const) {
       await env.DB.prepare(`CREATE TRIGGER fail_queue BEFORE ${event} ON sync_pending BEGIN SELECT RAISE(ABORT, 'queue write failed'); END`).run();
       try {
-        await expect(drainSyncPending(drainEnv(), answering(t, reply instanceof Error ? reply : [t.item("2026-10-06", 1)]).client, opts)).rejects.toThrow();
+        const result = drainSyncPending(drainEnv(), answering(t, reply instanceof Error ? reply : [t.item("2026-10-06", 1)]).client, opts);
+        if (event === "DELETE") await expect(result).resolves.toEqual({ processed: 0, failed: 1 });
+        else await expect(result).rejects.toThrow();
       } finally {
         await env.DB.prepare("DROP TRIGGER fail_queue").run();
       }
       expect((await daily()).map((r) => r.value)).toEqual([9]);
-      expect((await pending()).map((r) => r.attempts)).toEqual([0]);
+      expect((await pending()).map((r) => r.attempts)).toEqual([1]);
     }
   });
 });

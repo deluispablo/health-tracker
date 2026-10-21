@@ -343,13 +343,14 @@ describe("AC2 window and queue", () => {
     expect((await pending()).map((r) => r.received_at)).toEqual([NOW]);
   });
 
-  it("rolls back session writes when the queue mutation fails", async () => {
+  it("rolls back session writes and counts a failure when the queue mutation fails", async () => {
     await seedSession("old", at("2026-10-06T21:00:00Z"), at("2026-10-07T04:00:00Z"));
     await queue(at("2026-10-06T21:00:00Z"), at("2026-10-07T05:00:00Z"));
     await env.DB.prepare("CREATE TRIGGER fail_queue BEFORE DELETE ON sync_pending BEGIN SELECT RAISE(ABORT, 'queue write failed'); END").run();
-    await expect(drainSyncPending(drainEnv(), fakeClient([session("8481", "2026-10-06T21:15:00Z", "2026-10-07T04:48:00Z")]).client, opts)).rejects.toThrow();
+    expect(await drainSyncPending(drainEnv(), fakeClient([session("8481", "2026-10-06T21:15:00Z", "2026-10-07T04:48:00Z")]).client, opts)).toEqual({ processed: 0, failed: 1 });
     await env.DB.prepare("DROP TRIGGER fail_queue").run();
     expect((await sessions()).map((s) => s.source_id)).toEqual([`${ID}old`]);
     expect(await stages()).toHaveLength(1);
+    expect((await pending()).map((r) => r.attempts)).toEqual([1]);
   });
 });

@@ -231,12 +231,12 @@ describe("AC4 failures", () => {
     expect(failing.calls).toHaveLength(2);
   });
 
-  it("rejects and rolls back the metric writes when the queue mutation fails", async () => {
+  it("counts a failure and rolls back the metric writes when the queue mutation fails", async () => {
     const t = at("2026-10-20T21:00:00Z");
     await queue("heart-rate", t, t + 7200);
-    await withTrigger("DELETE", () => expect(drainSyncPending(drainEnv(), fakeClient([{ ts: t, avg: 1, min: 1, max: 1 }]).client)).rejects.toThrow());
+    await withTrigger("DELETE", () => expect(drainSyncPending(drainEnv(), fakeClient([{ ts: t, avg: 1, min: 1, max: 1 }]).client)).resolves.toEqual({ processed: 0, failed: 1 }));
     expect(await minutes()).toEqual([]);
-    expect(await pending()).toEqual([{ data_type: "heart-rate", start_ts: t, end_ts: t + 7200, operation: "UPSERT", received_at: NOW - 60, attempts: 0 }]);
+    expect(await pending()).toEqual([{ data_type: "heart-rate", start_ts: t, end_ts: t + 7200, operation: "UPSERT", received_at: NOW - 60, attempts: 1 }]);
   });
 
   it("rejects without changing the row when the attempt increment fails", async () => {

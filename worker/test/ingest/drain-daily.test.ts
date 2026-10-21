@@ -215,13 +215,14 @@ describe("AC3 one row per type per run", () => {
     expect((await pending()).map((r) => r.attempts)).toEqual([5]);
   });
 
-  it("rolls back a type's writes when its queue mutation fails, and rejects", async () => {
+  it("rolls back a type's writes and counts a failure when its queue mutation fails", async () => {
     await seedDaily("steps", "2026-10-18", 10);
     await queue("steps", at("2026-10-18T10:00:00Z"), at("2026-10-18T11:00:00Z"));
     await env.DB.prepare("CREATE TRIGGER fail_queue BEFORE DELETE ON sync_pending BEGIN SELECT RAISE(ABORT, 'queue write failed'); END").run();
-    await expect(drainSyncPending(drainEnv(), fakeClient({ steps: [] }).client, opts)).rejects.toThrow();
+    expect(await drainSyncPending(drainEnv(), fakeClient({ steps: [] }).client, opts)).toEqual({ processed: 0, failed: 1 });
     await env.DB.prepare("DROP TRIGGER fail_queue").run();
     expect((await daily()).map((r) => r.value)).toEqual([10]);
     expect(await pending()).toHaveLength(1);
+    expect((await pending()).map((r) => r.attempts)).toEqual([1]);
   });
 });

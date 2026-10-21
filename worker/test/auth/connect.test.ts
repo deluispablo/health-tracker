@@ -21,7 +21,7 @@ const idToken = (claims: Record<string, unknown>) => `${b64url('{"alg":"RS256"}'
 const claims = (over: Record<string, unknown> = {}) =>
   ({ iss: "https://accounts.google.com", aud: CLIENT, exp: NOW + 3600, email: "owner@example.com", email_verified: true, ...over });
 const goodToken = (over: Record<string, unknown> = {}) => ({
-  access_token: "ya29.secret-access", refresh_token: "1//secret-refresh", expires_in: 3599, id_token: idToken(claims()), ...over,
+  access_token: "ya29.secret-access", refresh_token: "1//secret-refresh", expires_in: 3599, id_token: idToken(claims()), scope: SCOPES.join(" "), ...over,
 });
 
 interface Call { url: string; method: string; contentType: string; body: string }
@@ -50,6 +50,7 @@ beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); })
 beforeEach(async () => {
   await env.DB.prepare("DELETE FROM secret_blob").run();
   await env.DB.prepare("DELETE FROM oauth_state").run();
+  await env.DB.prepare("DELETE FROM sync_pending").run();
   logs.length = 0;
   for (const level of ["log", "info", "warn", "error", "debug"] as const) {
     vi.spyOn(console, level).mockImplementation((...args: unknown[]) => { logs.push(args.map(String).join(" ")); });
@@ -246,7 +247,7 @@ describe("AC3 rejections keep storage unchanged", () => {
       { id_token: `${b64url("{}")}.${b64url("[1]")}.s` }, { id_token: `${b64url("{}")}.%%%.s` },
     ];
     for (const over of bad) {
-      expect((await finishGoogleConnect(callback({ state: await stateOf(), code: "c" }), authEnv(), deps(google(goodToken(over)).fetch))).status).toBe(403);
+      expect((await finishGoogleConnect(callback({ state: await stateOf(), code: "c" }), authEnv(), deps(google(goodToken({ ...over, scope: undefined })).fetch))).status).toBe(403);
       await unchanged();
     }
     const okIss = idToken(claims({ iss: "accounts.google.com", email: "Owner@Example.com" }));
@@ -316,5 +317,53 @@ describe("AC5 no leakage", () => {
     }
     expect(loc.toString()).not.toContain("cret");
     for (const line of logs) for (const s of [...secrets, "eyJ"]) expect(line).not.toContain(s);
+  });
+});
+
+
+describe("T23 AC4/AC5 reconnect", () => {
+  const pending = async () => (await env.DB.prepare("SELECT * FROM sync_pending ORDER BY start_ts").all()).results;
+  beforeEach(async () => {
+    const { iv, ciphertext } = await encryptSecret(KEY, "previous-refresh");
+    await env.DB.prepare("INSERT INTO secret_blob (name, iv, ciphertext, updated_at) VALUES ('google_refresh_token', ?, ?, 7)")
+      .bind(iv, ciphertext).run();
+    await env.DB.batch([0, 1, 4, 5, 6].map((attempts, i) => env.DB.prepare(`INSERT INTO sync_pending
+      (data_type, start_ts, end_ts, operation, received_at, attempts) VALUES (?, ?, ?, ?, ?, ?)`)
+      .bind(["heart-rate", "steps", "sleep", "exercise", "daily-resting-heart-rate"][i], i * 60, (i + 1) * 60,
+        i % 2 ? "DELETE" : "UPSERT", 10 + i, attempts)));
+  });
+
+  it("stores a fully scoped token and resets only exhausted rows, accepting extra scopes and any order", async () => {
+    const before = await pending();
+    const scope = ["openid", ...SCOPES.toReversed(), "email", SCOPES[0]].join("  ");
+    const res = await finishGoogleConnect(callback({ state: await stateOf(), code: "c" }), authEnv(), deps(google(goodToken({ scope })).fetch));
+    expect(res.status).toBe(200);
+    expect(await loadGoogleRefreshToken(authEnv())).toBe("1//secret-refresh");
+    expect(await pending()).toEqual(before.map((row) => ({ ...row, attempts: Number(row.attempts) >= 5 ? 0 : row.attempts })));
+  });
+
+  it.each([undefined, null, "", 42, SCOPES,
+    ...SCOPES.map((missing) => SCOPES.filter((scope) => scope !== missing).join(" ")),
+    SCOPES.map((scope) => `${scope}.extra`).join(" "),
+    Array<string>(4).fill(SCOPES[0]).join(" "),
+  ])("rejects incomplete or invalid scopes %j without replacing the token or resetting retries", async (scope) => {
+    const before = [await blobs(), await pending()];
+    const state = await stateOf();
+    const res = await finishGoogleConnect(callback({ state, code: "c" }), authEnv(), deps(google(goodToken({ scope })).fetch));
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe("Missing scopes");
+    expect([await blobs(), await pending()]).toEqual(before);
+    expect(await loadGoogleRefreshToken(authEnv())).toBe("previous-refresh");
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM oauth_state WHERE state = ?").bind(state).first("n")).toBe(0);
+  });
+
+  it.each(["UPDATE ON sync_pending", "INSERT ON secret_blob"])("atomically preserves token and retries when %s fails", async (target) => {
+    const before = [await blobs(), await pending()];
+    await env.DB.prepare(`CREATE TRIGGER fail_reconnect BEFORE ${target} BEGIN SELECT RAISE(ABORT, 'reconnect failed'); END`).run();
+    try {
+      const res = await finishGoogleConnect(callback({ state: await stateOf(), code: "c" }), authEnv(), deps(google(goodToken()).fetch));
+      expect(res.status).toBe(500);
+      expect([await blobs(), await pending()]).toEqual(before);
+    } finally { await env.DB.prepare("DROP TRIGGER fail_reconnect").run(); }
   });
 });
