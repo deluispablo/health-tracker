@@ -58,7 +58,8 @@ describe("T17 AC1/AC3 health_compare", () => {
   it.each([["cigarettes", 5, 10], ["alcohol_g", 20, 40], ["caffeine_mg", 200, 400]] as const)(
     "uses the default thresholds, including exact boundaries, for %s", async (behavior, first, last) => {
       const totals = [0, 0.25, first, first + 0.25, last, last + 0.25];
-      for (let i = 0; i < totals.length; i++) await row(date(i + 1), i, totals[i], behavior);
+      const tracker = { cigarettes: "cigarettes", alcohol_g: "alcohol", caffeine_mg: "caffeine" }[behavior];
+      for (let i = 0; i < totals.length; i++) await row(date(i + 1), i, totals[i], tracker);
       const out = await compare(env.DB, { ...base, behavior });
       expect(out.groups.map(({ n, mean }) => ({ n, mean }))).toEqual([
         { n: 1, mean: 0 }, { n: 2, mean: 1.5 }, { n: 2, mean: 3.5 }, { n: 1, mean: 5 },
