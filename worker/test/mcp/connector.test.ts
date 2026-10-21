@@ -50,9 +50,9 @@ function google(over: Record<string, unknown> = {}, status = 200, refresh: strin
     return Promise.resolve(Response.json(body, { status }));
   });
 }
-async function request(path: string, init: RequestInit = {}): Promise<Response> {
+async function request(path: string, init: RequestInit = {}, bindings = connectorEnv): Promise<Response> {
   const ctx = createExecutionContext();
-  const res = await handlers.fetch(new Request(new URL(path, ORIGIN), init), connectorEnv, ctx);
+  const res = await handlers.fetch(new Request(new URL(path, ORIGIN), init), bindings, ctx);
   await waitOnExecutionContext(ctx);
   return res;
 }
@@ -206,10 +206,10 @@ interface RpcResult {
   isError?: boolean;
 }
 interface Rpc { jsonrpc: string; id: number; result?: RpcResult; error?: { code: number; message: string } }
-async function rpc(token: string, method: string, params: object, id = 1): Promise<Rpc> {
+async function rpc(token: string, method: string, params: object, id = 1, bindings = connectorEnv): Promise<Rpc> {
   const res = await request("/mcp", { method: "POST", headers: { authorization: `Bearer ${token}`,
     "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-03-26" },
-    body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) });
+    body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) }, bindings);
   expect(res.status).toBe(200);
   expect(res.headers.has("mcp-session-id")).toBe(false);
   const text = await res.text();
@@ -368,13 +368,13 @@ describe("AC2 owner authorization and refusals", () => {
 });
 
 describe("AC3 stateless read tools and audit", () => {
-  it("initializes and lists exactly the six described tools, only the log tool writing", async () => {
+  it("initializes and lists exactly the eight described tools, only the log tool writing", async () => {
     google();
     const token = await accessToken();
     await initialize(token);
     const msg = await rpc(token, "tools/list", {});
     expect(msg.error).toBeUndefined();
-    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_daily", "health_intraday", "health_log_event", "health_sleep", "health_status", "health_trackers"]);
+    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_intraday", "health_log_event", "health_sleep", "health_status", "health_trackers"]);
     for (const tool of msg.result?.tools ?? []) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.inputSchema).toMatchObject({ type: "object" });
@@ -647,6 +647,183 @@ describe("AC3 stateless read tools and audit", () => {
     } finally {
       await env.DB.prepare("DROP TRIGGER fail_connector_audit").run();
     }
+  });
+});
+
+describe("T17 AC4 analysis tools through the authenticated connector", () => {
+  const behaviors = ["cigarettes", "alcohol_g", "caffeine_mg"];
+  const outcomes = ["rhr", "hrv_rmssd", "ln_rmssd", "resp_rate", "spo2_avg", "skin_temp_dev", "sleep_min", "sleep_eff",
+    "deep_min", "rem_min", "sleep_latency_min", "steps", "azm", "readiness_proxy"];
+  const names = [...behaviors, ...outcomes];
+  const window = { start: "2026-01-01", end: "2026-01-07" };
+  const compareArgs = { ...window, behavior: "cigarettes", outcome: "rhr", lag_days: 0 };
+  const correlateArgs = { ...window, x: "rhr", y: "sleep_min" };
+  const caveats = (n: number) => `Asociacional, no causal. n=${String(n)}. Posibles confusores: alcohol, entrenamiento, hora de acostarse, enfermedad.`;
+
+  it("describes every analysis argument's type, allowed values, defaults and limits", async () => {
+    google();
+    const token = await accessToken();
+    const msg = await rpc(token, "tools/list", {});
+    type Schema = { required: string[]; properties: Record<string, { type: string; description?: string; items?: { type: string } }> };
+    const tools = new Map((msg.result?.tools ?? []).map((t) => [t.name, t]));
+    for (const [name, required, types] of [
+      ["health_compare", ["behavior", "outcome", "start", "end"], { behavior: "string", outcome: "string", start: "string", end: "string", lag_days: "integer", bins: "array" }],
+      ["health_correlate", ["x", "y", "start", "end"], { x: "string", y: "string", start: "string", end: "string", max_lag: "integer" }],
+    ] as const) {
+      const tool = tools.get(name);
+      expect(tool).toBeDefined();
+      expect(tool?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+      const schema = tool?.inputSchema as Schema;
+      expect([...schema.required].sort()).toEqual([...required].sort());
+      for (const [field, type] of Object.entries(types)) {
+        expect(schema.properties[field].type).toBe(type);
+        expect(schema.properties[field].description?.trim().length).toBeGreaterThan(0);
+      }
+      for (const field of ["start", "end"]) {
+        const description = schema.properties[field].description ?? "";
+        for (const text of ["YYYY-MM-DD", "365", "2000-01-01", "2099-12-31"]) expect(description).toContain(text);
+      }
+      const lag = schema.properties[name === "health_compare" ? "lag_days" : "max_lag"].description ?? "";
+      for (const text of ["0", "7", name === "health_compare" ? "1" : "3"]) expect(lag).toContain(text);
+      expect(lag).toMatch(/default/i);
+      if (name === "health_compare") {
+        for (const value of behaviors) expect(schema.properties.behavior.description).toContain(value);
+        for (const value of outcomes) expect(schema.properties.outcome.description).toContain(value);
+        expect(schema.properties.bins.items).toMatchObject({ type: "number" });
+        const bins = schema.properties.bins.description ?? "";
+        for (const text of [...behaviors, "1", "5", "10", "20", "40", "200", "400"]) expect(bins).toContain(text);
+        expect(bins).toMatch(/default/i);
+        expect(bins).toMatch(/ascend|increas/i);
+        expect(bins).toMatch(/positive/i);
+        expect(bins).toMatch(/finite/i);
+      } else {
+        for (const field of ["x", "y"]) {
+          for (const value of names) expect(schema.properties[field].description).toContain(value);
+          expect(schema.properties[field].description).toMatch(/distinct|different/i);
+        }
+      }
+    }
+  });
+
+  it("returns a seeded Welch comparison in both JSON forms and audits one successful call", async () => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    const values = [1, 3, 5, 7, 2, 4, 8];
+    for (let i = 0; i < values.length; i++) {
+      const day = `2026-01-0${String(i + 1)}`;
+      await env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, computed_at) VALUES (?, ?, 1)").bind(day, values[i]).run();
+      await env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES (?, 'cigarettes', ?, 1, 0)")
+        .bind(day, i < 4 ? 0 : 1).run();
+    }
+    const before = (await audit()).length;
+    const msg = await rpc(token, "tools/call", { name: "health_compare", arguments: compareArgs });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result?.isError).not.toBe(true);
+    expect(msg.result?.structuredContent).toEqual({ ...compareArgs, n: 7,
+      groups: [{ label: "0", n: 4, mean: 4, sd: 2.582 }, { label: ">0–5", n: 3, mean: 4.667, sd: 3.055 },
+        { label: ">5–10", n: 0, mean: null, sd: null }, { label: ">10", n: 0, mean: null, sd: null }],
+      comparisons: [{ group: ">0–5", vs: "0", diff: 0.667, df: 3.959, ci95: [-5.427, 6.76] }], caveats: caveats(7) });
+    expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
+    await toolAudit("health_compare", compareArgs, 1, before);
+  });
+
+  it("uses the default lag_days 1 and the requested custom bins through MCP", async () => {
+    google();
+    const token = await accessToken();
+    const args = { ...window, behavior: "caffeine_mg", outcome: "sleep_min", bins: [0.5, 2.5] };
+    const before = (await audit()).length;
+    const msg = await rpc(token, "tools/call", { name: "health_compare", arguments: args });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result?.isError).not.toBe(true);
+    expect(msg.result?.structuredContent).toEqual({ behavior: args.behavior, outcome: args.outcome, ...window, lag_days: 1, n: 0,
+      groups: ["0", ">0–0.5", ">0.5–2.5", ">2.5"].map((label) => ({ label, n: 0, mean: null, sd: null })),
+      comparisons: [], caveats: caveats(0) });
+    expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
+    await toolAudit("health_compare", args, 1, before);
+  });
+
+  it.each([undefined, 0, 7])("returns prewhitened correlation with max_lag %s in both JSON forms and audits it", async (max_lag) => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    const x = [1, 4, 2, 8, 3, 7, 5];
+    const y = [7, 5, 18, 18, 7, 11, 18];
+    for (let i = 0; i < x.length; i++) await env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, sleep_min, computed_at) VALUES (?, ?, ?, 1)")
+      .bind(`2026-01-0${String(i + 1)}`, x[i], y[i]).run();
+    const args = max_lag === undefined ? correlateArgs : { ...correlateArgs, max_lag };
+    const before = (await audit()).length;
+    const msg = await rpc(token, "tools/call", { name: "health_correlate", arguments: args });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result?.isError).not.toBe(true);
+    const out = msg.result?.structuredContent as { phi: number; lags: { lag: number; r: number | null; n: number }[]; caveats: string };
+    expect(out).toMatchObject({ ...correlateArgs, phi: -0.34, caveats: caveats(6) });
+    expect(out.lags[0]).toEqual({ lag: 0, n: 6, r: 0.429 });
+    expect(out.lags.map(({ lag }) => lag)).toEqual(Array.from({ length: (max_lag ?? 3) + 1 }, (_, i) => i));
+    expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(out) }]);
+    await toolAudit("health_correlate", args, 1, before);
+  });
+
+  it.each([
+    ["health_compare", { ...compareArgs, behavior: "alcohol" }, `behavior must be one of: ${behaviors.join(", ")}`],
+    ["health_compare", { ...compareArgs, outcome: "bedtime_local" }, `outcome must be one of: ${outcomes.join(", ")}`],
+    ["health_compare", { ...compareArgs, lag_days: -1 }, "lag_days must be an integer from 0 to 7"],
+    ["health_compare", { ...compareArgs, lag_days: 8 }, "lag_days must be an integer from 0 to 7"],
+    ...[[], [0], [2, 1], [1, 1], [1, 2, 3, 4, 5, 6]].map((bins) => ["health_compare", { ...compareArgs, bins }, "bins must be 1 to 5 ascending positive finite numbers"]),
+    ["health_correlate", { ...correlateArgs, x: "unknown" }, `x and y must be distinct names from: ${names.join(", ")}`],
+    ["health_correlate", { ...correlateArgs, y: "rhr" }, `x and y must be distinct names from: ${names.join(", ")}`],
+    ["health_correlate", { ...correlateArgs, max_lag: -1 }, "max_lag must be an integer from 0 to 7"],
+    ["health_correlate", { ...correlateArgs, max_lag: 8 }, "max_lag must be an integer from 0 to 7"],
+    ...[["health_compare", compareArgs], ["health_correlate", correlateArgs]].flatMap(([name, args]) => [
+      [name, { ...(args as object), start: "2026-02-30" }, "date must be a real calendar date in YYYY-MM-DD format"],
+      [name, { ...(args as object), end: "2100-01-01" }, "date must be a real calendar date in YYYY-MM-DD format"],
+      [name, { ...(args as object), end: "2027-01-01" }, "range must contain 1 to 365 dates"],
+      [name, { ...(args as object), end: "2025-12-31" }, "range must contain 1 to 365 dates"],
+    ]),
+  ] as [string, object, string][])("returns the exact semantic RangeError and failed audit for %s %j", async (name, args, message) => {
+    google();
+    const token = await accessToken();
+    const before = (await audit()).length;
+    const msg = await rpc(token, "tools/call", { name, arguments: args });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: message }] });
+    await toolAudit(name, args, 0, before);
+    expect((await audit()).at(-1)?.error).toBe(message);
+  });
+
+  it.each([
+    ["health_compare", {}], ["health_compare", { ...compareArgs, behavior: 1 }], ["health_compare", { ...compareArgs, outcome: [] }],
+    ["health_compare", { ...compareArgs, start: 1 }], ["health_compare", { ...compareArgs, lag_days: "1" }],
+    ["health_compare", { ...compareArgs, lag_days: 0.5 }], ["health_compare", { ...compareArgs, bins: "5" }],
+    ["health_compare", { ...compareArgs, bins: ["5"] }], ["health_correlate", {}],
+    ["health_correlate", { ...correlateArgs, x: 1 }], ["health_correlate", { ...correlateArgs, y: [] }],
+    ["health_correlate", { ...correlateArgs, end: 1 }], ["health_correlate", { ...correlateArgs, max_lag: "3" }],
+    ["health_correlate", { ...correlateArgs, max_lag: 0.5 }],
+  ])("uses SDK structural validation for %s %j", async (name, args) => {
+    google();
+    const token = await accessToken();
+    const msg = await rpc(token, "tools/call", { name, arguments: args });
+    expect(Boolean(msg.error) || msg.result?.isError === true).toBe(true);
+  });
+
+  it.each([["health_compare", compareArgs], ["health_correlate", correlateArgs]])("returns a generic D1 error and failed audit for %s", async (name, args) => {
+    google();
+    const token = await accessToken();
+    const before = (await audit()).length;
+    const db = new Proxy(env.DB, { get(t, p) {
+      if (p === "prepare") return (sql: string) => {
+        if (/\bFROM\s+v_daily\b/i.test(sql)) throw new Error("private D1 analysis failure");
+        return t.prepare(sql);
+      };
+      const value: unknown = Reflect.get(t, p);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
+    } });
+    const msg = await rpc(token, "tools/call", { name, arguments: args }, 1, { ...connectorEnv, DB: db });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: "Unable to read health data" }] });
+    expect(msg.result?.structuredContent).toBeUndefined();
+    await toolAudit(name, args, 0, before);
+    expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
   });
 });
 
