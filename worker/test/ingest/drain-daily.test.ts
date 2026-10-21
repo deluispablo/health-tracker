@@ -170,6 +170,19 @@ describe("AC2 resting heart rate", () => {
   });
 });
 
+describe("AC1/AC2 impossible dates", () => {
+  it("skips impossible calendar dates and keeps valid leap days for both daily types", async () => {
+    await queue("steps", at("2028-02-28T10:00:00Z"), at("2028-03-01T10:00:00Z"));
+    await queue("daily-resting-heart-rate", at("2028-02-28T10:00:00Z"), at("2028-03-01T10:00:00Z"));
+    const { client } = fakeClient({
+      steps: [steps("2028-02-29", "100"), steps("2028-02-30", "999")],
+      rhr: [rhr(2028, 2, 29, "57"), rhr(2028, 2, 30, "99"), rhr(2028, 2, 0, "98")],
+    });
+    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 2, failed: 0 });
+    expect((await daily()).map((r) => [r.metric, r.local_date, r.value])).toEqual([["rhr", "2028-02-29", 57], ["steps", "2028-02-29", 100]]);
+  });
+});
+
 describe("AC3 one row per type per run", () => {
   it("drains one row of each daily type, oldest first", async () => {
     await queue("steps", at("2026-10-18T10:00:00Z"), at("2026-10-18T11:00:00Z"), "UPSERT", NOW - 30);
