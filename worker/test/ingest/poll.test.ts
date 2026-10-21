@@ -49,11 +49,44 @@ describe("AC1 48-hour reconcile", () => {
     expect((await pending()).find((r) => r.data_type === "sleep")).toEqual({ data_type: "sleep", start_ts: START, end_ts: END, operation: "UPSERT", received_at: NOW, attempts: 0 });
   });
 
-  it("writes queue rows and sync_state atomically", async () => {
-    await env.DB.prepare("CREATE TRIGGER fail_q BEFORE INSERT ON sync_state WHEN NEW.data_type = 'sleep' BEGIN SELECT RAISE(ABORT, 'x'); END").run();
-    await expect(enqueueReconcile(env.DB, NOW)).rejects.toThrow();
-    await env.DB.prepare("DROP TRIGGER fail_q").run();
-    expect(await pending()).toEqual([]);
-    expect(await state()).toEqual([]);
+  it("treats a NULL synced_until as never reconciled and keeps the row's other columns", async () => {
+    await env.DB.prepare("INSERT INTO sync_state (data_type, synced_until, last_ok_at, last_error) VALUES ('sleep', NULL, 7, 'e')").run();
+    expect(await enqueueReconcile(env.DB, NOW)).toBe(9);
+    expect((await state()).find((r) => r.data_type === "sleep")).toEqual({ data_type: "sleep", synced_until: END, last_ok_at: 7, last_error: "e" });
+  });
+
+  it("leaves skipped types' state untouched and enqueues again exactly past the 20-hour boundary", async () => {
+    await enqueueReconcile(env.DB, NOW);
+    await env.DB.prepare("DELETE FROM sync_pending").run();
+    const before = await state();
+    // synced_until (END) > now - 20 h  <=>  now < END + 20 h: skipped; at now = END + 20 h it is due.
+    expect(await enqueueReconcile(env.DB, END + 20 * 3600 - 1)).toBe(0);
+    expect(await state()).toEqual(before);
+    expect(await enqueueReconcile(env.DB, END + 20 * 3600)).toBe(9);
+  });
+
+  it("leaves other queued work unchanged", async () => {
+    const rows = [["heart-rate", START, END + 60, "UPSERT", 5, 2], ["sleep", START, END, "DELETE", 6, 1], ["weight", START, END, "UPSERT", 7, 0]] as const;
+    for (const r of rows) {
+      await env.DB.prepare("INSERT INTO sync_pending (data_type, start_ts, end_ts, operation, received_at, attempts) VALUES (?, ?, ?, ?, ?, ?)").bind(...r).run();
+    }
+    await enqueueReconcile(env.DB, NOW);
+    const all = await pending();
+    for (const [type, start, end, op, received, attempts] of rows) {
+      expect(all).toContainEqual({ data_type: type, start_ts: start, end_ts: end, operation: op, received_at: received, attempts });
+    }
+    expect(all).toHaveLength(12);
+  });
+
+  it("writes queue rows and sync_state atomically, whichever write fails", async () => {
+    await env.DB.prepare("INSERT INTO sync_state (data_type, synced_until) VALUES ('steps', 1)").run();
+    await env.DB.prepare("INSERT INTO sync_pending (data_type, start_ts, end_ts, operation, received_at) VALUES ('weight', 1, 2, 'UPSERT', 3)").run();
+    const before = [await pending(), await state()];
+    for (const table of ["sync_state", "sync_pending"]) {
+      await env.DB.prepare(`CREATE TRIGGER fail_q BEFORE INSERT ON ${table} WHEN NEW.data_type = 'sleep' BEGIN SELECT RAISE(ABORT, 'x'); END`).run();
+      await expect(enqueueReconcile(env.DB, NOW)).rejects.toThrow();
+      await env.DB.prepare("DROP TRIGGER fail_q").run();
+      expect([await pending(), await state()]).toEqual(before);
+    }
   });
 });
