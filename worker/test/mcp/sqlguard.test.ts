@@ -62,12 +62,16 @@ describe("T11 AC2 tokenized keywords and dangerous functions", () => {
     }
   });
 
+  it("refuses a pragma_ identifier even where a keyword-like label is meant (AC3 precedence)", () => {
+    refuses("SELECT pragma_label FROM v_events");
+  });
+
   it("refuses mixed-case keywords after line comments", () => {
     refuses("SELECT 1 -- harmless\n uPdAtE v_daily SET steps = 0");
   });
 
   it.each(keywords)("does not treat %s in strings, identifiers or comments as a keyword", (word) => {
-    accepts(`SELECT '${word}', "${word}", [${word}], \`${word}\`, ${word.toLowerCase()}_label FROM v_events`);
+    accepts(`SELECT '${word}', "${word}", [${word}], \`${word}\`, label_${word.toLowerCase()} FROM v_events`);
     expect(validateReadOnlyQuery(`SELECT /* ${word}; */ 1 -- ${word}`)).toMatchObject({ ok: true });
   });
 
