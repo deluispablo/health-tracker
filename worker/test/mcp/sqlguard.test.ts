@@ -22,7 +22,7 @@ const deniedNames = [
   "metric_minute", "metric_hour", "metric_daily", "metric_def", "sleep_session", "sleep_stage", "workout",
   "tracker", "event", "daily_summary", "tracker_daily", "sync_pending", "sync_state", "secret_blob",
   "audit_log", "oauth_state", "d1_migrations", "sqlite_master", "sqlite_schema", "sqlite_custom",
-  "pragma_custom", "_cf_custom", "sqlite_", "pragma_", "_cf_", "main", "temp", "temporary", "dbstat",
+  "pragma_custom", "_cf_custom", "sqlite_", "pragma_", "_cf_", "main", "temp", "temporary", "dbstat", "fsdir", "zipfile",
 ];
 
 beforeAll(async () => {
@@ -189,7 +189,8 @@ describe("T11 BOM, NUL and shell file functions are refused", () => {
     "SELECT sqlar_compress('x')",
     "SELECT readfile \v('/etc/hosts')", "SELECT readfile \t\v('/etc/hosts')", "SELECT edit \v('a', 'true')",
     "SELECT * FROM fsdir \v('/etc')", "SELECT name FROM 'fsdir'('worker/package.json')",
-    "SELECT * FROM 'FsDir' /* x */ ('.')", "SELECT * FROM 'zipfile'\n('x.zip')", "SELECT\v1", "SELECT 1\u0001", "SELECT 1\u001f", "SELECT 1\u007f",
+    "SELECT * FROM 'FsDir' /* x */ ('.')", "SELECT name, length(data) FROM fsdir WHERE path='/etc/hosts'",
+    "SELECT * FROM fsdir f WHERE f.path = '/etc/hosts'", "SELECT * FROM zipfile WHERE z = '/x.zip'", "SELECT * FROM 'zipfile'\n('x.zip')", "SELECT\v1", "SELECT 1\u0001", "SELECT 1\u001f", "SELECT 1\u007f",
   ])("refuses %s", refuses);
 });
 
