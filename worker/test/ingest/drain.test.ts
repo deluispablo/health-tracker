@@ -27,7 +27,14 @@ async function queue(type: string, start: number, end: number, operation = "UPSE
     .bind(type, start, end, operation, receivedAt, attempts).run();
 }
 const pending = async () => (await env.DB.prepare(
-  "SELECT data_type, start_ts, end_ts, operation, attempts FROM sync_pending ORDER BY data_type, start_ts").all()).results;
+  "SELECT data_type, start_ts, end_ts, operation, received_at, attempts FROM sync_pending ORDER BY data_type, start_ts, operation").all()).results;
+async function withTrigger(event: "DELETE" | "UPDATE", run: () => Promise<unknown>) {
+  await env.DB.prepare(`CREATE TRIGGER fail_queue BEFORE ${event} ON sync_pending BEGIN SELECT RAISE(ABORT, 'queue write failed'); END`).run();
+  try { await run(); } finally { await env.DB.prepare("DROP TRIGGER fail_queue").run(); }
+}
+async function seedMinute(metric: string, source: string, ts: number) {
+  await env.DB.prepare("INSERT INTO metric_minute (metric, ts, tz_offset_min, value, source) VALUES (?, ?, 120, 1, ?)").bind(metric, ts, source).run();
+}
 const minutes = async () => (await env.DB.prepare(
   "SELECT metric, ts, tz_offset_min, value, vmin, vmax, n, source FROM metric_minute ORDER BY ts").all()).results;
 
@@ -36,7 +43,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await env.DB.batch([env.DB.prepare("DELETE FROM sync_pending"), env.DB.prepare("DELETE FROM metric_minute")]);
+  await env.DB.batch([env.DB.prepare("DROP TRIGGER IF EXISTS fail_queue"), env.DB.prepare("DELETE FROM sync_pending"), env.DB.prepare("DELETE FROM metric_minute")]);
 });
 
 describe("AC1 heart-rate upsert", () => {
@@ -82,7 +89,57 @@ describe("AC2 one 60-minute window per invocation", () => {
     const { client, calls } = fakeClient();
     expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 1, failed: 0 });
     expect(calls).toEqual([{ start: "2026-10-20T18:00:00.000Z", end: "2026-10-20T19:00:00.000Z", windowSec: 60 }]);
-    expect(await pending()).toEqual([{ data_type: "heart-rate", start_ts: start + 3600, end_ts: start + 3 * 3600 + 30, operation: "UPSERT", attempts: 0 }]);
+    expect(await pending()).toEqual([
+      { data_type: "heart-rate", start_ts: start + 3600, end_ts: start + 3 * 3600 + 30, operation: "UPSERT", received_at: NOW - 60, attempts: 0 }]);
+  });
+
+  it("drains successive windows without gaps through the minute-rounded end, then removes the row", async () => {
+    const start = at("2026-10-20T18:00:00Z");
+    await queue("heart-rate", start, start + 2 * 3600 + 30, "UPSERT", NOW - 60, 2);
+    const { client, calls } = fakeClient();
+    for (let i = 0; i < 3; i++) await drainSyncPending(drainEnv(), client);
+    expect(calls.map((c) => [c.start, c.end])).toEqual([
+      ["2026-10-20T18:00:00.000Z", "2026-10-20T19:00:00.000Z"],
+      ["2026-10-20T19:00:00.000Z", "2026-10-20T20:00:00.000Z"],
+      ["2026-10-20T20:00:00.000Z", "2026-10-20T20:01:00.000Z"],
+    ]);
+    expect(await pending()).toEqual([]);
+    expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 0, failed: 0 });
+  });
+
+  it("merges an advanced row into an already queued remainder (latest receipt, fewest attempts)", async () => {
+    const start = at("2026-10-20T18:00:00Z");
+    await queue("heart-rate", start, start + 7200, "UPSERT", NOW - 300, 3);
+    await queue("heart-rate", start + 3600, start + 7200, "UPSERT", NOW - 30, 4);
+    await drainSyncPending(drainEnv(), fakeClient().client);
+    expect(await pending()).toEqual([
+      { data_type: "heart-rate", start_ts: start + 3600, end_ts: start + 7200, operation: "UPSERT", received_at: NOW - 30, attempts: 3 }]);
+  });
+
+  it("applies a DELETE before an UPSERT of the same interval and receipt time", async () => {
+    const t = at("2026-10-20T21:00:00Z");
+    await queue("heart-rate", t, t + 60, "UPSERT", NOW - 60);
+    await queue("heart-rate", t, t + 60, "DELETE", NOW - 60);
+    const { client, calls } = fakeClient([{ ts: t, avg: 70, min: 70, max: 70 }]);
+    await drainSyncPending(drainEnv(), client);
+    expect(calls).toHaveLength(0);
+    expect((await pending()).map((r) => r.operation)).toEqual(["UPSERT"]);
+    await drainSyncPending(drainEnv(), client);
+    expect((await minutes()).map((r) => r.value)).toEqual([70]);
+  });
+
+  it("keeps a row whose notification was re-received during the fetch", async () => {
+    const t = at("2026-10-20T21:00:00Z");
+    await queue("heart-rate", t, t + 60);
+    const client = {
+      async rollUpHeartRate(): Promise<RollUpPoint[]> {
+        await env.DB.prepare("UPDATE sync_pending SET received_at = ?").bind(NOW).run();
+        return [{ ts: t, avg: 61, min: 61, max: 61 }];
+      },
+    };
+    expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 1, failed: 0 });
+    expect(await pending()).toEqual([{ data_type: "heart-rate", start_ts: t, end_ts: t + 60, operation: "UPSERT", received_at: NOW, attempts: 0 }]);
+    expect(await minutes()).toHaveLength(1);
   });
 
   it("drains the oldest received row first and only one heart-rate row per run", async () => {
@@ -111,6 +168,20 @@ describe("AC2 one 60-minute window per invocation", () => {
 });
 
 describe("AC3 heart-rate delete", () => {
+  it("deletes only gh hr minutes in [start, end) for unaligned endpoints", async () => {
+    const t = at("2026-10-20T21:00:00Z");
+    for (const d of [0, 60, 120, 180]) await seedMinute("hr", "gh", t + d);
+    await seedMinute("hr", "manual", t + 60);
+    await seedMinute("steps", "gh", t + 60);
+    await queue("heart-rate", t + 30, t + 180, "DELETE");
+    await drainSyncPending(drainEnv(), fakeClient().client);
+    const rows = (await env.DB.prepare("SELECT metric, source, ts FROM metric_minute ORDER BY metric, source, ts").all()).results;
+    expect(rows).toEqual([
+      { metric: "hr", source: "gh", ts: t }, { metric: "hr", source: "gh", ts: t + 180 },
+      { metric: "hr", source: "manual", ts: t + 60 }, { metric: "steps", source: "gh", ts: t + 60 },
+    ]);
+  });
+
   it("deletes stored minutes inside the interval without calling Google", async () => {
     const t = at("2026-10-20T21:00:00Z");
     await queue("heart-rate", t, t + 180);
@@ -130,7 +201,7 @@ describe("AC4 failures", () => {
     const t = at("2026-10-20T21:00:00Z");
     await queue("heart-rate", t, t + 60);
     expect(await drainSyncPending(drainEnv(), fakeClient(new Error("503")).client)).toEqual({ processed: 0, failed: 1 });
-    expect(await pending()).toEqual([{ data_type: "heart-rate", start_ts: t, end_ts: t + 60, operation: "UPSERT", attempts: 1 }]);
+    expect(await pending()).toEqual([{ data_type: "heart-rate", start_ts: t, end_ts: t + 60, operation: "UPSERT", received_at: NOW - 60, attempts: 1 }]);
     expect(await minutes()).toEqual([]);
   });
 
@@ -143,12 +214,29 @@ describe("AC4 failures", () => {
     expect((await pending()).map((r) => r.attempts)).toEqual([5]);
   });
 
-  it("rejects when D1 fails so the cron run is marked failed and the row stays", async () => {
+  it("counts attempts up to 5 and then leaves an exhausted-only queue alone", async () => {
     const t = at("2026-10-20T21:00:00Z");
-    await queue("heart-rate", t, t + 60);
-    const broken = { prepare: env.DB.prepare.bind(env.DB), batch: () => Promise.reject(new Error("D1 down")) } as unknown as D1Database;
-    await expect(drainSyncPending({ DB: broken, USER_TZ: "Europe/Madrid" }, fakeClient([{ ts: t, avg: 1, min: 1, max: 1 }]).client))
-      .rejects.toThrow();
-    expect(await pending()).toHaveLength(1);
+    await queue("heart-rate", t, t + 60, "UPSERT", NOW - 60, 3);
+    const failing = fakeClient(new Error("503"));
+    await drainSyncPending(drainEnv(), failing.client);
+    await drainSyncPending(drainEnv(), failing.client);
+    expect((await pending()).map((r) => r.attempts)).toEqual([5]);
+    expect(await drainSyncPending(drainEnv(), failing.client)).toEqual({ processed: 0, failed: 0 });
+    expect(failing.calls).toHaveLength(2);
+  });
+
+  it("rejects and rolls back the metric writes when the queue mutation fails", async () => {
+    const t = at("2026-10-20T21:00:00Z");
+    await queue("heart-rate", t, t + 7200);
+    await withTrigger("DELETE", () => expect(drainSyncPending(drainEnv(), fakeClient([{ ts: t, avg: 1, min: 1, max: 1 }]).client)).rejects.toThrow());
+    expect(await minutes()).toEqual([]);
+    expect(await pending()).toEqual([{ data_type: "heart-rate", start_ts: t, end_ts: t + 7200, operation: "UPSERT", received_at: NOW - 60, attempts: 0 }]);
+  });
+
+  it("rejects without changing the row when the attempt increment fails", async () => {
+    const t = at("2026-10-20T21:00:00Z");
+    await queue("heart-rate", t, t + 60, "UPSERT", NOW - 60, 1);
+    await withTrigger("UPDATE", () => expect(drainSyncPending(drainEnv(), fakeClient(new Error("503")).client)).rejects.toThrow());
+    expect((await pending()).map((r) => r.attempts)).toEqual([1]);
   });
 });
