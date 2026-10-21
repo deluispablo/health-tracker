@@ -181,6 +181,20 @@ describe("T11 AC3c lexical boundaries without SQL grammar parsing", () => {
   });
 });
 
+describe("T11 parameter tokens are refused", () => {
+  it.each([
+    "SELECT $a(') AS x, name FROM sqlite_master --'", "SELECT :a(') AS x, * FROM audit_log --'",
+    "SELECT @a(') AS x, * FROM secret_blob --'", "SELECT #a(') AS x, * FROM event --'",
+    "SELECT ?", "SELECT ?1", "SELECT :n", "SELECT @n", "SELECT $n", "SELECT $a::b", "SELECT 1 FROM v_daily WHERE rhr > ?",
+  ])("refuses %s", refuses);
+
+  it.each(["SELECT '?', ':a', '$x', '@y', '#z'", 'SELECT "a?b" FROM v_daily', "SELECT 1 -- ? $x :y"])(
+    "allows parameter characters inside literals, quoted identifiers and comments: %s", (sql) => {
+      expect(validateReadOnlyQuery(sql)).toMatchObject({ ok: true });
+    },
+  );
+});
+
 describe("T11 SQLite token boundaries", () => {
   it.each([
     "SELECT event$label FROM v_events", "SELECT \u00e9event FROM v_events",
