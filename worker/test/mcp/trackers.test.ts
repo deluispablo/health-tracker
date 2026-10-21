@@ -103,6 +103,12 @@ describe("AC3 log events", () => {
     expect(rows.map((r) => [r.ts, r.tz_offset_min])).toEqual([[at("2026-10-17T21:30:15Z"), 120], [at("2026-10-26T22:30:00Z"), 60]]);
   });
 
+  it("takes the offset of the event instant, not of now, across the DST change", async () => {
+    const out = await logEvent(env.DB, { tracker_id: "caffeine", at: "2026-10-24T22:30:00Z" }, { now: at("2026-10-27T12:00:00Z"), tz: TZ });
+    expect(out.event).toMatchObject({ local_date: "2026-10-25", local_time: "00:30" });
+    expect((await events())[0]).toMatchObject({ tz_offset_min: 120, local_date: "2026-10-25" });
+  });
+
   it("never creates a second event for the same idempotency key, even with other arguments", async () => {
     const first = await logEvent(env.DB, { tracker_id: "cigarettes", idempotency_key: "tap-0001-abcd" }, opts);
     expect(first.event.id).toBe("k_tap-0001-abcd");
@@ -331,11 +337,12 @@ describe("AC3 log events", () => {
     const failure = new Error("final total unavailable");
     const db = observedDb((sql) => {
       if (/^\s*INSERT\s+INTO\s+event\b/i.test(sql)) inserted = true;
-      if (inserted && /^\s*SELECT\b/i.test(sql) && /\bevent\b/i.test(sql)) throw failure;
+      if (inserted && /^\s*SELECT\b/i.test(sql) && /\bSUM\s*\(/i.test(sql) && /\bevent\b/i.test(sql)) throw failure;
     });
     const args = { tracker_id: "caffeine", idempotency_key: "final_01" };
     await expect(logEvent(db, args, opts)).rejects.toBe(failure);
     expect(await events()).toEqual([expect.objectContaining({ id: "k_final_01", value: 80 })]);
+    expect(await daily()).toEqual([{ local_date: "2026-10-21", tracker_id: "caffeine", total: 80, n: 1 }]);
     await expect(logEvent(env.DB, args, opts)).resolves.toMatchObject({ created: false, day_total: 80 });
     expect(await events()).toHaveLength(1);
   });
