@@ -3,6 +3,8 @@
   "name": "pixel-health",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-22",
+  "triggers": { "crons": ["*/5 * * * *", "30 4 * * *"] },
+  "vars": { "USER_TZ": "Europe/Madrid", "ALLOWED_EMAIL": "deluispablo@gmail.com" },
   // Placeholder ids: replace with the output of `wrangler d1 create` and `wrangler kv namespace create`.
   "d1_databases": [
     {
@@ -19,6 +21,8 @@
   ],
   "env": {
     "staging": {
+      "triggers": { "crons": ["*/5 * * * *", "30 4 * * *"] },
+      "vars": { "USER_TZ": "Europe/Madrid", "ALLOWED_EMAIL": "deluispablo@gmail.com" },
       "d1_databases": [
         {
           "binding": "DB",
@@ -34,6 +38,8 @@
       ],
     },
     "production": {
+      "triggers": { "crons": ["*/5 * * * *", "30 4 * * *"] },
+      "vars": { "USER_TZ": "Europe/Madrid", "ALLOWED_EMAIL": "deluispablo@gmail.com" },
       "d1_databases": [
         {
           "binding": "DB",
