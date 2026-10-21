@@ -395,6 +395,8 @@ describe("AC3 stateless read tools and audit", () => {
     }
     for (const column of DAILY_COLUMNS) expect(describe("health_daily", "metrics")).toContain(column);
     expect(describe("health_intraday", "metric")).toMatch(/\bhr\b/);
+    expect(describe("health_intraday", "date")).toContain("2000-01-01");
+    expect(describe("health_intraday", "date")).toContain("2099-12-31");
     for (const r of ["1m", "5m", "1h"]) expect(describe("health_intraday", "resolution")).toContain(r);
     expect(describe("health_daily", "start")).toContain("90");
     expect(describe("health_sleep", "start")).toContain("31");
