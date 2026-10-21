@@ -100,7 +100,11 @@ describe("AC1 health_daily", () => {
       if (p === "prepare") return (q: string) => {
         const stmt = t.prepare(q);
         return new Proxy(stmt, { get(st, sp) {
-          if (sp === "bind") return (...a: unknown[]) => ({ ...st.bind(...a), all: () => Promise.reject(new Error("D1 down")) });
+          if (sp === "bind") return (...a: unknown[]) => new Proxy(st.bind(...a), { get(b, bp) {
+            if (bp === "all") return () => Promise.reject(new Error("D1 down"));
+            const v: unknown = Reflect.get(b, bp);
+            return typeof v === "function" ? (v as (...x: unknown[]) => unknown).bind(b) : v;
+          } });
           const v: unknown = Reflect.get(st, sp);
           return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(st) : v;
         } });
