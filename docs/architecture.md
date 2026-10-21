@@ -62,6 +62,14 @@ The Worker and the offline tooling do not import each other. They share data onl
 
 The handler validates every notification before writing through `upsertRows` to `sync_pending`. Physical intervals take precedence; civil-only intervals are interpreted as UTC and widened by 14 hours on each side. Exact end times must follow starts before starts are floored and ends ceiled to epoch seconds. Missing interval representations are skipped. Malformed signed input returns 400 without writes. The queue key includes data type, interval and operation, so duplicates collapse while UPSERT and DELETE remain distinct. Replays refresh `received_at` and preserve `attempts`. A 204 waits for the whole D1 batch; failed writes return 500 for retry. CPU is measured after deployment.
 
+## Queue drain
+
+`worker/src/ingest/drain.ts` processes at most one `heart-rate` queue row per run with fewer than five attempts, ordered by receipt, start, operation (DELETE first), then end. UPSERT fetches a minute-aligned window of at most 60 minutes using a 60-second Google rollUp. Each point replaces its `hr/gh` minute with average, minimum, maximum, null sample count and the DST-aware offset of `USER_TZ`. Other data types stay queued; cron wiring and the timezone variable are added in T9.
+
+Metric writes and queue removal or continuation share one atomic D1 batch. `upsertStatements` supplies the same validated, 100-parameter chunks as `upsertRows` for this composition. A continuation preserves receipt and attempts; a colliding remainder keeps the latest receipt and fewest attempts. Queue mutations require the selected receipt timestamp, preserving a notification re-received during the fetch. DELETE removes only `hr/gh` minutes in the raw, end-exclusive interval without calling Google. Google errors increment attempts and retain the row; D1 errors reject and roll back the batch.
+
+Same-second re-receipts can still be removed, and overlapping fetches can overwrite newer minutes. These accepted concurrency risks are to be revisited with T7's 48-hour reconciliation. Deployed CPU measurement remains pending.
+
 ## Google client
 
 `worker/src/google/client.ts` handles Google API requests (token refresh, `list`, `reconcile`, `listDaily`, `dailyRollUp`, heart-rate `rollUp`, `pairedDevices`); callers never build API URLs. The Google connect handler separately exchanges consent codes.

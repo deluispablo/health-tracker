@@ -8,12 +8,20 @@ const MAX_PARAMS = 100; // D1 limit per statement (R2)
 export async function upsertRows(
   db: D1Database, table: string, columns: string[], conflictKeys: string[], rows: unknown[][],
 ): Promise<void> {
+  const stmts = upsertStatements(db, table, columns, conflictKeys, rows);
+  if (stmts.length) await db.batch(stmts);
+}
+
+/** Build validated, chunked upserts for composition with other writes in one atomic batch. */
+export function upsertStatements(
+  db: D1Database, table: string, columns: string[], conflictKeys: string[], rows: unknown[][],
+): D1PreparedStatement[] {
   const ok = IDENT.test(table) && columns.length > 0 && columns.length <= MAX_PARAMS && conflictKeys.length > 0
     && columns.every((c) => IDENT.test(c)) && new Set(columns).size === columns.length
     && conflictKeys.every((k) => columns.includes(k));
   if (!ok) throw new TypeError(`invalid upsert target: ${table}`);
   if (rows.some((r) => r.length !== columns.length)) throw new TypeError("row width differs from columns");
-  if (rows.length === 0) return;
+  if (rows.length === 0) return [];
 
   const update = columns.filter((c) => !conflictKeys.includes(c));
   const conflict = update.length ? `DO UPDATE SET ${update.map((c) => `${c} = excluded.${c}`).join(", ")}` : "DO NOTHING";
@@ -25,5 +33,5 @@ export async function upsertRows(
     const sql = `INSERT INTO ${table} (${columns.join(", ")}) VALUES ${chunk.map(() => tuple).join(", ")} ON CONFLICT(${conflictKeys.join(", ")}) ${conflict}`;
     stmts.push(db.prepare(sql).bind(...chunk.flat()));
   }
-  await db.batch(stmts);
+  return stmts;
 }
