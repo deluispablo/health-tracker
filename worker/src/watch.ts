@@ -37,9 +37,10 @@ export async function handleWatchToday(request: Request, env: AppEnv, now: numbe
   ]);
   const hr = Array<number | null>(96).fill(null);
   for (const { i, bpm } of buckets) hr[i] = bpm;
-  const counts: Record<string, number> = {};
+  const totals: Record<string, number> = {}, counts: Record<string, number> = {};
   const marks = events.map((e) => {
     const k = KINDS[e.tracker_id] ?? (e.tracker_id.startsWith("mood") ? "animo" : "other");
+    totals[e.tracker_id] = (totals[e.tracker_id] ?? 0) + e.n;
     counts[k] = (counts[k] ?? 0) + e.n;   // count trackers (cigarettes) add their units; amounts count logs
     return { t: Math.floor((e.local_ts - midnight) / 60), k };
   });
@@ -48,7 +49,7 @@ export async function handleWatchToday(request: Request, env: AppEnv, now: numbe
     sleep: sessions.filter((s) => s.local_date === date)
       .map((s) => ({ start: minutes(s.start_local), end: minutes(s.end_local), nap: s.is_nap })),
     workouts: workouts.filter((w) => w.local_date === date).map((w) => ({ start: minutes(w.start_local), end: minutes(w.end_local) })),
-    events: marks, counts,
+    events: marks, totals, counts,
     hr,
   }, { headers: { "cache-control": "no-store" } });
 }

@@ -62,20 +62,21 @@ describe("GET /watch/today", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/json");
     expect(res.headers.get("cache-control")).toBe("no-store");
-    const body = await res.json<{ date: string; generatedAt: number; sleep: unknown; workouts: unknown; events: { t: number; k: string }[]; counts: Record<string, number>; hr: (number | null)[] }>();
+    const body = await res.json<{ date: string; generatedAt: number; sleep: unknown; workouts: unknown; events: { t: number; k: string }[]; counts: Record<string, number>; totals: Record<string, number>; hr: (number | null)[] }>();
     expect(body.date).toBe(d);
     expect(body.generatedAt).toBe(NOW);
     expect(body.sleep).toEqual([{ start: -30, end: 430, nap: false }, { start: 900, end: 940, nap: true }]);
     expect(body.workouts).toEqual([{ start: 1080, end: 1140 }]);
     expect(body.events).toEqual([{ t: 460, k: "cafe" }, { t: 675, k: "cigarro" }, { t: 1170, k: "alcohol" }]);
     expect(body.counts).toEqual({ cafe: 1, cigarro: 1, alcohol: 1 });
+    expect(body.totals).toEqual({ caffeine: 1, cigarettes: 1, alcohol: 1 });
     expect(body.hr.length).toBe(96);
     expect([body.hr[0], body.hr[72], body.hr[1]]).toEqual([60, 120, null]);
   });
 
   it("empty day", async () => {
     const body = await (await get(`Bearer ${TOKEN}`)).json();
-    expect(body).toEqual({ date: "2026-10-21", generatedAt: NOW, sleep: [], workouts: [], events: [], counts: {}, hr: Array(96).fill(null) });
+    expect(body).toEqual({ date: "2026-10-21", generatedAt: NOW, sleep: [], workouts: [], events: [], totals: {}, counts: {}, hr: Array(96).fill(null) });
   });
 
   it("returns every log of a busy day", async () => {
@@ -94,9 +95,25 @@ describe("GET /watch/today", () => {
         VALUES ('three', 'cigarettes', ?, 120, '2026-10-21', 3, 'mcp', 1), ('cup', 'caffeine', ?, 120, '2026-10-21', 160, 'mcp', 1)`)
         .bind(local("2026-10-21", "09:00"), local("2026-10-21", "09:30")),
     ]);
-    const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: unknown[]; counts: Record<string, number> }>();
+    const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: unknown[]; counts: Record<string, number>; totals: Record<string, number> }>();
     expect(body.events.length).toBe(2);
     expect(body.counts).toEqual({ cigarro: 3, cafe: 1 });
+    expect(body.totals).toEqual({ cigarettes: 3, caffeine: 1 });
+  });
+
+  it("keeps distinct mood trackers apart in totals", async () => {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO tracker (id, name, unit, value_type, default_value, min_value, max_value, created_at)
+        VALUES ('mood_bien', 'Bien', 'u', 'count', 1, 1, 1, 1), ('mood_triste', 'Triste', 'u', 'count', 1, 1, 1, 1)
+        ON CONFLICT(id) DO NOTHING`),
+      env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at)
+        VALUES ('b', 'mood_bien', ?, 120, '2026-10-21', 1, 'mcp', 1), ('t', 'mood_triste', ?, 120, '2026-10-21', 1, 'mcp', 1)`)
+        .bind(local("2026-10-21", "09:00"), local("2026-10-21", "12:00")),
+    ]);
+    const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: { k: string }[]; totals: Record<string, number>; counts: Record<string, number> }>();
+    expect(body.events.map((e) => e.k)).toEqual(["animo", "animo"]);
+    expect(body.totals).toEqual({ mood_bien: 1, mood_triste: 1 });
+    expect(body.counts).toEqual({ animo: 2 });
   });
 
   it("rejects an unset token and a token without the Bearer prefix, without touching the database", async () => {
