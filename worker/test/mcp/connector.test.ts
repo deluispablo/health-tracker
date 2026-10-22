@@ -31,6 +31,7 @@ const connectorEnv: ConnectorEnv = {
   ...env, PUBLIC_ORIGIN: ORIGIN, USER_TZ: "Europe/Madrid", WEBHOOK_SECRET: "Bearer connector-hook-secret",
   GOOGLE_CLIENT_ID: CLIENT, GOOGLE_CLIENT_SECRET: "connector-client-secret", ALLOWED_EMAIL: EMAIL,
   TOKEN_ENC_KEY: btoa(String.fromCharCode(...new Uint8Array(32).map((_, i) => i + 1))),
+  WATCH_TOKEN: "watch-token-0123456789abcdef0123456789",
 };
 // The existing export infers two fetch arguments; the connector adds the execution context.
 const handlers = worker as {
