@@ -153,7 +153,8 @@ export function createGoogleClient(o: GoogleClientOptions) {
       const range = civilRange(startDate, endDate, maxDays);
       const res = await api<{ rollupDataPoints?: ({ civilStartTime: { date: CivilDate } } & Record<string, unknown>)[] }>(
         `${API}/dataTypes/${type}/dataPoints:dailyRollUp`,
-        { method: "POST", body: JSON.stringify({ range }) });
+        { method: "POST", body: JSON.stringify({ range,
+          ...(type === "steps" ? { dataSourceFamily: "users/me/dataSourceFamilies/google-wearables" } : {}) }) });
       const key = type.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
       return (res.rollupDataPoints ?? []).map((p) => {
         const { year, month, day } = p.civilStartTime.date;
@@ -180,7 +181,8 @@ export function createGoogleClient(o: GoogleClientOptions) {
       if (!(span > 0 && span <= MAX_ROLLUP_MS)) throw new RangeError("rollUp range must be valid, end after start, at most 14 days");
       const res = await api<{ rollupDataPoints?: ({ startTime?: string; steps?: { countSum?: unknown } | null } | null)[];
         nextPageToken?: string }>(`${API}/dataTypes/steps/dataPoints:rollUp`,
-        { method: "POST", body: JSON.stringify({ range: { startTime: start, endTime: end }, windowSize: "3600s" }) });
+        { method: "POST", body: JSON.stringify({ range: { startTime: start, endTime: end }, windowSize: "3600s",
+          dataSourceFamily: "users/me/dataSourceFamilies/google-wearables" }) });
       if (res.nextPageToken) throw new Error("Unexpected steps rollUp paging");
       return (res.rollupDataPoints ?? []).flatMap((p) => {
         const count = p?.steps?.countSum;
