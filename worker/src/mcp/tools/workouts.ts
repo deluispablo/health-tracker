@@ -1,3 +1,5 @@
+import { roundOneDecimal as round } from "./stats";
+
 interface WorkoutRow {
   source_id: string;
   local_date: string;
@@ -21,7 +23,6 @@ function calendarTime(date: string): number {
   return time;
 }
 
-const round = (value: number | null): number | null => value === null ? null : Math.round(value * 10) / 10;
 const localTime = (ts: number, offset: number): string => new Date((ts + offset * 60) * 1000).toISOString().slice(0, 16);
 
 export async function healthWorkouts(db: D1Database, { start, end }: { start: string; end: string }) {

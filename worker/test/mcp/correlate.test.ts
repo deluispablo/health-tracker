@@ -143,14 +143,13 @@ describe("T17 AC2/AC3 health_correlate", () => {
 
 describe("T17 correlate validation and AC5 bounded SELECT", () => {
   const badDate = "date must be a real calendar date in YYYY-MM-DD format";
-  const badNames = `x and y must be distinct names from: ${names.join(", ")}`;
   const invalid: [Partial<Args>, string][] = [
     ...["", "2026-1-01", "2026-02-30", "2026-02-29", "1999-12-31", "2100-01-01", "20260101", "2026-01-01T00:00:00Z"]
       .flatMap((day): [Partial<Args>, string][] => [[{ start: day }, badDate], [{ end: day }, badDate]]),
     [{ end: "2025-12-31" }, "range must contain 1 to 365 dates"], [{ end: "2027-01-01" }, "range must contain 1 to 365 dates"],
-    [{ x: "rhr", y: "rhr" }, badNames],
+    [{ x: "rhr", y: "rhr" }, `metric "rhr" is repeated in x and y; valid: ${names.join(", ")}`],
     ...["bedtime_local", "waketime_local", "computed_at", "workout_min", "hr_wear_min", "z_ln_rmssd", "z_rhr", "z_sleep", "", "rhr; DROP TABLE event"]
-      .flatMap((name): [Partial<Args>, string][] => [[{ x: name }, badNames], [{ y: name }, badNames]]),
+      .flatMap((name): [Partial<Args>, string][] => [[{ x: name }, `unknown x metric "${name}"; valid: ${names.join(", ")}`], [{ y: name }, `unknown y metric "${name}"; valid: ${names.join(", ")}`]]),
     ...[-1, 8, 0.5, Infinity, -Infinity, NaN].map((max_lag): [Partial<Args>, string] => [{ max_lag }, "max_lag must be an integer from 0 to 7"]),
   ];
   it.each(invalid)("rejects %j before preparing SQL", async (overrides, message) => {

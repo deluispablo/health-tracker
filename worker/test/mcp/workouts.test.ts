@@ -1,6 +1,7 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { healthDaily } from "../../src/mcp/tools/daily";
 import { healthWorkouts } from "../../src/mcp/tools/workouts";
 
 interface Workout {
@@ -39,6 +40,16 @@ describe("T10f AC5 healthWorkouts", () => {
       local_date: "2026-10-02", type: "CARDIO_WORKOUT", start_local: "2026-10-02T14:19", end_local: "2026-10-02T15:14", tz_offset_min: 120,
       duration_min: 55.2, avg_hr: 119.3, max_hr: null, kcal: 336.1, azm: 40, distance_m: 1234.6,
     }], count: 1 });
+  });
+
+  it("rounds daily workout minutes to the same precision as workout duration", async () => {
+    await seed("daily-rounding");
+    await env.DB.prepare("INSERT INTO daily_summary (local_date, workout_min, computed_at) VALUES ('2026-10-02', 55.18333333333333, 1)").run();
+    const args = { start: "2026-10-02", end: "2026-10-02" };
+    const daily = await healthDaily(env.DB, { ...args, metrics: ["workout_min"] });
+    const out = await query(env.DB, args);
+    expect(daily.rows).toEqual([["2026-10-02", 55.2]]);
+    expect(daily.rows[0][1]).toBe(out.workouts[0].duration_min);
   });
 
   it("selects stored local dates inclusively for every source and orders by start_ts then source_id", async () => {

@@ -7,7 +7,7 @@ const DAY = 86_400_000;
 export async function healthTrend(db: D1Database, { metric, period, start, end }: {
   metric: string; period: "week" | "month"; start: string; end: string;
 }) {
-  if (!ANALYSIS_NAMES.includes(metric)) throw new RangeError(`metric must be one of: ${ANALYSIS_NAMES.join(", ")}`);
+  if (!ANALYSIS_NAMES.includes(metric)) throw new RangeError(`unknown metric "${metric}"; valid: ${ANALYSIS_NAMES.join(", ")}`);
   if (!["week", "month"].includes(period)) throw new RangeError("period must be week or month");
   const { days, series: [series] } = await analysisSeries(db, start, end, 0, [metric]);
   const values = series.filter((value) => value !== null);

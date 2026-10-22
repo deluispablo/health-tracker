@@ -160,7 +160,7 @@ describe("T18 AC1 validation and AC6 single bound SELECT", () => {
   const badDate = "date must be a real calendar date in YYYY-MM-DD format";
   const invalid: [Partial<Args>, string][] = [
     ...["", "bedtime_local", "waketime_local", "computed_at", "workout_min", "hr_wear_min", "z_rhr", "z_ln_rmssd", "z_sleep", "alcohol", "rhr; DROP TABLE event"]
-      .map((metric): [Partial<Args>, string] => [{ metric }, `metric must be one of: ${names.join(", ")}`]),
+      .map((metric): [Partial<Args>, string] => [{ metric }, `unknown metric "${metric}"; valid: ${names.join(", ")}`]),
     ...["", "day", "year", "Week", "MONTH"].map((period): [Partial<Args>, string] => [{ period }, "period must be week or month"]),
     ...["", "2026-1-01", "2026-02-30", "2026-02-29", "1999-12-31", "2100-01-01", "20260101", "2026-01-01T00:00:00Z"]
       .flatMap((day): [Partial<Args>, string][] => [[{ start: day }, badDate], [{ end: day }, badDate]]),

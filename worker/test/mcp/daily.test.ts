@@ -51,10 +51,11 @@ beforeEach(async () => {
 describe("AC1 health_daily", () => {
   it.each([
     [[], "metrics must not be empty"],
+    [["rhr", "pasos", "rhr"], `unknown metric "pasos"; valid: ${VIEW_COLUMNS.join(", ")}`],
     [["nope", "other"], `unknown metric "nope"; valid: ${VIEW_COLUMNS.join(", ")}`],
     [["rhr", "rhr", "nope", "other"], `unknown metric "nope"; valid: ${VIEW_COLUMNS.join(", ")}`],
-    [["rhr", "rhr"], 'metric "rhr" is repeated'],
-    [["steps", "rhr", "steps", "rhr"], 'metric "steps" is repeated'],
+    [["rhr", "rhr"], `metric "rhr" is repeated; valid: ${VIEW_COLUMNS.join(", ")}`],
+    [["steps", "rhr", "steps", "rhr"], `metric "steps" is repeated; valid: ${VIEW_COLUMNS.join(", ")}`],
   ] as const)("T28 AC1 rejects metrics %j with the first applicable exact message before reading", async (metrics, message) => {
     const [db, seen] = guarded();
     const pending = healthDaily(db, { start: "2026-10-01", end: "2026-10-02", metrics });
@@ -156,7 +157,7 @@ describe("AC1 health_daily", () => {
     expect(empty).toEqual({ columns: ["local_date", "rhr"], rows: [], units: { rhr: "bpm" }, coverage: { days_requested: 2, days_with_data: 0 } });
   });
 
-  it("T28 AC2 rounds every numeric metric to three decimals, preserving strings and integers", async () => {
+  it("T28 AC2 rounds minutes to one decimal and other numeric metrics to three, preserving strings and integers", async () => {
     const numeric = VIEW_COLUMNS.filter((column) => !["bedtime_local", "waketime_local", "cigarettes", "alcohol_g", "caffeine_mg", ...MOODS].includes(column));
     await summary("2026-10-05", { ...Object.fromEntries(numeric.map((column) => [column, 1.234567891])),
       skin_temp_dev: -1.2345, workout_min: 55.18333333333333, steps: Number.MAX_SAFE_INTEGER,
@@ -165,9 +166,9 @@ describe("AC1 health_daily", () => {
       "INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES ('2026-10-05', ?, 1.234567891, 1, 0)",
     ).bind(tracker)));
     const out = await healthDaily(env.DB, { start: "2026-10-05", end: "2026-10-05" });
-    const expected: Record<string, number | string> = { skin_temp_dev: -1.234, workout_min: 55.183,
+    const expected: Record<string, number | string> = { skin_temp_dev: -1.234, workout_min: 55.2,
       steps: Number.MAX_SAFE_INTEGER, bedtime_local: "23:15", waketime_local: "06:48" };
-    expect(out.rows).toEqual([["2026-10-05", ...VIEW_COLUMNS.map((column) => expected[column] ?? 1.235)]]);
+    expect(out.rows).toEqual([["2026-10-05", ...VIEW_COLUMNS.map((column) => expected[column] ?? (UNITS[column] === "min" ? 1.2 : 1.235))]]);
     expect(await env.DB.prepare("SELECT workout_min FROM daily_summary").first("workout_min")).toBe(55.18333333333333);
   });
 
