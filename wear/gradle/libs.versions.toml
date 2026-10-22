@@ -1,0 +1,12 @@
+[versions]
+androidGradlePlugin = "9.0.0"
+
+[libraries]
+androidx-core-ktx = "androidx.core:core-ktx:1.17.0"
+androidx-work-runtime-ktx = "androidx.work:work-runtime-ktx:2.10.5"
+androidx-wear-watchface-complications-data-source-ktx = "androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1"
+junit = "junit:junit:4.13.2"
+org-json = "org.json:json:20250517"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }

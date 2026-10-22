@@ -85,6 +85,7 @@ Freshness depends first on how often the watch syncs to the Google Health app (m
 | `worker/` | The Worker (TypeScript, strict), D1 migrations and tests |
 | `py/` | Offline tooling (uv, Python 3.12+): manual export and restore check |
 | `dashboards/` | HTML dashboards that call the MCP tools |
+| `wear/` | Wear OS watch face and its companion app: [docs/watch.md](docs/watch.md) |
 | `docs/` | Architecture reference |
 
 ## MCP tools

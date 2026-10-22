@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="watch_face_name">Health Tracker</string>
+    <string name="dial_label">Día de hoy</string>
+    <string name="dial_description">Día de hoy: sueño, entrenos, registros y pulso</string>
+    <string name="slot_1_label">Arriba a la derecha</string>
+    <string name="slot_2_label">Abajo a la derecha</string>
+    <string name="slot_3_label">Abajo a la izquierda</string>
+    <string name="slot_4_label">Arriba a la izquierda</string>
+</resources>
