@@ -20,6 +20,6 @@ private val STYLES = mapOf(
 private val OTHER = TrackerStyle(null, SUPPLEMENT_FILL, SUPPLEMENT_INK)
 
 val MOOD_STYLE = TrackerStyle(R.drawable.ic_mood_menu, 0xffb6c2ff.toInt(), 0xff141c45.toInt())
-val SUPPLEMENTS_STYLE = TrackerStyle(R.drawable.ic_melatonina, SUPPLEMENT_FILL, SUPPLEMENT_INK)
+val SUPPLEMENTS_STYLE = TrackerStyle(R.drawable.ic_suplementos, SUPPLEMENT_FILL, SUPPLEMENT_INK)
 
 fun styleOf(id: String): TrackerStyle = STYLES[id] ?: OTHER
