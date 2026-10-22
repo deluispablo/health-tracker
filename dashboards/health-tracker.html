@@ -79,8 +79,8 @@
   .page-h { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin: 0 0 12px; min-height: 48px; }
   .page-t { font-size: 22px; line-height: 28px; font-weight: var(--w-title); letter-spacing: -.01em; }
   .page-d { font: 400 13px/18px var(--font-sans); color: var(--muted); }
-  .today-grid { display: grid; gap: 12px; }
-  .col { display: grid; gap: 12px; align-content: start; min-width: 0; }
+  .today-grid { display: grid; align-items: start; gap: 12px; }
+  .col { display: grid; align-items: start; gap: 12px; align-content: start; min-width: 0; }
   @container main (min-width: 700px) {
     .today-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; }
     .col { gap: 16px; }
@@ -94,7 +94,7 @@
   }
 
   /* ---- Today: the dial beside one surface of metrics ---- */
-  .today { display: grid; gap: 16px; }
+  .today { display: grid; align-items: start; gap: 16px; }
   .dialcol { min-width: 0; }
   .dialcol .ht-card-h { margin-bottom: 0; }
   .mets { background: var(--surface); border-radius: var(--radius-md); padding: 2px 16px; min-width: 0; align-self: start; }
@@ -102,7 +102,7 @@
   .met + .met { border-top: 1px solid var(--line); }
   .met-h { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; min-height: 24px; }
   .met-l { font-size: 14px; line-height: 20px; font-weight: var(--w-strong); color: var(--muted); }
-  .met-v { font: 500 28px/34px var(--font-sans); letter-spacing: -.01em; white-space: nowrap; margin-top: 2px; }
+  .met-v { font: 500 28px/34px var(--font-sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; margin-top: 2px; }
   .met-v.is-text { font: var(--w-strong) 15px/22px var(--font-sans); color: var(--muted); }
   .met-vr { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
   .met-d { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; font-size: 13px; line-height: 18px; color: var(--muted); margin-top: 6px; }
@@ -146,7 +146,7 @@
   .ht-lang { display: inline-flex; background: var(--surface-2); border-radius: var(--radius-full); padding: 0; }
   .ht-lang button { min-height: 48px; min-width: 48px; padding: 0 12px; border: 0; background: none; border-radius: var(--radius-full); cursor: pointer;
     font: 500 13px/16px var(--font-sans); letter-spacing: .04em; color: var(--muted); }
-  .ht-lang button[aria-pressed="true"], .sl-seg button[aria-pressed="true"], .hv-seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 2px var(--primary); }
+  .ht-lang button[aria-pressed="true"], .sl-seg button[aria-pressed="true"], .hv-seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: var(--w-title); }
 
   /* ---- notices ---- */
   .notice { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; padding: 14px 16px; border-radius: var(--radius-md); background: var(--attention-container); color: var(--on-attention-container); margin: 4px 0 16px; }
@@ -183,7 +183,7 @@
 
   /* ---- steps ---- */
   .ht-steps-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
-  .ht-steps-n { font: 500 40px/44px var(--font-sans); letter-spacing: -.02em; white-space: nowrap; }
+  .ht-steps-n { font: 500 40px/44px var(--font-sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .ht-steps-g { font-size: 13px; line-height: 18px; color: var(--muted); }
   .ht-bar { position: relative; height: 10px; border-radius: var(--radius-full); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong); margin: 16px 0 8px; }
   .ht-bar-f { position: absolute; inset: 0 auto 0 0; border-radius: var(--radius-full); background: var(--m-steps); }
@@ -191,7 +191,7 @@
   .ht-bar-cap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; line-height: 18px; color: var(--muted); }
 
   /* ---- tracker summary ---- */
-  .ht-trk { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .ht-trk { display: grid; align-items: start; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .ht-trk li { background: var(--surface-2); border-radius: var(--radius-md); padding: 12px; min-height: 64px; min-width: 0; }
   .ht-trk-h { display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; font-weight: var(--w-strong); }
   .ht-trk-v { font-size: 15px; line-height: 22px; font-weight: var(--w-strong); margin-top: 4px; overflow-wrap: anywhere; }
@@ -247,7 +247,7 @@
   .tl-d .det-h { padding-right: 0; }
   .det-h b { font-weight: var(--w-title); }
   .det-w { font: 500 13px/18px var(--font-mono); color: var(--muted); margin: 2px 0 8px; }
-  .det-big { font: 500 20px/26px var(--font-sans); white-space: nowrap; margin-bottom: 4px; }
+  .det-big { font: 500 20px/26px var(--font-sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; margin-bottom: 4px; }
   .det dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 16px; margin: 0; }
   .det dt { color: var(--muted); display: flex; align-items: center; gap: 6px; min-width: 0; }
   .det dd { margin: 0; text-align: right; font-size: 13px; white-space: nowrap; }
@@ -292,10 +292,10 @@
   .ht-tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
     background: var(--surface); padding: 0 max(4px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(4px, env(safe-area-inset-left, 0px)); }
   .ht-tabs { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: var(--tabbar-height); }
-  .ht-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: var(--target-min); border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 12px; line-height: 16px; font-weight: var(--w-strong); padding: 6px 0; }
+  .ht-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: var(--target-min); border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 12px; line-height: 16px; font-weight: var(--w); padding: 6px 0; }
   .ht-tab-i { display: grid; place-items: center; width: 56px; height: 30px; border-radius: var(--radius-full); transition: background var(--dur-base) var(--ease-standard); }
   .ht-tab[aria-selected="true"] { color: var(--ink); font-weight: var(--w-title); }
-  .ht-tab[aria-selected="true"] .ht-tab-i { background: var(--container); color: var(--on-container); box-shadow: inset 0 0 0 2px var(--primary); }
+  .ht-tab[aria-selected="true"] .ht-tab-i { background: var(--container); color: var(--on-container); }
   .ht-tab:focus-visible { outline-offset: -4px; border-radius: var(--radius-md); }
 
   /* ---- quick log: docked above the tab bar on phones ---- */
@@ -369,8 +369,7 @@
     .ht-tab { flex-direction: row; justify-content: flex-start; gap: 4px; min-height: 48px; padding: 0 12px 0 0; border-radius: var(--radius-full); font-size: 15px; line-height: 20px; }
     .ht-tab-i { width: 44px; height: 32px; background: none !important; }
     .ht-tab:hover { background: var(--surface-2); }
-    .ht-tab[aria-selected="true"] { background: var(--container); color: var(--on-container); box-shadow: inset 0 0 0 2px var(--primary); }
-    .ht-tab[aria-selected="true"] .ht-tab-i { box-shadow: none; }
+    .ht-tab[aria-selected="true"] { background: var(--container); color: var(--on-container); }
     .ht-tab:focus-visible { outline-offset: 2px; border-radius: var(--radius-full); }
     .top-r { flex-direction: column; align-items: flex-start; margin: auto 0 0; gap: 12px; }
     /* the pane is one screen tall: chips and the undo row stay put, the timeline scrolls inside, totals stay at the bottom */
@@ -416,7 +415,7 @@
   .sl-nav { display: flex; align-items: center; gap: 2px; }
   .sl-nav-l { font: 500 13px/18px var(--font-mono); color: var(--muted); padding: 0 4px; white-space: nowrap; }
   .sl-nav .ht-icon-btn[aria-disabled="true"] { opacity: .35; cursor: default; }
-  .sl-big { font: 500 40px/44px var(--font-sans); letter-spacing: -.02em; white-space: nowrap; }
+  .sl-big { font: 500 40px/44px var(--font-sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .sl-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
   .sl-sub { font-size: 13px; line-height: 18px; color: var(--muted); margin-top: 4px; }
   .sl-sub .ht-mono { color: var(--ink); }
@@ -452,7 +451,7 @@
   /* ==== end Sleep tab ==== */
 
   /* ==== Health tab ==== */
-  .hv-grid { display: grid; gap: 12px; }
+  .hv-grid { display: grid; align-items: start; gap: 12px; }
   @container main (min-width: 700px) { .hv-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; } }
   .hv-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 8px; }
   .hv-ctl-g { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
@@ -464,7 +463,7 @@
   .hv-row:first-child { border-top: 0; padding-top: 4px; }
   .hv-row-h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
   .hv-name { font-size: 13px; line-height: 18px; font-weight: var(--w-strong); color: var(--muted); }
-  .hv-val { font: 500 24px/30px var(--font-sans); white-space: nowrap; }
+  .hv-val { font: 500 24px/30px var(--font-sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .hv-row .ht-strip { max-width: 220px; margin-top: 6px; }
   .hv-val.is-text { font: var(--w-strong) 15px/22px var(--font-sans); color: var(--muted); }
   .hv-sub { display: flex; flex-wrap: wrap; gap: 0 12px; font-size: 12px; line-height: 16px; color: var(--muted); }
@@ -473,8 +472,8 @@
   .hv-cap { min-height: 16px; margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--muted); }
   .hv-evs-l { margin-top: 12px; font-size: 12px; line-height: 16px; color: var(--muted); }
   .hv-evs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-  .hv-ev { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: none; color: var(--ink); font-size: 13px; line-height: 18px; cursor: pointer; }
-  .hv-ev[aria-pressed="true"] { background: var(--container); color: var(--on-container); border: 2px solid var(--primary); }
+  .hv-ev { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px; border: 2px solid transparent; border-radius: var(--radius-md); background: none; color: var(--ink); font-size: 13px; line-height: 18px; cursor: pointer; }
+  .hv-ev[aria-pressed="true"] { background: var(--container); color: var(--on-container); font-weight: var(--w-title); }
   .hv-ev .ht-mono { font-size: 12px; }
   .hv-key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 12px; line-height: 16px; color: var(--muted); }
   .hv-key span { display: inline-flex; align-items: center; gap: 6px; }
@@ -482,13 +481,13 @@
   /* ==== end Health tab ==== */
 
   /* ==== Activity tab ==== */
-  .act-grid { display: grid; gap: 12px; }
+  .act-grid { display: grid; align-items: start; gap: 12px; }
   @container main (min-width: 700px) { .act-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; } }
   .act-chart { margin-top: 12px; }
   .act-chart svg { width: 100%; height: auto; overflow: visible; }
   .act-lines { display: grid; gap: 2px; margin-top: 8px; font-size: 13px; line-height: 18px; color: var(--muted); }
   .act-sub { margin-top: 8px; font-size: 13px; line-height: 18px; color: var(--muted); }
-  .act-big { font: 500 28px/32px var(--font-sans); white-space: nowrap; }
+  .act-big { font: 500 28px/32px var(--font-sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .act-big small { font: 400 13px/18px var(--font-sans); color: var(--muted); margin-left: 6px; }
   .act-h3 { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; line-height: 18px; font-weight: var(--w-strong); color: var(--muted); }
   .act-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 12px; line-height: 16px; color: var(--muted); }
@@ -680,16 +679,16 @@
     'quick.blocked': ['{x}: not saved. Use Retry.', '{x}: no se ha guardado. Usa Reintentar.'],
     'undo.undo': ['Undo', 'Deshacer'],
     'undo.retry': ['Retry', 'Reintentar'],
-    'undo.logged': ['{x} · {t}', '{x} · {t}'],
-    'undo.mood': ['Mood: {m} · {t}', 'Ánimo: {m} · {t}'],
-    'undo.done': ['Logged {x} · {t}', '{x} registrado · {t}'],
-    'undo.moodDone': ['Logged mood: {m} · {t}', 'Ánimo registrado: {m} · {t}'],
-    'undo.failed': ['Not saved: {x} · {t}', 'No se ha guardado: {x} · {t}'],
-    'undo.undone': ['Removed: {x} · {t}', 'Eliminado: {x} · {t}'],
-    'mood.title': ['Mood · {t}', 'Ánimo · {t}'],
+    'undo.logged': ['{x} at {t}', '{x} a las {t}'],
+    'undo.mood': ['Mood: {m} at {t}', 'Ánimo: {m} a las {t}'],
+    'undo.done': ['Logged {x} at {t}', '{x} registrado a las {t}'],
+    'undo.moodDone': ['Logged mood: {m} at {t}', 'Ánimo registrado: {m} a las {t}'],
+    'undo.failed': ['Not saved: {x} at {t}', 'No se ha guardado: {x} a las {t}'],
+    'undo.undone': ['Removed: {x} at {t}', 'Eliminado: {x} a las {t}'],
+    'mood.title': ['Mood at {t}', 'Ánimo a las {t}'],
     'mood.close': ['Close', 'Cerrar'],
     'mood.button': ['Mood: {m}', 'Ánimo: {m}'],
-    'mood.last': ['Last: {m} · {t}', 'Último: {m} · {t}'],
+    'mood.last': ['Last: {m} at {t}', 'Último: {m} a las {t}'],
     'mood.hint': ['Tap one to save it at the current time. You can log more than one a day.', 'Toca una cara para guardarla con la hora actual. Puedes registrar varias al día.'],
     'mood.genial': ['great', 'genial'],
     'mood.bien': ['good', 'bien'],
@@ -703,10 +702,10 @@
     'dial.ariaLogs': ['Logs: {x}.', 'Registros: {x}.'],
     'dial.ariaWorkout': ['Workout {x}.', 'Entreno {x}.'],
     'dial.ariaSteps': ['Steps per hour around the rim.', 'Pasos por hora en el borde.'],
-    'dial.legendWorkout': ['Workout · steps', 'Entreno · pasos'],
-    'sleep.line': ['{bed} → {wake} · {d} vs your usual range ({n} days)', '{bed} → {wake} · {d} frente a tu rango habitual ({n} días)'],
+    'dial.legendWorkout': ['Workout and steps', 'Entreno y pasos'],
+    'sleep.line': ['{bed} → {wake}: {d} vs your usual range ({n} days)', '{bed} → {wake}: {d} frente a tu rango habitual ({n} días)'],
     'sleep.label': ['Asleep last night', 'Sueño de anoche'],
-    'rec.label': ['Recovery · mostly from:', 'Recuperación · sobre todo por:'],
+    'rec.label': ['Recovery, mostly from:', 'Recuperación, sobre todo por:'],
     'rec.typical': ['Typical', 'Habitual'],
     'rec.lower': ['Lower', 'Más baja'],
     'rec.higher': ['Higher', 'Más alta'],
@@ -751,9 +750,9 @@
     'hr.legend': ['Heart rate, bpm', 'Pulso, lpm'],
     'hr.before': ['before', 'antes'],
     'hr.after': ['after', 'después'],
-    'hr.daySum': ['Low {lo} at {lt} · high {hi} at {ht} (workout). No data {gap}.', 'Mínimo {lo} a las {lt} · máximo {hi} a las {ht} (entreno). Sin datos {gap}.'],
+    'hr.daySum': ['Low {lo} at {lt}; high {hi} at {ht} (workout). No data {gap}.', 'Mínimo {lo} a las {lt}; máximo {hi} a las {ht} (entreno). Sin datos {gap}.'],
     'hr.eventCap': ['Event view: 90 min before and after the {x} at {t}', 'Vista Evento: 90 min antes y después del {x} de las {t}'],
-    'hr.eventSum': ['30-min mean before {a} → after {b} bpm · {d} bpm', 'Media 30 min antes {a} → después {b} lpm · {d} lpm'],
+    'hr.eventSum': ['30-min mean before {a} → after {b} bpm; {d} bpm', 'Media 30 min antes {a} → después {b} lpm; {d} lpm'],
     'hr.ariaDay': ['Heart rate for the whole day, low {lo} and high {hi} bpm, with {n} logs marked.', 'Pulso de todo el día, mínimo {lo} y máximo {hi} lpm, con {n} registros marcados.'],
     'hr.ariaEvent': ['Heart rate {a}–{b} around the {x} at {t}. 30-min mean before {m1} bpm, after {m2} bpm.', 'Pulso de {a} a {b} alrededor del {x} de las {t}. Media 30 min antes {m1} lpm, después {m2} lpm.'],
     'table.show': ['Show as table', 'Ver como tabla'],
@@ -762,21 +761,21 @@
     'trend.mean7': ['7-day mean', 'Media 7 días'],
     'trend.day': ['Each day', 'Cada día'],
     'trend.band': ['Usual range', 'Rango habitual'],
-    'trend.unit': ['ms · 28 days', 'ms · 28 días'],
-    'trend.sum': ['7-day mean {m} ms · 2 days below range, both after alcohol the night before. Shaded columns: alcohol days.', 'Media 7 días {m} ms · 2 días por debajo del rango, los dos con alcohol la noche antes. Columnas sombreadas: días con alcohol.'],
+    'trend.unit': ['ms over 28 days', 'ms en 28 días'],
+    'trend.sum': ['7-day mean {m} ms; 2 days below range, both after alcohol the night before. Shaded columns: alcohol days.', 'Media 7 días {m} ms; 2 días por debajo del rango, los dos con alcohol la noche antes. Columnas sombreadas: días con alcohol.'],
     'trend.aria': ['{x}, 28 days. Usual range {lo}–{hi}. {n} days outside it.', '{x}, 28 días. Rango habitual {lo}–{hi}. {n} días fuera de él.'],
     'hyp.title': ['Last night', 'Anoche'],
     'hyp.AWAKE': ['Awake', 'Despierto'],
     'hyp.REM': ['REM', 'REM'],
     'hyp.LIGHT': ['Light', 'Ligero'],
     'hyp.DEEP': ['Deep', 'Profundo'],
-    'hyp.sum': ['Before bed: alcohol {a}, cigarette {c}, mood {m}. Deep {d} · REM {r} · awake {w}.', 'Antes de acostarte: alcohol {a}, cigarro {c}, ánimo {m}. Profundo {d} · REM {r} · despierto {w}.'],
+    'hyp.sum': ['Before bed: alcohol {a}, cigarette {c}, mood {m}. Deep {d}; REM {r}; awake {w}.', 'Antes de acostarte: alcohol {a}, cigarro {c}, ánimo {m}. Profundo {d}; REM {r}; despierto {w}.'],
     'hyp.aria': ['Hypnogram. Bed {bed}, woke {wake}. {x}', 'Hipnograma. Acostado {bed}, despierto {wake}. {x}'],
     'ww.titleHrv': ['HRV the next morning', 'HRV la mañana siguiente'],
-    'ww.unit': ['ms · 90 days', 'ms · 90 días'],
+    'ww.unit': ['ms over 90 days', 'ms en 90 días'],
     'ww.with': ['Nights with {x}', 'Noches con {x}'],
     'ww.without': ['Nights without', 'Noches sin'],
-    'ww.n': ['n = {n} · mean {m}', 'n = {n} · media {m}'],
+    'ww.n': ['{n} nights; mean {m}', '{n} noches; media {m}'],
     'ww.result': ['With alcohol, HRV {d} on average (95% CI {lo} to {hi}).', 'Con alcohol, HRV {d} de media (IC 95 % {lo} a {hi}).'],
     'ww.note': ['These go together; it does not show that one causes the other. Later bedtimes on those nights could explain part of it.', 'Van juntos; no demuestra que uno cause lo otro. Acostarte más tarde esas noches podría explicar parte.'],
     'ww.titleCig': ['Sleep after a cigarette after 21:00', 'Sueño tras un cigarro después de las 21:00'],
@@ -787,7 +786,7 @@
     'bars.hourD': ['Steps by hour, {d}', 'Pasos por hora, {d}'],
     'bars.goal': ['goal {n}', 'objetivo {n}'],
     'bars.met': ['{a} of {b} days ≥ goal', '{a} de {b} días ≥ objetivo'],
-    'bars.peak': ['peak {n} · {h}', 'máx. {n} · {h}'],
+    'bars.peak': ['Peak of {n} at {h}', 'Pico de {n} a las {h}'],
     'bars.ariaDay': ['Steps per day, {n} days, goal {g}. {a} days reach the goal.', 'Pasos por día, {n} días, objetivo {g}. {a} días alcanzan el objetivo.'],
     'bars.ariaHour': ['{x}. Peak {n} between {h}.', '{x}. Máximo {n} entre las {h}.'],
     'bars.today': ['today', 'hoy'],
@@ -843,7 +842,7 @@
     'ev.emptyT': ['Nothing logged today', 'Nada registrado hoy'],
     'ev.emptyB': ['Use the quick log to add one now.', 'Usa el registro rápido para añadir uno ahora.'],
     'ev.emptyPast': ['Nothing logged that day', 'Nada registrado ese día'],
-    'ev.since': ['Since midnight · {d}', 'Desde medianoche · {d}'],
+    'ev.since': ['Since midnight: {d}', 'Desde medianoche: {d}'],
     'ev.listR': ['Day timeline', 'Cronología del día'],
     'day.navR': ['Choose day', 'Elegir día'],
     'day.prev': ['Previous day, {d}', 'Día anterior, {d}'],
@@ -873,7 +872,7 @@
     'quick.logCount': ['Log {x} now, {n} today', 'Registrar {x} ahora, {n} hoy'],
     'quick.unavailable': ['Logging is unavailable in this view.', 'No se puede registrar en esta vista.'],
     'undo.dismiss': ['Dismiss', 'Cerrar'],
-    'undo.undoFailed': ["Couldn't undo: {x} · {t}", 'No se ha podido deshacer: {x} · {t}'],
+    'undo.undoFailed': ["Couldn't undo: {x} at {t}", 'No se ha podido deshacer: {x} a las {t}'],
     'undo.undoLabel': ['Undo {x} at {t}', 'Deshacer {x} de las {t}'],
     'sync.never': ['Not synced yet', 'Aún sin sincronizar'],
     'vs.below': ['below {r}', 'por debajo de {r}'],
@@ -924,14 +923,14 @@
     'hv.days': ['{n} days', '{n} días'],
     'hv.shade': ['Mark days with', 'Marcar días con'],
     'hv.none': ['None', 'Ninguno'],
-    'hv.sum': ['{n} days · {k} unusual days', '{n} días · {k} días fuera de lo habitual'],
-    'hv.sum0': ['{n} days · none unusual', '{n} días · ninguno fuera de lo habitual'],
-    'hv.sum1': ['{n} days · 1 unusual day', '{n} días · 1 día fuera de lo habitual'],
-    'hv.sumMarked': ['{n} days · {k} unusual days · {m} with {x}', '{n} días · {k} días fuera de lo habitual · {m} con {x}'],
-    'hv.sumMarked0': ['{n} days · none unusual · {m} with {x}', '{n} días · ninguno fuera de lo habitual · {m} con {x}'],
-    'hv.sumMarked1': ['{n} days · 1 unusual day · {m} with {x}', '{n} días · 1 día fuera de lo habitual · {m} con {x}'],
-    'hv.dayVal': ['{d} · {v}', '{d} · {v}'],
-    'hv.noVal': ['{d} · no reading', '{d} · sin lectura'],
+    'hv.sum': ['{n} days: {k} unusual days', '{n} días: {k} días fuera de lo habitual'],
+    'hv.sum0': ['{n} days: none unusual', '{n} días: ninguno fuera de lo habitual'],
+    'hv.sum1': ['{n} days: 1 unusual day', '{n} días: 1 día fuera de lo habitual'],
+    'hv.sumMarked': ['{n} days: {k} unusual days; {m} with {x}', '{n} días: {k} días fuera de lo habitual; {m} con {x}'],
+    'hv.sumMarked0': ['{n} days: none unusual; {m} with {x}', '{n} días: ninguno fuera de lo habitual; {m} con {x}'],
+    'hv.sumMarked1': ['{n} days: 1 unusual day; {m} with {x}', '{n} días: 1 día fuera de lo habitual; {m} con {x}'],
+    'hv.dayVal': ['{d}: {v}', '{d}: {v}'],
+    'hv.noVal': ['{d}: no reading', '{d}: sin lectura'],
     'hv.marked': ['{x} that day', '{x} ese día'],
     'hv.aria': ['{x} over {n} days. Usual range {r}. {k} unusual days. {d}: {v}.', '{x} en {n} días. Rango habitual {r}. {k} días fuera de lo habitual. {d}: {v}.'],
     'hv.aria0': ['{x} over {n} days. Usual range {r}. No unusual days. {d}: {v}.', '{x} en {n} días. Rango habitual {r}. Ningún día fuera de lo habitual. {d}: {v}.'],
@@ -939,8 +938,8 @@
     'hv.ariaLearn': ['{x} over {n} days. {d}: {v}.', '{x} en {n} días. {d}: {v}.'],
     'hv.ref': ['Clinical range {x}', 'Rango clínico {x}'],
     'hv.atLeast': ['≥{x}', '≥{x}'],
-    'hv.hrSum': ['Low {lo} at {lt} · high {hi} at {ht}', 'Mínimo {lo} a las {lt} · máximo {hi} a las {ht}'],
-    'hv.hrAt': ['{t} · {v} bpm', '{t} · {v} lpm'],
+    'hv.hrSum': ['Low {lo} at {lt}; high {hi} at {ht}', 'Mínimo {lo} a las {lt}; máximo {hi} a las {ht}'],
+    'hv.hrAt': ['{t}: {v} bpm', '{t}: {v} lpm'],
     'hv.hrEmptyT': ['No heart rate yet today', 'Aún no hay pulso de hoy'],
     'hv.hrEmptyB': ['It appears after the watch syncs.', 'Aparece cuando el reloj sincroniza.'],
     'hv.logs': ['Select a log to see 90 minutes either side', 'Elige un registro para ver 90 minutos antes y después'],
@@ -1218,10 +1217,10 @@
     'sl.ref': ['Adults: 7–9 h', 'Adultos: 7–9 h'],
     'sl.inBed': ['In bed', 'En cama'],
     'sl.naps': ['Naps', 'Siestas'],
-    'sl.nap': ['{a} → {b} · {d} asleep', '{a} → {b} · {d} dormido'],
-    'sl.stageTip': ['{x} · {a}–{b} · {d}', '{x} · {a}–{b} · {d}'],
+    'sl.nap': ['{a} → {b}: {d} asleep', '{a} → {b}: {d} dormido'],
+    'sl.stageTip': ['{x}: {a}–{b}; {d}', '{x}: {a}–{b}; {d}'],
     'sl.hypEmpty': ['No stages recorded for this night.', 'No hay fases registradas esta noche.'],
-    'sl.hypSum': ['Deep {d} · REM {r} · light {l} · awake {w}.', 'Profundo {d} · REM {r} · ligero {l} · despierto {w}.'],
+    'sl.hypSum': ['Deep {d}; REM {r}; light {l}; awake {w}.', 'Profundo {d}; REM {r}; ligero {l}; despierto {w}.'],
     'sl.hypLogs': ['Logs before bed: {x}.', 'Registros antes de dormir: {x}.'],
     'sl.stagesT': ['Stages', 'Fases'],
     'sl.stagesS': ['vs your usual range, 28 nights', 'frente a tu rango habitual, 28 noches'],
@@ -1232,7 +1231,7 @@
     'sl.pDur': ['Asleep', 'Dormido'],
     'sl.pTime': ['Bed → wake', 'Acostarse → despertar'],
     'sl.trendAria': ['Sleep for {n} nights ending {d}. {k} of {m} nights in your usual range.', 'Sueño de {n} noches hasta el {d}. {k} de {m} noches en tu rango habitual.'],
-    'sl.trendSum': ['Average {a} · {k} of {m} nights in your usual range.', 'Media {a} · {k} de {m} noches en tu rango habitual.'],
+    'sl.trendSum': ['Average {a}; {k} of {m} nights in your usual range.', 'Media {a}; {k} de {m} noches en tu rango habitual.'],
     'sl.trendSumL': ['Average {a} over {m} nights.', 'Media {a} en {m} noches.'],
     'sl.bedUsual': ['Usual bedtime {a}–{b}, wake {c}–{d}.', 'Te acuestas normalmente entre {a} y {b} y te despiertas entre {c} y {d}.'],
     'sl.trendEmptyT': ['No nights to show yet', 'Aún no hay noches que mostrar'],
@@ -1342,7 +1341,7 @@
     'act.thisWeek': ['now', 'ahora'],
     'act.azmAria': ['Active zone minutes per week, {n} weeks. Reference {a}–{b}. This week so far {c}.', 'Minutos en zona activa por semana, {n} semanas. Referencia {a}–{b}. Esta semana, por ahora, {c}.'],
     'act.wk': ['Workouts, last 30 days', 'Entrenos, últimos 30 días'],
-    'act.wkCount': ['{n} workouts · {d} in total', '{n} entrenos · {d} en total'],
+    'act.wkCount': ['{n} workouts: {d} in total', '{n} entrenos: {d} en total'],
     'act.wkEmptyT': ['No workouts in the last 30 days', 'Sin entrenos en los últimos 30 días'],
     'act.wkEmptyB': ['Workouts recorded on the watch appear here after it syncs.', 'Los entrenos que registre el reloj aparecen aquí cuando sincroniza.'],
     'act.wkTime': ['Time', 'Hora'],
@@ -1355,7 +1354,7 @@
     'act.effWindow': ['last {n} days', 'últimos {n} días'],
     'act.effWith': ['After a workout day', 'Tras un día con entreno'],
     'act.effWithout': ['After other days', 'Tras el resto de días'],
-    'act.effN': [' · n = {n}', ' · n = {n}'],
+    'act.effN': [' ({n} nights)', ' ({n} noches)'],
     'act.effDiff': ['{d} asleep on nights after a workout day.', '{d} de sueño las noches tras un día con entreno.'],
     'act.effGateT': ['Not enough nights to compare yet', 'Aún no hay noches suficientes para comparar'],
     'act.effGate': ['It needs at least {k} nights in each group ({a} and {b} so far).', 'Hacen falta al menos {k} noches en cada grupo (llevas {a} y {b}).'],
@@ -1481,10 +1480,7 @@
   const sweep = (a1, a2) => ((a2 - a1) % 360 + 360) % 360;
   const arc = (c, r, a1, a2) => { const s = sweep(a1, a2), p = pt(c, r, a1), q = pt(c, r, a2); return 'M' + p + 'A' + r + ' ' + r + ' 0 ' + (s > 180 ? 1 : 0) + ' 1 ' + q; };
   const sector = (c, r, a1, a2) => 'M' + c + ' ' + c + 'L' + pt(c, r, a1) + arc(c, r, a1, a2).replace(/^M[^A]+/, '') + 'Z';
-  const mark = (size, now) => {
-    const a = L.sleepWedge('23:00', '07:00'), dot = now == null ? '' : (() => { const p = pt(24, 18, L.dialAngle(now)); return '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="4.5" fill="var(--primary)" stroke="var(--surface)" stroke-width="2"/>'; })();
-    return '<svg viewBox="0 0 48 48" width="' + size + '" height="' + size + '" aria-hidden="true" focusable="false"><circle cx="24" cy="24" r="18" fill="none" stroke="var(--ink)" stroke-opacity=".4" stroke-width="3"/><path d="' + sector(24, 14, a.a1, a.a2) + '" fill="var(--m-deep)"/><path d="M24 2.5v8" stroke="var(--ink)" stroke-width="3"/>' + dot + '</svg>';
-  };
+  const mark = (size) => '<svg viewBox="0 0 64 64" width="' + size + '" height="' + size + '" aria-hidden="true" focusable="false"><circle cx="32" cy="32" r="26" fill="none" stroke="var(--ink)" stroke-width="2.4"/><path d="M22.25 15.11A19.5 19.5 0 0 1 50.84 37.05" fill="none" stroke="var(--m-deep)" stroke-width="5" stroke-linecap="round"/><path d="M17.0 37L25.7 37L27.5 34.8L29.3 37L30.5 37L31.4 39.42L32.9 26L34.55 42.28L35.9 37L39.2 37L41.6 34.36L44.0 37L47.0 37" fill="none" stroke="var(--ink)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   /* ---- DOM helper: text always through text nodes; html only for trusted icon markup ---- */
   function h(tag, a, ...kids) {
@@ -1764,9 +1760,9 @@
     if (m.kind === 'cluster') {
       const e0 = m.members[0], same = m.members.every((e) => e.tracker_id === e0.tracker_id) && e0.k !== 'animo';
       kids.push(...head('', tn('tip.logs', m.members.length), hhmm(m.min) + ' – ' + hhmm(m.last)),
-        h('dl', {}, m.members.flatMap((e) => [h('dt', {}, shapeMark(e.k), evTitle(e)), h('dd', {}, h('span', { class: 'ht-mono', text: e.local_time }), evValue(e) ? ' · ' + evValue(e) : '')])));
+        h('dl', {}, m.members.flatMap((e) => [h('dt', {}, shapeMark(e.k), evTitle(e)), h('dd', {}, h('span', { class: 'ht-mono', text: e.local_time }), evValue(e) ? ': ' + evValue(e) : '')])));
       if (same) { const tot = m.members.reduce((a, e) => a + (finiteNum(e.value) ? e.value : 0), 0); kids.push(h('p', { class: 'det-sm', text: t('tip.total', { x: fmt.num(tot, lang, tot % 1 ? 1 : 0) + unitText(e0.unit) }) })); }
-      m.members.forEach((e) => { if (e.note_untrusted != null) kids.push(note(e.local_time + ' · ' + e.note_untrusted)); });
+      m.members.forEach((e) => { if (e.note_untrusted != null) kids.push(note(e.local_time + ': ' + e.note_untrusted)); });
       return kids;
     }
     if (m.kind === 'event') {
@@ -2001,7 +1997,7 @@
       const value = s.n === 0 ? '—' : c.key === 'animo' ? (s.mood ? t('mood.' + s.mood) : fmt.num(s.n, lang)) : amount(s.total, s.unit);
       const sub = s.n === 0 ? t(c.key === 'animo' ? 'sum.moodNone' : 'sum.none') : s.since == null ? t('sum.unknown') : past ? t('sum.last', { t: s.last }) : fmt.ago(s.since, lang);
       return h('li', {}, h('div', { class: 'ht-trk-h', html: c.key === 'animo' && s.mood ? face(s.mood, 20) : icon(c.key, 'ht-ico-sm') }, t('trk.' + c.key)),
-        h('div', { class: 'ht-trk-v' }, value, c.key === 'animo' && s.mood ? h('small', { text: ' · ' + tn('tip.logs', s.n) }) : null),
+        h('div', { class: 'ht-trk-v' }, value, c.key === 'animo' && s.mood ? h('small', { text: ' (' + tn('tip.logs', s.n) + ')' }) : null),
         h('div', { class: 'ht-trk-s' }, s.last && s.since != null ? h('time', { datetime: dayDate + 'T' + s.last, text: sub }) : sub));
     })), staleNote('trackers', 'sum'));
   }
@@ -2039,7 +2035,7 @@
         const f = it.kind === 'workout' ? workoutFacts(it.w) : sessionFacts(it.s, it.kind === 'nap');
         mark = h('i', { class: 'tl-m ' + (it.kind === 'workout' ? 'arc' : 'wedge'), style: it.kind === 'workout' ? null : '--k:var(--' + (it.kind === 'nap' ? 'm-light' : 'm-deep') + ')', 'aria-hidden': 'true' });
         name = h('span', { class: 'tl-n', html: f.icon }); name.append(f.title);
-        sub = h('span', { class: 'tl-s', text: it.kind === 'workout' ? [f.big, ...f.lines.slice(0, 1).map((x) => x[1])].filter(Boolean).join(' · ') : f.big });
+        sub = h('span', { class: 'tl-s', text: it.kind === 'workout' ? [f.big, ...f.lines.slice(0, 1).map((x) => x[1])].filter(Boolean).join('; ') : f.big });
         end = clockOf(it.end);
       }
       const known = Number.isFinite(it.start), when = known ? clockOf(it.start) : null, open = tlOpen.has(it.id), did = 'tld-' + (isLate ? 'l' : '') + i;
@@ -2167,7 +2163,7 @@
     const cap = h('p', { class: 'hv-cap', 'aria-hidden': 'true', text: idle });
     hover(wrap, cap, ser.map((_, i) => X(i)), (i) => {
       const x = ser[i], dd = fmt.day(x.date, lang);
-      return (x.v == null ? t('hv.noVal', { d: dd }) : t('hv.dayVal', { d: dd, v: fmt.vital(m, x.v, lang) })) + (marks && marks[i].v > 0 ? ' · ' + t('hv.marked', { x: chipName(hvMark[0]) }) : '');
+      return (x.v == null ? t('hv.noVal', { d: dd }) : t('hv.dayVal', { d: dd, v: fmt.vital(m, x.v, lang) })) + (marks && marks[i].v > 0 ? '; ' + t('hv.marked', { x: chipName(hvMark[0]) }) : '');
     }, idle, gl.gaps);
     return h('li', { class: 'hv-row' },
       h('div', { class: 'hv-row-h' }, h('span', { class: 'hv-name', text: name }), pill(L.rangeFlag(v, wide))),
@@ -2366,7 +2362,7 @@
       titles: series.map((x) => x.v == null ? t('gap.day', { d: fmt.day(x.date, lang) }) : t('act.dayTitle', { d: fmt.day(x.date, lang), n: n0(x.v) })),
       label: t('bars.ariaDay', { n: done.length, g: n0(GOAL), a: met }) }),
       actLegend(band && ['band', t('trend.band')], ['goal', t('bars.goal', { n: n0(GOAL) })], GOAL !== STEPS_REF[0] && ['ref', t('act.ref', { n: n0(STEPS_REF[0]) })], !past && ['part', t('act.legPart')], series.some((x) => x.v == null) && ['nodata', t('gap.key')]),
-      h('p', { class: 'act-sub', text: [avg == null ? null : t('act.avg', { n: n0(avg) }), band ? t('base.normal', { x: n0(Math.round(r.low)) + '–' + n0(Math.round(r.high)) }) : t('range.learning', { n: r.learning })].filter(Boolean).join(' · ') }),
+      h('p', { class: 'act-sub', text: [avg == null ? null : t('act.avg', { n: n0(avg) }), band ? t('base.normal', { x: n0(Math.round(r.low)) + '–' + n0(Math.round(r.high)) }) : t('range.learning', { n: r.learning })].filter(Boolean).join('; ') }),
       h('details', { class: 'act-more' }, h('summary', { text: t('act.about') }), h('p', { text: t('act.refNote', { a: n0(STEPS_REF[0]), b: n0(STEPS_REF[1]), c: n0(STEPS_REF[2]) }) })),
       actTable(series.slice().reverse().map((x) => [fmt.day(x.date, lang), x.v == null ? '—' : n0(x.v)])),
       staleNote('actDaily', 'trend', 'steps'));
@@ -2377,7 +2373,7 @@
     const w = L.act.weeks(S.actDaily.data, 'azm', dayDate, ACT_WEEKS), cur = w[ACT_WEEKS - 1], full = w.slice(0, -1).filter((x) => x.sum != null);
     if (w.every((x) => x.sum == null)) return swap(box, stateBox(t('act.azmEmptyT'), t('act.azmEmptyB')), staleNote('actDaily', 'azm', 'steps'));
     const n0 = (x) => fmt.num(x, lang), now0 = cur.sum ?? 0;
-    swap(box, h('p', { class: 'act-big' }, n0(now0), h('small', { text: t('u.min') + ' · ' + t('act.azmNow') })),
+    swap(box, h('p', { class: 'act-big' }, n0(now0), h('small', { text: t('u.min') + ': ' + t('act.azmNow') })),
       actBars({ values: w.map((x) => x.sum), partial: ACT_WEEKS - 1, dim: (q) => q < AZM_REF[0],
         refs: [{ v: AZM_REF[0], label: n0(AZM_REF[0]) }, { v: AZM_REF[1], label: n0(AZM_REF[1]) }],
         ticks: [0, 3].map((i) => [i, fmt.day(w[i].start, lang)]).concat([[ACT_WEEKS - 1, t('act.thisWeek')]]),
@@ -2594,7 +2590,7 @@
     document.querySelectorAll('[data-t-aria]').forEach((n) => { n.setAttribute('aria-label', t(n.getAttribute('data-t-aria'))); });
     document.querySelectorAll('[data-lang]').forEach((b) => { b.textContent = t('lang.' + b.dataset.lang); b.setAttribute('aria-pressed', String(b.dataset.lang === lang)); });
     TABS.forEach((n) => { $('tab-' + n).innerHTML = '<span class="ht-tab-i">' + icon(TAB_ICON[n]) + '</span>'; $('tab-' + n).append(h('span', { text: t('tab.' + n) })); });
-    const wm = $('wordmark'); wm.innerHTML = mark(36, 900); wm.append(h('span', { class: 'ht-wordmark-t', 'aria-hidden': 'true', text: t('app.name') }));
+    const wm = $('wordmark'); wm.innerHTML = mark(36); wm.append(h('span', { class: 'ht-wordmark-t', 'aria-hidden': 'true', text: t('app.name') }));
   }
   document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => {
     lang = L.pickLang(b.dataset.lang);
@@ -2680,7 +2676,7 @@
       const tk = y < 18 && ticks.find((k) => Math.abs(X(k.em) - x) < 8);
       if (tk) return { x: X(tk.em), y: 2, lines: [t('trk.' + tk.key), tk.hm] };
       const m = from + x / W * (to - from) - g.bed, bar = g.bars.find((b) => m >= b.a && m < b.b && Math.abs(Y(b.stage) + 11 - y) < 14) || g.bars.find((b) => m >= b.a && m < b.b);
-      return bar ? { x, y: Y(bar.stage) + 4, lines: [t('hyp.' + bar.stage), L.clock(g.bed + bar.a) + '–' + L.clock(g.bed + bar.b) + ' · ' + fmt.dur(bar.b - bar.a, lang)] } : null;
+      return bar ? { x, y: Y(bar.stage) + 4, lines: [t('hyp.' + bar.stage), L.clock(g.bed + bar.a) + '–' + L.clock(g.bed + bar.b) + ': ' + fmt.dur(bar.b - bar.a, lang)] } : null;
     });
     return fig;
   }
@@ -2773,20 +2769,20 @@
     const inR = withDur.filter((r) => L.rangeStatus(r[3], band) === 'in').length, mean = durs.reduce((a, b) => a + b, 0) / durs.length;
     const fig = h('div', { class: 'sl-fig', html: svgEl(W, AX + 4, out.join(''), true) }), svg = fig.firstChild;
     svg.setAttribute('aria-label', t('sl.trendAria', { n: SL.span, d: fmt.day(SL.night, lang), k: inR, m: withDur.length }));
-    const lateText = (d) => SL_TRK.filter(([id]) => late[d]?.[id]).map(([id, key]) => t('trk.' + key).toLowerCase() + ' ' + late[d][id].join(', ')).join(' · ');
+    const lateText = (d) => SL_TRK.filter(([id]) => late[d]?.[id]).map(([id, key]) => t('trk.' + key).toLowerCase() + ' ' + late[d][id].join(', ')).join('; ');
     const x0 = svg.querySelector('.sl-x');
     slTip(fig, W, (x) => {
       const i = Math.floor((x - G) / cw);
       if (i < 0 || i >= SL.span) { x0.setAttribute('visibility', 'hidden'); return null; }
       const r = rows[i], lt = lateText(r[0]);
       x0.setAttribute('x1', r2(CX(i))); x0.setAttribute('x2', r2(CX(i))); x0.setAttribute('visibility', 'visible');
-      return { x: CX(i), y: P1[0], lines: [fmt.day(r[0], lang), slFinite(r[3]) ? fmt.dur(r[3], lang) + (slFinite(r[1]) && slFinite(r[2]) ? ' · ' + L.clock(r[1]) + ' → ' + L.clock(r[2]) : '') : t('sl.noData'), lt ? t('sl.tipLate', { x: lt }) : null].filter(Boolean) };
+      return { x: CX(i), y: P1[0], lines: [fmt.day(r[0], lang), slFinite(r[3]) ? fmt.dur(r[3], lang) + (slFinite(r[1]) && slFinite(r[2]) ? '; ' + L.clock(r[1]) + ' → ' + L.clock(r[2]) : '') : t('sl.noData'), lt ? t('sl.tipLate', { x: lt }) : null].filter(Boolean) };
     });
     svg.addEventListener('pointerleave', () => x0.setAttribute('visibility', 'hidden'));
     const key = (style, label) => h('span', { style: 'display:inline-flex;align-items:center;gap:6px' }, h('i', { style: style, 'aria-hidden': 'true' }), label);
     const lateState = !pageLevel() && S.sllate.error && !S.sllate.data ? sourceState('sllate', 'sllate') : staleNote('sllate', 'sllate');
     swap(box,
-      h('div', { class: 'sl-cap' }, h('span', { text: t('sl.pDur') + ' · ' + t('sl.pTime') })),
+      h('div', { class: 'sl-cap' }, h('span', { text: t('sl.pDur') + '; ' + t('sl.pTime') })),
       fig,
       h('div', { class: 'sl-cap', 'aria-hidden': 'true' }, key('width:8px;height:8px;border-radius:50%;background:var(--m-deep)', t('sl.keyNight')),
         key('width:14px;height:8px;background:var(--band);box-shadow:inset 0 0 0 1px var(--line)', t('sl.keyBand')),
