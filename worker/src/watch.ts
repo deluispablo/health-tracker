@@ -35,11 +35,13 @@ export async function handleWatchLog(request: Request, env: AppEnv, now: number)
   }
   const body = await request.json().catch(() => null) as { tracker_id?: unknown; at?: unknown; idempotency_key?: unknown } | null;
   if (!body || typeof body.tracker_id !== "string" || !LOGGABLE.has(body.tracker_id)
-    || typeof body.at !== "string" || !watchKey(body.idempotency_key)) {
+    || typeof body.at !== "string") {
     return Response.json({ error: "tracker_id, at and idempotency_key are required" }, { status: 400 });
   }
+  const key = watchKey(body.idempotency_key);
+  if (!key) return Response.json({ error: "tracker_id, at and idempotency_key are required" }, { status: 400 });
   try {
-    const result = await logEvent(env.DB, { tracker_id: body.tracker_id, at: body.at, idempotency_key: watchKey(body.idempotency_key)! },
+    const result = await logEvent(env.DB, { tracker_id: body.tracker_id, at: body.at, idempotency_key: key },
       { now, tz: env.USER_TZ, idPrefix: WATCH_ID });
     // A replay (or a lost insert race) returns the stored event: only hand it back if it is this tap's tracker.
     if (result.event.tracker_id !== body.tracker_id) return new Response(null, { status: 409 });
