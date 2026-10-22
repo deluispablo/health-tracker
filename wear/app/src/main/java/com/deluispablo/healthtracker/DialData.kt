@@ -6,7 +6,8 @@ import org.json.JSONObject
 
 data class Span(val start: Int, val end: Int, val nap: Boolean = false)
 
-data class Mark(val t: Int, val k: String)
+/** A log at minute [t] of kind [k]; moods also name which one in [m], watch logs their key in [i]. */
+data class Mark(val t: Int, val k: String, val m: String? = null, val i: String? = null)
 
 data class DialData(
     val date: String,
@@ -30,7 +31,7 @@ fun parseDialData(json: String): DialData {
         // A malformed item is skipped so one bad row cannot blank the whole day.
         sleep = o.getJSONArray("sleep").items { it.span(it.getBoolean("nap")) },
         workouts = o.getJSONArray("workouts").items { it.span() },
-        events = o.getJSONArray("events").items { Mark(it.minute("t"), it.getString("k")) },
+        events = o.getJSONArray("events").items { Mark(it.minute("t"), it.getString("k"), it.optString("m").ifEmpty { null }, it.optString("i").ifEmpty { null }) },
         hr = List(96) { i -> if (hr.isNull(i)) null else hr.getInt(i) },
     )
 }

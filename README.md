@@ -76,6 +76,7 @@ flowchart LR
 | `/authorize`, `/oauth/google/callback` | Connector consent and Google sign-in (allowlisted email only) |
 | `/google/connect`, `/google/callback` | One-time Google Health consent; stores the encrypted refresh token |
 | `GET /watch/today` | Today's sleep, workouts, logs and 15-minute heart rate for the watch face, behind the `WATCH_TOKEN` bearer |
+| `POST /watch/log` | One log from the watch (coffee, cigarettes, alcohol or one of the eight moods) with an idempotency key, behind the same bearer; `DELETE` with the same key undoes it |
 | `/`, `/privacy`, `/terms`, `/favicon.ico` | Static home, privacy and terms pages (the Google OAuth consent screen links to them) and the brand icon, which MCP clients show next to the connector |
 
 Freshness depends first on how often the watch syncs to the Google Health app (minutes, sometimes hours), then on the 5-minute cron and the queue backlog. Details: [docs/architecture.md](docs/architecture.md).
@@ -177,7 +178,7 @@ Set each with `npx wrangler secret put <NAME> --config wrangler.production.jsonc
 | `TOKEN_ENC_KEY` | Base64 of exactly 32 random bytes; AES-256-GCM key for the stored refresh token |
 | `WEBHOOK_SECRET` | Webhook authorization value, including the `Bearer ` prefix (at least 16 characters) |
 | `WEBHOOK_SECRET_PREV` | Only during a [rotation](#rotating-the-webhook-secret) |
-| `WATCH_TOKEN` | Bearer token for the watch app's read-only `/watch/today` (at least 32 characters) |
+| `WATCH_TOKEN` | Bearer token for the watch app's `/watch/today` and `/watch/log`; it can only log the watch's trackers (at least 32 characters) |
 
 ### 3. Migrate and deploy
 

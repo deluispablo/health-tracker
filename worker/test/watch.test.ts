@@ -2,6 +2,7 @@ import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { route } from "../src/app";
+import { logEvent } from "../src/mcp/tools/trackers";
 
 const TOKEN = "watch-token-0123456789abcdef0123456789";
 const NOW = Date.parse("2026-10-21T20:00:00Z") / 1000;
@@ -112,6 +113,7 @@ describe("GET /watch/today", () => {
     ]);
     const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: { k: string }[]; totals: Record<string, number>; counts: Record<string, number> }>();
     expect(body.events.map((e) => e.k)).toEqual(["animo", "animo"]);
+    expect(body.events.map((e) => (e as { m?: string }).m)).toEqual(["bien", "triste"]);
     expect(body.totals).toEqual({ mood_bien: 1, mood_triste: 1 });
     expect(body.counts).toEqual({ animo: 2 });
   });
@@ -125,5 +127,102 @@ describe("GET /watch/today", () => {
       expect(res.status).toBe(401);
       expect(await res.text()).toBe("");
     }
+  });
+});
+
+const post = (body: unknown, authorization = `Bearer ${TOKEN}`) => route(
+  new Request("https://example.com/watch/log", { method: "POST", headers: { authorization }, body: JSON.stringify(body) }),
+  appEnv(), { fetch, now: () => NOW, sleep: () => Promise.resolve() },
+);
+
+describe("POST /watch/log", () => {
+  const tap = { tracker_id: "caffeine", at: "2026-10-21T19:58:00Z", idempotency_key: "tap-0001-abcd" };
+
+  it("logs a tap once and replays a retry", async () => {
+    const first = await post(tap);
+    expect(first.status).toBe(201);
+    const again = await post(tap);
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({ created: false, day_total: 80, event: { local_date: "2026-10-21" } });
+    const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: { t: number; k: string }[] }>();
+    expect(body.events).toEqual([{ t: 21 * 60 + 58, k: "cafe", i: "tap-0001-abcd" }]);
+  });
+
+  it("logs a mood", async () => {
+    const res = await post({ ...tap, tracker_id: "mood_cansado", idempotency_key: "tap-0002-abcd" });
+    expect(res.status).toBe(201);
+  });
+
+  it("rejects a bad token, other trackers, missing fields and bad times", async () => {
+    expect((await post(tap, `Bearer ${TOKEN.slice(0, -1)}x`)).status).toBe(401);
+    expect((await post({ ...tap, tracker_id: "weight" })).status).toBe(400);
+    expect((await post({ tracker_id: "caffeine" })).status).toBe(400);
+    expect((await post({ ...tap, at: "2026-10-01T10:00:00Z" })).status).toBe(400);
+    expect((await post({ ...tap, idempotency_key: "short" })).status).toBe(400);
+    expect((await route(new Request("https://example.com/watch/log", { headers: { authorization: `Bearer ${TOKEN}` } }),
+      appEnv(), { fetch, now: () => NOW, sleep: () => Promise.resolve() })).status).toBe(405);
+    const bad = await route(new Request("https://example.com/watch/log",
+      { method: "POST", headers: { authorization: `Bearer ${TOKEN}` }, body: "{" }),
+      appEnv(), { fetch, now: () => NOW, sleep: () => Promise.resolve() });
+    expect(bad.status).toBe(400);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM event").first<{ n: number }>())?.n).toBe(0);
+  });
+
+  it("never replays an event of another tracker", async () => {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO tracker (id, name, unit, value_type, default_value, min_value, max_value, created_at)
+        VALUES ('water', 'Agua', 'ml', 'amount', 250, 0, 2000, 1) ON CONFLICT(id) DO NOTHING`),
+      env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at)
+        VALUES ('kw_other-0001', 'water', ?, 120, '2026-10-21', 250, 'private', 'mcp', 1)`).bind(NOW - 60),
+    ]);
+    const res = await post({ ...tap, idempotency_key: "other-0001" });
+    expect(res.status).toBe(409);
+    expect(await res.text()).toBe("");
+  });
+});
+
+describe("DELETE /watch/log", () => {
+  const tap0 = { tracker_id: "caffeine", at: "2026-10-21T19:58:00Z" };
+  const del = (body: unknown, authorization = `Bearer ${TOKEN}`) => route(
+    new Request("https://example.com/watch/log", { method: "DELETE", headers: { authorization }, body: JSON.stringify(body) }),
+    appEnv(), { fetch, now: () => NOW, sleep: () => Promise.resolve() },
+  );
+
+  it("undoes a watch log and is safe to retry", async () => {
+    await post({ tracker_id: "cigarettes", at: "2026-10-21T19:50:00Z", idempotency_key: "undo-0001-abcd" });
+    const res = await del({ idempotency_key: "undo-0001-abcd" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ deleted: true, day_total: 0 });
+    expect(await (await del({ idempotency_key: "undo-0001-abcd" })).json()).toMatchObject({ deleted: false });
+    const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: unknown[] }>();
+    expect(body.events).toEqual([]);
+  });
+
+  it("refuses unknown keys, other trackers, bad bodies and bad tokens", async () => {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO tracker (id, name, unit, value_type, default_value, min_value, max_value, created_at)
+        VALUES ('water', 'Agua', 'ml', 'amount', 250, 0, 2000, 1) ON CONFLICT(id) DO NOTHING`),
+      env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at)
+        VALUES ('k_water-key-0001', 'water', ?, 120, '2026-10-21', 250, 'mcp', 1)`).bind(NOW - 60),
+    ]);
+    expect((await del({ idempotency_key: "water-key-0001" })).status).toBe(404);
+    expect((await env.DB.prepare("SELECT deleted_at FROM event WHERE id = 'k_water-key-0001'").first())?.deleted_at).toBeNull();
+    expect((await del({ idempotency_key: "missing-key-0001" })).status).toBe(404);
+    expect((await del({ idempotency_key: "x".repeat(65) })).status).toBe(400);
+    expect((await del({ idempotency_key: "short" })).status).toBe(400);
+    expect((await del({ idempotency_key: "undo-0001-abcd" }, `Bearer ${TOKEN.slice(0, -1)}x`)).status).toBe(401);
+  });
+
+  it("can neither undo nor read back an MCP log, whatever its key", async () => {
+    for (const key of ["mcp-cafe-0001", "w-mcp-cafe-0001"]) {
+      await logEvent(env.DB, { tracker_id: "caffeine", at: "2026-10-21T19:00:00Z", note: "private", idempotency_key: key },
+        { now: NOW, tz: "Europe/Madrid" });
+    }
+    expect((await del({ idempotency_key: "mcp-cafe-0001" })).status).toBe(404);
+    const posted = await post({ ...tap0, idempotency_key: "mcp-cafe-0001" });
+    expect(posted.status).toBe(201);
+    expect(await posted.text()).not.toContain("private");
+    const live = await env.DB.prepare("SELECT id FROM event WHERE note = 'private' AND deleted_at IS NULL ORDER BY id").all();
+    expect(live.results).toEqual([{ id: "k_mcp-cafe-0001" }, { id: "k_w-mcp-cafe-0001" }]);
   });
 });

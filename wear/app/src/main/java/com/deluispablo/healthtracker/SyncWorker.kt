@@ -17,7 +17,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private const val TAG = "SyncWorker"
-private val cacheLock = Any()
+internal val cacheLock = Any()
+private val fetchOrder = FetchOrder()
 
 /** The new body when it parses, else the last good one, else null. */
 fun chooseCached(newJson: String?, oldJson: String?): DialData? =
@@ -27,34 +28,38 @@ fun chooseCached(newJson: String?, oldJson: String?): DialData? =
 
 class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val conn = URL("${BuildConfig.WATCH_BASE_URL}/watch/today").openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = 20_000
-            conn.readTimeout = 20_000
-            conn.setRequestProperty("Authorization", "Bearer ${BuildConfig.WATCH_TOKEN}")
-            val code = conn.responseCode
-            Log.i(TAG, "GET /watch/today -> $code")
-            when (code) {
-                200 -> refreshCache(applicationContext, conn.inputStream.bufferedReader().use { it.readText() })
-                401 -> {
-                    Log.w(TAG, "token rejected; check watchToken in local.properties")
-                    refreshCache(applicationContext, null)
-                    return@withContext Result.success()
-                }
-                else -> {
-                    refreshCache(applicationContext, null)
-                    return@withContext Result.retry()
-                }
-            }
-            Result.success()
-        } catch (e: IOException) {
-            Log.w(TAG, "fetch failed", e)
-            // Redraw the cached day so "now" and the stale dimming stay current offline.
-            refreshCache(applicationContext, null)
-            Result.retry()
-        } finally {
-            conn.disconnect()
+        when (fetchToday(applicationContext)) {
+            200 -> Result.success()
+            // A rejected token will not fix itself by retrying.
+            401 -> Result.success()
+            else -> Result.retry()
         }
+    }
+}
+
+/**
+ * Fetches today's dial and redraws; taps leave the queue only together with a body that
+ * already shows them. Returns the HTTP status, or -1 when the network failed.
+ */
+fun fetchToday(ctx: Context): Int {
+    val start = System.currentTimeMillis()
+    val conn = URL("${BuildConfig.WATCH_BASE_URL}/watch/today").openConnection() as HttpURLConnection
+    try {
+        conn.connectTimeout = 20_000
+        conn.readTimeout = 20_000
+        conn.setRequestProperty("Authorization", "Bearer ${BuildConfig.WATCH_TOKEN}")
+        val code = conn.responseCode
+        Log.i(TAG, "GET /watch/today -> $code")
+        if (code == 401) Log.w(TAG, "token rejected; check watchToken in local.properties")
+        // Redraw the cached day otherwise, so "now" and the stale dimming stay current.
+        refreshCache(ctx, if (code == 200) conn.inputStream.bufferedReader().use { it.readText() } else null, start)
+        return code
+    } catch (e: IOException) {
+        Log.w(TAG, "fetch failed", e)
+        refreshCache(ctx, null)
+        return -1
+    } finally {
+        conn.disconnect()
     }
 }
 
@@ -66,13 +71,14 @@ class RedrawWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 }
 
 /** Renders before saving a valid new body, then pokes the complication. */
-fun refreshCache(ctx: Context, body: String?) = synchronized(cacheLock) {
+fun refreshCache(ctx: Context, body: String?, fetchStartMs: Long = 0) = synchronized(cacheLock) {
     val dir = ctx.filesDir
     val jsonFile = File(dir, "dial.json")
-    val newData = chooseCached(body, null)
+    val newData = chooseCached(body, null)?.takeIf { fetchOrder.accept(fetchStartMs) }
     val data = newData ?: chooseCached(null, jsonFile.takeIf { it.exists() }?.readText()) ?: return
+    if (newData != null) readTaps(ctx).let { taps -> confirmedBy(taps, newData, fetchStartMs).takeIf { it != taps }?.let { writeTaps(ctx, it) } }
     val now = ZonedDateTime.now(MADRID)
-    val today = dataForToday(data, now)
+    val today = withTaps(dataForToday(data, now), readTaps(ctx))
     val minutes = minutesSince(today.date, now)
     val png = renderDial(today, minutes, ambient = false).png()
     val ambient = renderDial(today, minutes, ambient = true).png()
@@ -88,7 +94,7 @@ private fun Bitmap.png(): ByteArray =
     ByteArrayOutputStream().also { compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
 
 // Readers never see a half-written file.
-private fun writeAtomic(file: File, bytes: ByteArray) {
+internal fun writeAtomic(file: File, bytes: ByteArray) {
     val tmp = File(file.parentFile, "${file.name}.tmp")
     tmp.writeBytes(bytes)
     if (!tmp.renameTo(file)) throw IOException("rename failed for ${file.name}")

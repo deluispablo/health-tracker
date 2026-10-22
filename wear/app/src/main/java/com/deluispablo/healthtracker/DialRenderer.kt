@@ -14,25 +14,26 @@ private val INK = Color.parseColor("#e7e9f0")
 private val MUTED = Color.parseColor("#a2a8b8")
 private val LINE = Color.parseColor("#2f343f")
 private val LINE_STRONG = Color.parseColor("#7d8496")
-private val BAND = Color.parseColor("#232a3e")
+private val BAND = Color.parseColor("#1a2240")
 private val M_DEEP = Color.parseColor("#5470d6")
 private val M_LIGHT = Color.parseColor("#d0dbff")
 private val M_STEPS = Color.parseColor("#5ccf97")
 private val M_HR = Color.parseColor("#ee6a5f")
-private val M_CAFFEINE = Color.parseColor("#d4972a")
-private val M_CIG = Color.parseColor("#c9ced6")
+private val M_CAFFEINE = Color.parseColor("#f2c46b")  // the menu button colours
+private val BEAN_SEAM = Color.parseColor("#2a1a00")
+private val CIGARETTE = Color.WHITE
 private val M_ALCOHOL = Color.parseColor("#b48ae8")
 private val AMBIENT_SLEEP = Color.parseColor("#2a3363")
 
 // Ring radii in the 360 design box: the log ring sits at R_LOG, the night band fills R_LOG..R_BEZEL
 // and every state arc (sleep, nap, workout) is centred in that gap with one width.
-private const val SCALE = 1.40f
+private const val SCALE = 1.30f
 private const val R_BEZEL = 150f
 private const val R_LOG = 118f
 private const val R_TRACK = (R_LOG + R_BEZEL) / 2
 private const val TRACK_W = (R_BEZEL - R_LOG) * 0.45f
 private const val R_PULSE = 50f
-private const val MARK = 1.5f  // log marks enlarged so diamonds and mood rings read as shapes at 41 mm
+private const val MARK = 1.1f  // log marks enlarged so diamonds and mood rings read as shapes at 41 mm
 
 /**
  * Draws the data layers of the dial (night band, states, logs, pulse) on a transparent bitmap.
@@ -77,7 +78,7 @@ private fun drawLayers(c: Canvas, data: DialData, nowMin: Int, ambient: Boolean)
         c.drawArc(box(R_LOG - 13f * MARK), cl.first().second - 90f, cl.last().second - cl.first().second, false, p)
         cl.forEach { (m, _) -> radial(c, angleOf(m.t), R_LOG - 13f * MARK - 4f, R_LOG - 13f * MARK, p) }
     }
-    placed.forEach { (m, a) -> mark(c, m.k, a) }
+    placed.forEach { (m, a) -> mark(c, m.k, a, m.m) }
 
     // Pulse ticks from R_PULSE out to the bpm radius, kept inside the log ring; finished buckets only.
     val hr = stroke(M_HR, 1.86f).apply { alpha = (255 * 0.7f).toInt() }
@@ -123,40 +124,60 @@ private fun radial(c: Canvas, deg: Float, r0: Float, r1: Float, p: Paint) {
     c.restore()
 }
 
-private fun mark(c: Canvas, kind: String, deg: Float) {
+private val MOOD_COLORS = mapOf(
+    "estresado" to "#f08a5d", "genial" to "#f2d06b", "bien" to "#c9dc6a", "tranquilo" to "#6cc9a0",
+    "cansado" to "#7fa7e0", "triste" to "#6f8fe8", "ansioso" to "#e86f7a", "enfadado" to "#ee5f5f",
+).mapValues { Color.parseColor(it.value) }
+
+// Wine glass: bowl, stem and foot, centred on the ring.
+private val GLASS = Path().apply {
+    moveTo(-4.6f, -6.4f)
+    lineTo(4.6f, -6.4f)
+    lineTo(4.6f, -3.2f)
+    arcTo(RectF(-4.6f, -7.8f, 4.6f, 1.4f), 0f, 180f)
+    close()
+}
+
+private fun mark(c: Canvas, kind: String, deg: Float, mood: String?) {
     c.save()
     c.rotate(deg)
     c.scale(MARK, MARK, 0f, -R_LOG)
+    c.translate(0f, -R_LOG)
     when (kind) {
-        "cafe" -> {
-            c.drawLine(0f, -(R_LOG - 7f), 0f, -(R_LOG + 7f), stroke(HALO, 7.25f))
-            c.drawLine(0f, -(R_LOG - 7f), 0f, -(R_LOG + 7f), stroke(M_CAFFEINE, 3.25f))
-        }
         "cigarro" -> {
-            c.translate(0f, -R_LOG)
-            c.rotate(45f)
-            val r = RectF(-4.25f, -4.25f, 4.25f, 4.25f)
-            c.drawRect(r, stroke(HALO, 4f, Paint.Cap.SQUARE))
-            c.drawRect(r, fill(M_CIG))
+            c.drawLine(0f, -7f, 0f, 7f, stroke(HALO, 6.6f))
+            c.drawLine(0f, -7f, 0f, 7f, stroke(CIGARETTE, 3f))
+        }
+        "cafe" -> {
+            val bean = RectF(-4.2f, -5.6f, 4.2f, 5.6f)
+            c.drawOval(bean, stroke(HALO, 2.2f))
+            c.drawOval(bean, fill(M_CAFFEINE))
+            val seam = Path().apply {
+                moveTo(0f, -4.6f)
+                quadTo(-2f, -2.3f, 0f, 0f)
+                quadTo(2f, 2.3f, 0f, 4.6f)
+            }
+            c.drawPath(seam, stroke(BEAN_SEAM, 1.2f))
         }
         "alcohol" -> {
-            c.translate(0f, -R_LOG)
-            val t = Path().apply {
-                moveTo(0f, -6.8f)
-                lineTo(5.8f, 4.4f)
-                lineTo(-5.8f, 4.4f)
-                close()
+            val foot = Path().apply {
+                moveTo(0f, 1.4f)
+                lineTo(0f, 5.6f)
+                moveTo(-2.8f, 5.6f)
+                lineTo(2.8f, 5.6f)
             }
-            c.drawPath(t, stroke(HALO, 4f).apply { strokeJoin = Paint.Join.ROUND })
-            c.drawPath(t, fill(M_ALCOHOL))
+            c.drawPath(GLASS, stroke(HALO, 2.2f).apply { strokeJoin = Paint.Join.ROUND })
+            c.drawPath(foot, stroke(HALO, 3.8f))
+            c.drawPath(GLASS, fill(M_ALCOHOL))
+            c.drawPath(foot, stroke(M_ALCOHOL, 1.6f))
         }
         "animo" -> {
-            c.drawCircle(0f, -R_LOG, 4.25f, stroke(HALO, 6f))
-            c.drawCircle(0f, -R_LOG, 4.25f, stroke(INK, 2.6f))
+            c.drawCircle(0f, 0f, 4.6f, stroke(HALO, 2.2f))
+            c.drawCircle(0f, 0f, 4.6f, fill(MOOD_COLORS[mood] ?: INK))
         }
         else -> {
-            c.drawCircle(0f, -R_LOG, 4.5f, fill(HALO))
-            c.drawCircle(0f, -R_LOG, 2.5f, fill(MUTED))
+            c.drawCircle(0f, 0f, 4.5f, fill(HALO))
+            c.drawCircle(0f, 0f, 2.5f, fill(MUTED))
         }
     }
     c.restore()

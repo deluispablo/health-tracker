@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Edge complication layout adapted from concentric-watch-face by Luka Kilic (MIT); see wear/THIRD_PARTY_NOTICES.md. -->
 <WatchFace width="450" height="450">
   <Metadata key="CLOCK_TYPE" value="ANALOG"/>
   <Metadata key="PREVIEW_TIME" value="14:10:00"/>
   <Scene backgroundColor="#ff000000">
     <ComplicationSlot x="0" y="0" width="450" height="450" slotId="0" displayName="dial_label" supportedTypes="SMALL_IMAGE EMPTY" isCustomizable="FALSE">
       <DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" primaryProvider="com.deluispablo.healthtracker/com.deluispablo.healthtracker.DialComplicationService" primaryProviderType="SMALL_IMAGE"/>
-      <BoundingOval x="0" y="0" width="450" height="450"/>
+      <BoundingOval x="30" y="30" width="390" height="390"/>
       <ScreenReader stringId="dial_description"/>
       <Complication type="SMALL_IMAGE">
         <PartImage x="0" y="0" width="450" height="450">
           <Variant mode="AMBIENT" target="alpha" value="0"/>
-          <Launch target="com.deluispablo.healthtracker"/>
           <Image resource="[COMPLICATION.SMALL_IMAGE]"/>
         </PartImage>
         <PartImage x="0" y="0" width="450" height="450" alpha="0">
@@ -21,168 +21,585 @@
       <Complication type="EMPTY">
         <PartText x="105" y="250" width="240" height="30">
           <Variant mode="AMBIENT" target="alpha" value="0"/>
-          <Launch target="com.deluispablo.healthtracker"/>
           <Text align="CENTER">
             <Font family="SYNC_TO_DEVICE" size="18" color="#a2a8b8">Toca para activar</Font>
           </Text>
         </PartText>
       </Complication>
     </ComplicationSlot>
-    <PartDraw x="0" y="0" width="450" height="450" name="bezel">
-      <Ellipse x="15" y="15" width="420" height="420">
-        <Stroke color="#7d8496" thickness="4.2"/>
-      </Ellipse>
-      <Line startX="225" startY="31.8" endX="225" endY="15"><Stroke color="#e7e9f0" thickness="7"/></Line>
-      <Line startX="277.9" startY="27.56" endX="279.35" endY="22.16"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="327.2" startY="47.98" endX="330" endY="43.13"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="366.56" startY="83.44" endX="373.49" endY="76.51"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="402.02" startY="122.8" endX="406.87" endY="120"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="422.44" startY="172.1" endX="427.84" endY="170.65"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="418.2" startY="225" endX="435" endY="225"><Stroke color="#e7e9f0" thickness="7"/></Line>
-      <Line startX="422.44" startY="277.9" endX="427.84" endY="279.35"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="402.02" startY="327.2" endX="406.87" endY="330"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="366.56" startY="366.56" endX="373.49" endY="373.49"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="327.2" startY="402.02" endX="330" endY="406.87"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="277.9" startY="422.44" endX="279.35" endY="427.84"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="225" startY="418.2" endX="225" endY="435"><Stroke color="#e7e9f0" thickness="7"/></Line>
-      <Line startX="172.1" startY="422.44" endX="170.65" endY="427.84"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="122.8" startY="402.02" endX="120" endY="406.87"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="83.44" startY="366.56" endX="76.51" endY="373.49"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="47.98" startY="327.2" endX="43.13" endY="330"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="27.56" startY="277.9" endX="22.16" endY="279.35"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="31.8" startY="225" endX="15" endY="225"><Stroke color="#e7e9f0" thickness="7"/></Line>
-      <Line startX="27.56" startY="172.1" endX="22.16" endY="170.65"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="47.98" startY="122.8" endX="43.13" endY="120"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="83.44" startY="83.44" endX="76.51" endY="76.51"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="122.8" startY="47.98" endX="120" endY="43.13"><Stroke color="#7d8496" thickness="3.5"/></Line>
-      <Line startX="172.1" startY="27.56" endX="170.65" endY="22.16"><Stroke color="#7d8496" thickness="3.5"/></Line>
+    <PartDraw x="87" y="87" width="276" height="276" name="mood_spot">
+      <Launch target="com.deluispablo.healthtracker"/>
+      <Rectangle x="0" y="0" width="276" height="276">
+        <Fill color="#00000000"/>
+      </Rectangle>
     </PartDraw>
-    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="1" displayName="slot_1_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS EMPTY" isCustomizable="TRUE">
+    <PartDraw x="0" y="0" width="450" height="450" name="bezel">
+      <Ellipse x="30" y="30" width="390" height="390">
+        <Stroke color="#7d8496" thickness="3.9"/>
+      </Ellipse>
+      <Line startX="225" startY="45.6" endX="225" endY="30"><Stroke color="#e7e9f0" thickness="6.5"/></Line>
+      <Line startX="274.12" startY="41.67" endX="275.47" endY="36.64"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="319.9" startY="60.63" endX="322.5" endY="56.13"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="356.45" startY="93.55" endX="362.89" endY="87.11"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="389.37" startY="130.1" endX="393.87" endY="127.5"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="408.33" startY="175.88" endX="413.36" endY="174.53"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="404.4" startY="225" endX="420" endY="225"><Stroke color="#e7e9f0" thickness="6.5"/></Line>
+      <Line startX="408.33" startY="274.12" endX="413.36" endY="275.47"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="389.37" startY="319.9" endX="393.87" endY="322.5"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="356.45" startY="356.45" endX="362.89" endY="362.89"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="319.9" startY="389.37" endX="322.5" endY="393.87"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="274.12" startY="408.33" endX="275.47" endY="413.36"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="225" startY="404.4" endX="225" endY="420"><Stroke color="#e7e9f0" thickness="6.5"/></Line>
+      <Line startX="175.88" startY="408.33" endX="174.53" endY="413.36"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="130.1" startY="389.37" endX="127.5" endY="393.87"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="93.55" startY="356.45" endX="87.11" endY="362.89"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="60.63" startY="319.9" endX="56.13" endY="322.5"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="41.67" startY="274.12" endX="36.64" endY="275.47"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="45.6" startY="225" endX="30" endY="225"><Stroke color="#e7e9f0" thickness="6.5"/></Line>
+      <Line startX="41.67" startY="175.88" endX="36.64" endY="174.53"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="60.63" startY="130.1" endX="56.13" endY="127.5"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="93.55" startY="93.55" endX="87.11" endY="87.11"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="130.1" startY="60.63" endX="127.5" endY="56.13"><Stroke color="#7d8496" thickness="3.25"/></Line>
+      <Line startX="175.88" startY="41.67" endX="174.53" endY="36.64"><Stroke color="#7d8496" thickness="3.25"/></Line>
+    </PartDraw>
+    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="1" displayName="slot_1_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="TRUE">
       <DefaultProviderPolicy defaultSystemProvider="WATCH_BATTERY" defaultSystemProviderType="RANGED_VALUE"/>
-      <BoundingArc centerX="225" centerY="225" width="450" height="450" thickness="15" startAngle="13" endAngle="77" isRoundEdge="TRUE"/>
+      <BoundingArc centerX="225" centerY="225" width="450" height="450" thickness="30" startAngle="10" endAngle="80" isRoundEdge="TRUE"/>
       <Variant mode="AMBIENT" target="alpha" value="0"/>
       <Complication type="RANGED_VALUE">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
         <PartDraw x="0" y="0" width="450" height="450">
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="13" endAngle="77">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80">
+            <Transform target="startAngle" value="10 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
             <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
           </Arc>
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="13" endAngle="13">
-            <Stroke color="#b6c2ff" thickness="5" cap="ROUND"/>
-            <Transform target="endAngle" value="13 + clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * 64"/>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80">
+            <Transform target="startAngle" value="10 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Transform target="endAngle" value="10 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2 + clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * (80 - (10 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2))"/>
+            <Stroke color="#5ccf97" thickness="5" cap="ROUND"/>
           </Arc>
         </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80" direction="CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartDraw x="0" y="0" width="450" height="450">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80">
+            <Transform target="startAngle" value="10 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
+          </Arc>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80">
+            <Transform target="startAngle" value="10 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Transform target="endAngle" value="10 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2 + clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * (80 - (10 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2))"/>
+            <Stroke color="#5ccf97" thickness="5" cap="ROUND"/>
+          </Arc>
+        </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80" direction="CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#5ccf97" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
       </Complication>
       <Complication type="GOAL_PROGRESS">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
         <PartDraw x="0" y="0" width="450" height="450">
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="13" endAngle="77">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80">
+            <Transform target="startAngle" value="10 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
             <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
           </Arc>
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="13" endAngle="13">
-            <Stroke color="#b6c2ff" thickness="5" cap="ROUND"/>
-            <Transform target="endAngle" value="13 + clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * 64"/>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80">
+            <Transform target="startAngle" value="10 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Transform target="endAngle" value="10 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2 + clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * (80 - (10 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2))"/>
+            <Stroke color="#5ccf97" thickness="5" cap="ROUND"/>
           </Arc>
         </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80" direction="CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartDraw x="0" y="0" width="450" height="450">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80">
+            <Transform target="startAngle" value="10 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
+          </Arc>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80">
+            <Transform target="startAngle" value="10 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Transform target="endAngle" value="10 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2 + clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * (80 - (10 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2))"/>
+            <Stroke color="#5ccf97" thickness="5" cap="ROUND"/>
+          </Arc>
+        </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80" direction="CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#5ccf97" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
+      </Complication>
+      <Complication type="SHORT_TEXT">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80" direction="CLOCKWISE" align="CENTER" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="10" endAngle="80" direction="CLOCKWISE" align="CENTER" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#5ccf97" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
       </Complication>
       <Complication type="EMPTY"/>
     </ComplicationSlot>
-    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="2" displayName="slot_2_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS EMPTY" isCustomizable="TRUE">
+    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="2" displayName="slot_2_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="TRUE">
       <DefaultProviderPolicy defaultSystemProvider="STEP_COUNT" defaultSystemProviderType="GOAL_PROGRESS"/>
-      <BoundingArc centerX="225" centerY="225" width="450" height="450" thickness="15" startAngle="103" endAngle="167" isRoundEdge="TRUE"/>
+      <BoundingArc centerX="225" centerY="225" width="450" height="450" thickness="30" startAngle="100" endAngle="170" isRoundEdge="TRUE"/>
       <Variant mode="AMBIENT" target="alpha" value="0"/>
       <Complication type="RANGED_VALUE">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
         <PartDraw x="0" y="0" width="450" height="450">
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="103" endAngle="167">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="100" endAngle="170">
+            <Transform target="endAngle" value="170 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
             <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
           </Arc>
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="103" endAngle="103">
-            <Stroke color="#b6c2ff" thickness="5" cap="ROUND"/>
-            <Transform target="endAngle" value="103 + clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * 64"/>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="100" endAngle="170">
+            <Transform target="endAngle" value="170 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Transform target="startAngle" value="170 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * (170 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - 100)"/>
+            <Stroke color="#8ea9ff" thickness="5" cap="ROUND"/>
           </Arc>
         </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="170" endAngle="100" direction="COUNTER_CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartDraw x="0" y="0" width="450" height="450">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="100" endAngle="170">
+            <Transform target="endAngle" value="170 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
+          </Arc>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="100" endAngle="170">
+            <Transform target="endAngle" value="170 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Transform target="startAngle" value="170 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * (170 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - 100)"/>
+            <Stroke color="#8ea9ff" thickness="5" cap="ROUND"/>
+          </Arc>
+        </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="170" endAngle="100" direction="COUNTER_CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#8ea9ff" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
       </Complication>
       <Complication type="GOAL_PROGRESS">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
         <PartDraw x="0" y="0" width="450" height="450">
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="103" endAngle="167">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="100" endAngle="170">
+            <Transform target="endAngle" value="170 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
             <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
           </Arc>
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="103" endAngle="103">
-            <Stroke color="#b6c2ff" thickness="5" cap="ROUND"/>
-            <Transform target="endAngle" value="103 + clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * 64"/>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="100" endAngle="170">
+            <Transform target="endAngle" value="170 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Transform target="startAngle" value="170 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * (170 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - 100)"/>
+            <Stroke color="#8ea9ff" thickness="5" cap="ROUND"/>
           </Arc>
         </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="170" endAngle="100" direction="COUNTER_CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartDraw x="0" y="0" width="450" height="450">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="100" endAngle="170">
+            <Transform target="endAngle" value="170 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
+          </Arc>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="100" endAngle="170">
+            <Transform target="endAngle" value="170 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Transform target="startAngle" value="170 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * (170 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - 100)"/>
+            <Stroke color="#8ea9ff" thickness="5" cap="ROUND"/>
+          </Arc>
+        </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="170" endAngle="100" direction="COUNTER_CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#8ea9ff" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
+      </Complication>
+      <Complication type="SHORT_TEXT">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="170" endAngle="100" direction="COUNTER_CLOCKWISE" align="CENTER" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="170" endAngle="100" direction="COUNTER_CLOCKWISE" align="CENTER" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#8ea9ff" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
       </Complication>
       <Complication type="EMPTY"/>
     </ComplicationSlot>
-    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="3" displayName="slot_3_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS EMPTY" isCustomizable="TRUE">
-      <DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
-      <BoundingArc centerX="225" centerY="225" width="450" height="450" thickness="15" startAngle="193" endAngle="257" isRoundEdge="TRUE"/>
+    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="3" displayName="slot_3_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="TRUE">
+      <DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" primaryProvider="com.fitbit.FitbitMobile/com.google.android.wearable.fitbit.mainapp.complications.offloadable.calories.OffloadableCaloriesComplicationDataSourceService" primaryProviderType="SHORT_TEXT"/>
+      <BoundingArc centerX="225" centerY="225" width="450" height="450" thickness="30" startAngle="190" endAngle="260" isRoundEdge="TRUE"/>
       <Variant mode="AMBIENT" target="alpha" value="0"/>
       <Complication type="RANGED_VALUE">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
         <PartDraw x="0" y="0" width="450" height="450">
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="193" endAngle="257">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="190" endAngle="260">
+            <Transform target="endAngle" value="260 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
             <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
           </Arc>
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="193" endAngle="193">
-            <Stroke color="#b6c2ff" thickness="5" cap="ROUND"/>
-            <Transform target="endAngle" value="193 + clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * 64"/>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="190" endAngle="260">
+            <Transform target="endAngle" value="260 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Transform target="startAngle" value="260 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * (260 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - 190)"/>
+            <Stroke color="#f0a650" thickness="5" cap="ROUND"/>
           </Arc>
         </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="260" endAngle="190" direction="COUNTER_CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartDraw x="0" y="0" width="450" height="450">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="190" endAngle="260">
+            <Transform target="endAngle" value="260 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
+          </Arc>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="190" endAngle="260">
+            <Transform target="endAngle" value="260 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Transform target="startAngle" value="260 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * (260 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - 190)"/>
+            <Stroke color="#f0a650" thickness="5" cap="ROUND"/>
+          </Arc>
+        </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="260" endAngle="190" direction="COUNTER_CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#f0a650" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
       </Complication>
       <Complication type="GOAL_PROGRESS">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
         <PartDraw x="0" y="0" width="450" height="450">
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="193" endAngle="257">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="190" endAngle="260">
+            <Transform target="endAngle" value="260 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
             <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
           </Arc>
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="193" endAngle="193">
-            <Stroke color="#b6c2ff" thickness="5" cap="ROUND"/>
-            <Transform target="endAngle" value="193 + clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * 64"/>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="190" endAngle="260">
+            <Transform target="endAngle" value="260 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Transform target="startAngle" value="260 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * (260 - (0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - 190)"/>
+            <Stroke color="#f0a650" thickness="5" cap="ROUND"/>
           </Arc>
         </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="260" endAngle="190" direction="COUNTER_CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartDraw x="0" y="0" width="450" height="450">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="190" endAngle="260">
+            <Transform target="endAngle" value="260 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
+          </Arc>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="190" endAngle="260">
+            <Transform target="endAngle" value="260 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2)"/>
+            <Transform target="startAngle" value="260 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * (260 - (8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2) - 190)"/>
+            <Stroke color="#f0a650" thickness="5" cap="ROUND"/>
+          </Arc>
+        </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="260" endAngle="190" direction="COUNTER_CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#f0a650" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
+      </Complication>
+      <Complication type="SHORT_TEXT">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="260" endAngle="190" direction="COUNTER_CLOCKWISE" align="CENTER" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="260" endAngle="190" direction="COUNTER_CLOCKWISE" align="CENTER" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#f0a650" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
       </Complication>
       <Complication type="EMPTY"/>
     </ComplicationSlot>
-    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="4" displayName="slot_4_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS EMPTY" isCustomizable="TRUE">
-      <DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
-      <BoundingArc centerX="225" centerY="225" width="450" height="450" thickness="15" startAngle="283" endAngle="347" isRoundEdge="TRUE"/>
+    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="4" displayName="slot_4_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="TRUE">
+      <DefaultProviderPolicy defaultSystemProvider="WORLD_CLOCK" defaultSystemProviderType="SHORT_TEXT"/>
+      <BoundingArc centerX="225" centerY="225" width="450" height="450" thickness="30" startAngle="280" endAngle="350" isRoundEdge="TRUE"/>
       <Variant mode="AMBIENT" target="alpha" value="0"/>
       <Complication type="RANGED_VALUE">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
         <PartDraw x="0" y="0" width="450" height="450">
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="283" endAngle="347">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350">
+            <Transform target="startAngle" value="280 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
             <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
           </Arc>
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="283" endAngle="283">
-            <Stroke color="#b6c2ff" thickness="5" cap="ROUND"/>
-            <Transform target="endAngle" value="283 + clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * 64"/>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350">
+            <Transform target="startAngle" value="280 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Transform target="endAngle" value="280 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2 + clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * (350 - (280 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2))"/>
+            <Stroke color="#6fc3e6" thickness="5" cap="ROUND"/>
           </Arc>
         </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350" direction="CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartDraw x="0" y="0" width="450" height="450">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350">
+            <Transform target="startAngle" value="280 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
+          </Arc>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350">
+            <Transform target="startAngle" value="280 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Transform target="endAngle" value="280 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2 + clamp(([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]), 0, 1) * (350 - (280 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2))"/>
+            <Stroke color="#6fc3e6" thickness="5" cap="ROUND"/>
+          </Arc>
+        </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350" direction="CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#6fc3e6" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
       </Complication>
       <Complication type="GOAL_PROGRESS">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
         <PartDraw x="0" y="0" width="450" height="450">
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="283" endAngle="347">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350">
+            <Transform target="startAngle" value="280 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
             <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
           </Arc>
-          <Arc centerX="225" centerY="225" width="432" height="432" startAngle="283" endAngle="283">
-            <Stroke color="#b6c2ff" thickness="5" cap="ROUND"/>
-            <Transform target="endAngle" value="283 + clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * 64"/>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350">
+            <Transform target="startAngle" value="280 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Transform target="endAngle" value="280 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2 + clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * (350 - (280 + 0 + textLength([COMPLICATION.TEXT]) * 3.14 + 2))"/>
+            <Stroke color="#6fc3e6" thickness="5" cap="ROUND"/>
           </Arc>
         </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350" direction="CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartDraw x="0" y="0" width="450" height="450">
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350">
+            <Transform target="startAngle" value="280 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Stroke color="#33ffffff" thickness="4" cap="ROUND"/>
+          </Arc>
+          <Arc centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350">
+            <Transform target="startAngle" value="280 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2"/>
+            <Transform target="endAngle" value="280 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2 + clamp([COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE], 0, 1) * (350 - (280 + 8.46 + textLength([COMPLICATION.TEXT]) * 3.14 + 2))"/>
+            <Stroke color="#6fc3e6" thickness="5" cap="ROUND"/>
+          </Arc>
+        </PartDraw>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350" direction="CLOCKWISE" align="START" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#6fc3e6" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
+      </Complication>
+      <Complication type="SHORT_TEXT">
+        <Condition>
+          <Expressions>
+            <Expression name="noIcon">[COMPLICATION.MONOCHROMATIC_IMAGE] == null</Expression>
+          </Expressions>
+          <Compare expression="noIcon">
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350" direction="CLOCKWISE" align="CENTER" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Compare>
+          <Default>
+        <PartText x="0" y="0" width="450" height="450">
+          <TextCircular centerX="225" centerY="225" width="416" height="416" startAngle="280" endAngle="350" direction="CLOCKWISE" align="CENTER" ellipsis="FALSE">
+            <Font family="SYNC_TO_DEVICE" size="19" weight="MEDIUM" color="#e7e9f0">
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="#6fc3e6" width="25" height="25"/>
+                <Template>%s<Parameter expression="&#160;"/></Template>
+              <Upper><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Upper>
+            </Font>
+          </TextCircular>
+        </PartText>
+          </Default>
+        </Condition>
       </Complication>
       <Complication type="EMPTY"/>
     </ComplicationSlot>
     <PartDraw x="0" y="0" width="450" height="450" name="minute_hand">
       <Transform target="angle" value="[MINUTE] * 6"/>
-      <Line startX="225" startY="239" endX="225" endY="39.6"><Stroke color="#000000" thickness="11.4" cap="ROUND"/></Line>
-      <Line startX="225" startY="239" endX="225" endY="39.6"><Stroke color="#a2a8b8" thickness="6" cap="ROUND"/></Line>
+      <Line startX="225" startY="238" endX="225" endY="53.1"><Stroke color="#000000" thickness="11.4" cap="ROUND"/></Line>
+      <Line startX="225" startY="238" endX="225" endY="53.1"><Stroke color="#a2a8b8" thickness="6" cap="ROUND"/></Line>
     </PartDraw>
     <PartDraw x="0" y="0" width="450" height="450" name="hour_hand">
       <Transform target="angle" value="([HOUR_0_23] * 60 + [MINUTE]) / 4"/>
-      <Line startX="225" startY="241.8" endX="225" endY="19"><Stroke color="#000000" thickness="16" cap="ROUND"/></Line>
-      <Line startX="225" startY="241.8" endX="225" endY="19"><Stroke color="#b6c2ff" thickness="10" cap="ROUND"/></Line>
+      <Line startX="225" startY="240.6" endX="225" endY="34"><Stroke color="#000000" thickness="16" cap="ROUND"/></Line>
+      <Line startX="225" startY="240.6" endX="225" endY="34"><Stroke color="#b6c2ff" thickness="10" cap="ROUND"/></Line>
     </PartDraw>
     <PartDraw x="0" y="0" width="450" height="450" name="hub">
-      <Ellipse x="214.08" y="214.08" width="21.84" height="21.84">
+      <Ellipse x="214.86" y="214.86" width="20.28" height="20.28">
         <Fill color="#b6c2ff"/>
-        <Stroke color="#000000" thickness="2.8"/>
+        <Stroke color="#000000" thickness="2.6"/>
       </Ellipse>
     </PartDraw>
   </Scene>

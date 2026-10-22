@@ -15,9 +15,9 @@
             android:value="true" />
 
         <activity
-            android:name=".SyncActivity"
+            android:name=".LogActivity"
             android:exported="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
