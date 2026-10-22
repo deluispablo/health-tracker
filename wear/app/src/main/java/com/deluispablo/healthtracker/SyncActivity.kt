@@ -15,7 +15,7 @@ class SyncActivity : Activity() {
         super.onCreate(savedInstanceState)
         WorkManager.getInstance(this).enqueueUniqueWork(
             "dial-sync-now",
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(
                 Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
             ).setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST).build(),

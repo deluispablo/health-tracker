@@ -79,7 +79,7 @@ adb shell am broadcast -a com.google.android.wearable.app.DEBUG_SURFACE \
 
 You can also pick **Health Tracker** from the watch's face picker or the phone's watch app.
 
-The first sync runs when the app starts, then every 60 minutes while the watch has a connection. Until the first image arrives the face shows "Toca para activar". Tapping it, or tapping the dial at any time, launches a tiny launcher activity that requests an immediate one-time sync and closes; use it after logging something, since the hourly job can be deferred while the screen is off. A separate job redraws the cache every 15 minutes without needing a connection, keeps stale dimming current and clears yesterday's data after local midnight in Europe/Madrid. WorkManager timing is approximate. The hands update once per minute.
+The first sync runs when the app starts, then every 60 minutes while the watch has a connection. Until the first image arrives the face shows "Toca para activar". Tapping it, or tapping the dial at any time, launches a tiny launcher activity that requests a best-effort immediate one-time sync and closes; use it after logging something, since the hourly job can be deferred while the screen is off. A separate job redraws the cache every 15 minutes without needing a connection, keeps stale dimming current and clears yesterday's data after local midnight in Europe/Madrid. WorkManager timing is approximate. The hands update once per minute.
 
 ## 6. Edge complications
 
