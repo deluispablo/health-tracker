@@ -11,6 +11,7 @@ const forbiddenNames = new Set([
   "profile", "weight_log",
   "metric_minute", "metric_hour", "metric_daily", "metric_def", "sleep_session", "sleep_stage", "workout",
   "tracker", "event", "daily_summary", "tracker_daily", "sync_pending", "sync_state", "secret_blob",
+  "finding", "finding_check", "analysis_log",
   "audit_log", "oauth_state", "rollup_dirty", "rollup_seq", "d1_migrations", "main", "temp", "temporary", "dbstat", "fsdir", "zipfile",
 ]);
 
