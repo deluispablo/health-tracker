@@ -285,3 +285,29 @@ describe("QA1 SQL windows and response bounds", () => {
       .toMatchObject({ columns: ["day", "previous"], rows: [], truncated: false });
   });
 });
+
+
+describe("SQL resource bounds before database execution", () => {
+  it.each([
+    ["SELECT hex(zeroblob(1000000)) AS x", /zeroblob.*unbounded blobs/],
+    ['SELECT hex("RaNdOmBlOb"/**/(1000000)) AS x', /randomblob.*unbounded blobs/],
+    ["WITH/**/RECURSIVE q(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM q) SELECT max(n) FROM q", /WITH RECURSIVE is not allowed/],
+    ["WITH q(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM q) SELECT max(n) FROM q", /recursive CTE q is not allowed/],
+    ["SELECT (WITH q(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM q) SELECT max(n) FROM q)", /recursive CTE q is not allowed/],
+    ["SELECT printf('%.*c', 1e8, 'x')", /printf.*unbounded strings/],
+    ['SELECT "FoRmAt"/**/(\'%.*c\', 1e8, \'x\')', /format.*unbounded strings/],
+  ])("rejects %s before preparing a statement", async (query, reason) => {
+    const { db, calls } = watched();
+    await expect(healthSql(db, { query })).rejects.toThrow(reason);
+    expect(calls).toEqual([]);
+  });
+
+  it("executes ordinary CTEs and harmless resource-related text", async () => {
+    expect(await healthSql(env.DB, { query: "WITH q AS (SELECT 'WITH RECURSIVE randomblob(1000000)' AS label) SELECT label FROM q" }))
+      .toMatchObject({ rows: [["WITH RECURSIVE randomblob(1000000)"]], truncated: false });
+    expect(await healthSql(env.DB, { query: "WITH q AS (SELECT * FROM r), r AS (SELECT 1 AS q) SELECT q FROM q" }))
+      .toMatchObject({ rows: [[1]], truncated: false });
+    expect(await healthSql(env.DB, { query: "SELECT (WITH q AS (SELECT 1 AS q) SELECT q FROM q) AS n" }))
+      .toMatchObject({ rows: [[1]], truncated: false });
+  });
+});

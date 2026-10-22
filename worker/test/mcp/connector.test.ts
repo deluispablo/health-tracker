@@ -1382,7 +1382,9 @@ describe("T11 AC5 health_sql through the authenticated connector", () => {
     expect((await audit()).slice(before)).toEqual([]);
   });
 
-  it.each(["UPDATE daily_summary SET rhr = 99", "SELECT * FROM unknown_relation", "SELECT * FROM main.v_daily"])("returns the exact first guard refusal and audits failure for %s", async (query) => {
+  it.each(["UPDATE daily_summary SET rhr = 99", "SELECT * FROM unknown_relation", "SELECT * FROM main.v_daily",
+    "SELECT hex(zeroblob(1000000))", "SELECT hex(randomblob(1000000))",
+    "WITH RECURSIVE q(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM q) SELECT max(n) FROM q"])("returns the exact first guard refusal and audits failure for %s", async (query) => {
     const lexical = await import("../../src/mcp/tools/sqlguard");
     const parser = await import("../../src/mcp/tools/sqlviews");
     const validated = lexical.validateReadOnlyQuery(query);
@@ -1694,7 +1696,7 @@ describe("T26 AC4 output limits through the authenticated connector", () => {
   });
 
   it.each([
-    ["SELECT n FROM (WITH RECURSIVE q(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM q WHERE n < 201) SELECT n FROM q)", 200],
+    [`SELECT value FROM json_each('${JSON.stringify(Array.from({ length: 201 }, (_, i) => i))}')`, 200],
     ["SELECT note FROM v_events ORDER BY ts", 0],
   ] as const)("returns capped SQL in both JSON forms and audits success for %s", async (query, rowCount) => {
     google();

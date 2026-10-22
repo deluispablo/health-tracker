@@ -276,3 +276,32 @@ it("keeps the common-cause variant free of a direct bedtime effect", async () =>
   expect(Math.abs(mean(late)-mean(early))).toBeLessThan(0.5);
   expect(mean(alcohol)-mean(sober)).toBeCloseTo(2.5,0);
 },30000);
+
+it("keeps behaviour-date boundary taps when bounding stored local dates", async () => {
+  const r = range();
+  const previous = new Date(Date.parse(r.fetchStart) - 86400000).toISOString().slice(0,10);
+  const next = new Date(Date.parse(r.fetchEnd) + 86400000).toISOString().slice(0,10);
+  await event("old-first","cigarettes","2020-01-01T12:00:00Z",true);
+  for (const [id, at, offset] of [
+    ["previous",previous+"T12:00:00Z",0],
+    ["lower-early",r.fetchStart+"T04:59:59Z",0],
+    ["lower-start",r.fetchStart+"T05:00:00Z",0],
+    ["upper-early",next+"T04:59:59Z",0],
+    ["upper-after",next+"T05:00:00Z",0],
+    ["east",r.fetchEnd+"T14:59:59Z",840],
+    ["west",next+"T16:59:59Z",-720],
+  ] as const) await event(id,"cigarettes",at,false,offset);
+  let query = "";
+  const t = await loadDayTable({prepare:(sql:string)=>{
+    query=sql;
+    return env.DB.prepare(sql);
+  }} as D1Database,r,now);
+  const unbounded = query.replace("local_date BETWEEN date(?1, '-1 day') AND date(?2, '+1 day')\n    AND ", "");
+  expect(unbounded).not.toBe(query);
+  const bindings = [r.fetchStart,r.fetchEnd,now];
+  expect((await env.DB.prepare(query).bind(...bindings).all()).results)
+    .toEqual((await env.DB.prepare(unbounded).bind(...bindings).all()).results);
+  expect(t.first.cigarettes?.bday).toBe("2020-01-01");
+  expect(t.behavior.cigarettes[0]).toBe(1);
+  expect(t.behavior.cigarettes[t.dates.length-1]).toBe(3);
+});

@@ -66,7 +66,8 @@ WITH RECURSIVE dates(local_date) AS (
   SELECT bday, COUNT(*) AS active,
     ${["cigarettes","caffeine","alcohol"].map(id=>`SUM(CASE WHEN tracker_id = '${id}' THEN value ELSE 0 END) AS ${id}`).join(",")},
     ${MOOD_IDS.map(id=>`SUM(tracker_id = '${id}') AS ${id}`).join(",")}
-  FROM live WHERE bday BETWEEN date(?1, '-1 day') AND ?2 GROUP BY bday
+  FROM live WHERE local_date BETWEEN date(?1, '-1 day') AND date(?2, '+1 day')
+    AND bday BETWEEN date(?1, '-1 day') AND ?2 GROUP BY bday
 ), starts AS (
   SELECT *, CASE WHEN tracker_id IN (${moods}) THEN 'mood' ELSE tracker_id END AS tracker,
     ${BDAY} AS bday FROM event
