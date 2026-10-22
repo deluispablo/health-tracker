@@ -462,6 +462,8 @@ describe("AC3 stateless read tools and audit", () => {
       for (const field of fields) expect(describe(tool, field)).toContain("YYYY-MM-DD");
     }
     for (const column of DAILY_COLUMNS) expect(describe("health_daily", "metrics")).toContain(column);
+    const dailyDescription = msg.result?.tools?.find((t) => t.name === "health_daily")?.description;
+    expect(dailyDescription).toMatch(/mood_.*count/i);
     expect(describe("health_intraday", "metric")).toMatch(/\bhr\b/);
     expect(describe("health_intraday", "metric")).toMatch(/\bsteps\b/);
     expect(describe("health_intraday", "resolution")).toMatch(/steps.*1h/i);
@@ -1013,6 +1015,7 @@ describe("T10f AC6 workouts through the authenticated connector", () => {
     const tool = msg.result?.tools?.find((t) => t.name === "health_workouts");
     expect(tool).toBeDefined();
     expect(tool?.description).toMatch(/workout|exercise/i);
+    expect(tool?.description).toMatch(/max_hr.*minute.*HR/i);
     expect(tool?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
     const schema = tool?.inputSchema as { required: string[]; properties: Record<string, { type: string; description: string }> } | undefined;
     expect(schema).toBeDefined();
@@ -1033,11 +1036,13 @@ describe("T10f AC6 workouts through the authenticated connector", () => {
       duration_min, avg_hr, max_hr, kcal, azm, distance_m, updated_at)
       VALUES ('probe', 'gh', 'CARDIO_WORKOUT', ?, ?, 120, '2026-10-02', ?, 119, NULL, 336, 40, NULL, 1)`)
       .bind(Date.parse("2026-10-02T12:19:23Z") / 1000, Date.parse("2026-10-02T13:14:34Z") / 1000, 3311 / 60).run();
+    await env.DB.prepare(`INSERT INTO metric_minute (metric, ts, tz_offset_min, value, vmax)
+      VALUES ('hr', ?, 120, 120, 150.25)`).bind(Date.parse("2026-10-02T12:20:00Z") / 1000).run();
     const beforeRows = (await env.DB.prepare("SELECT * FROM workout").all()).results;
     const before = (await audit()).length;
     const args = { start: "2026-10-02", end: "2026-10-02" };
     const expected = { workouts: [{ local_date: "2026-10-02", type: "CARDIO_WORKOUT", start_local: "2026-10-02T14:19",
-      end_local: "2026-10-02T15:14", tz_offset_min: 120, duration_min: 55.2, avg_hr: 119, kcal: 336, azm: 40, distance_m: null }], count: 1 };
+      end_local: "2026-10-02T15:14", tz_offset_min: 120, duration_min: 55.2, avg_hr: 119, max_hr: 150.3, kcal: 336, azm: 40, distance_m: null }], count: 1 };
     const msg = await rpc(token, "tools/call", { name: "health_workouts", arguments: args });
     expect(msg.error).toBeUndefined();
     expect(msg.result?.isError).not.toBe(true);
@@ -1047,15 +1052,20 @@ describe("T10f AC6 workouts through the authenticated connector", () => {
     expect((await env.DB.prepare("SELECT * FROM workout").all()).results).toEqual(beforeRows);
   });
 
-  it("returns the generic tool error and failed audit when the workout read fails", async () => {
+  it.each(["workout", "HR"])("returns the generic tool error and failed audit when the %s read fails", async (read) => {
     google();
     const token = await accessToken();
     await initialize(token);
+    await env.DB.prepare(`INSERT INTO workout (source_id, type, start_ts, end_ts, tz_offset_min, local_date, updated_at)
+      VALUES ('failure-probe', 'RUN', 0, 60, 0, '2026-10-02', 1)`).run();
     const before = (await audit()).length;
+    const reads: string[] = [];
     const broken = new Proxy(env.DB, { get(target, key) {
       if (key === "prepare") return (sql: string) => {
         const statement = target.prepare(sql);
         if (!/FROM\s+workout\b/i.test(sql)) return statement;
+        reads.push(sql);
+        if (read === "HR" && !/metric_minute/i.test(sql)) return statement;
         return new Proxy(statement, { get(st, prop) {
           if (prop === "bind") return () => ({ all: () => Promise.reject(new Error("private workout D1 error")) });
           const value: unknown = Reflect.get(st, prop);
@@ -1071,6 +1081,8 @@ describe("T10f AC6 workouts through the authenticated connector", () => {
     expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: "Unable to read health data" }] });
     await toolAudit("health_workouts", args, 0, before);
     expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
+    expect(msg.result?.structuredContent).toBeUndefined();
+    expect(reads).toHaveLength(read === "HR" ? 2 : 1);
   });
 });
 

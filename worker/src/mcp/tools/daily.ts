@@ -5,6 +5,7 @@ export const DAILY_COLUMNS: readonly string[] = [
   "sleep_min", "sleep_eff", "deep_min", "rem_min", "sleep_latency_min", "bedtime_local", "waketime_local",
   "steps", "azm", "workout_min", "hr_wear_min", "z_ln_rmssd", "z_rhr", "z_sleep", "readiness_proxy",
   "cigarettes", "alcohol_g", "caffeine_mg",
+  "mood_genial", "mood_bien", "mood_tranquilo", "mood_cansado", "mood_estresado", "mood_ansioso", "mood_triste", "mood_enfadado",
 ];
 
 const UNITS: Record<string, string> = {
@@ -12,6 +13,8 @@ const UNITS: Record<string, string> = {
   sleep_min: "min", sleep_eff: "%", deep_min: "min", rem_min: "min", sleep_latency_min: "min",
   bedtime_local: "HH:MM", waketime_local: "HH:MM", steps: "count", azm: "min", workout_min: "min", hr_wear_min: "min",
   z_ln_rmssd: "z", z_rhr: "z", z_sleep: "z", readiness_proxy: "score", cigarettes: "count", alcohol_g: "g", caffeine_mg: "mg",
+  mood_genial: "count", mood_bien: "count", mood_tranquilo: "count", mood_cansado: "count",
+  mood_estresado: "count", mood_ansioso: "count", mood_triste: "count", mood_enfadado: "count",
 };
 
 function calendarTime(date: string): number {

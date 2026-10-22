@@ -64,7 +64,7 @@ export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionCon
     now: Math.floor(Date.now() / 1000), tz: env.USER_TZ,
   })));
   server.registerTool("health_daily", {
-    description: "Read daily health summaries for up to 90 dates.",
+    description: "Read daily health summaries for up to 90 dates, including mood_genial, mood_bien, mood_tranquilo, mood_cansado, mood_estresado, mood_ansioso, mood_triste and mood_enfadado totals in count units (null when none logged).",
     inputSchema: {
       start: z.string().describe("Start date in YYYY-MM-DD format; inclusive range must contain 1 to 90 dates."),
       end: z.string().describe("End date in YYYY-MM-DD format; inclusive range must contain 1 to 90 dates."),
@@ -79,7 +79,7 @@ export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionCon
     }, annotations,
   }, (args) => call("health_sleep", args, () => healthSleep(env.DB, args)));
   server.registerTool("health_workouts", {
-    description: "Read workouts for up to 31 dates, with session-local start/end times, duration in minutes, average heart rate in bpm, kcal, active zone minutes and distance in meters.",
+    description: "Read workouts for up to 31 dates, with session-local start/end times, duration in minutes, average heart rate in bpm, max_hr derived from stored gh minute HR maxima in [start, end) (bpm, null without coverage), kcal, active zone minutes and distance in meters.",
     inputSchema: {
       start: z.string().describe("Start date in YYYY-MM-DD format; inclusive range must contain 1 to 31 dates."),
       end: z.string().describe("End date in YYYY-MM-DD format; inclusive range must contain 1 to 31 dates."),
