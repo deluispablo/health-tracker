@@ -334,7 +334,7 @@ try {
   .qw { position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom, 0px)); z-index: 10; display: flex; flex-direction: column;
     background: var(--surface); border-top: 1px solid var(--line); padding: 0 max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px)); }
   .undo-slot { order: -1; }
-  .ht-quick { padding: 8px 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; border-bottom: 1px solid var(--line); }
+  .ht-quick { padding: 8px 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; border-bottom: 1px solid var(--line); }
   .ht-chip { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; min-width: 0; padding: 6px 4px;
     border: 0; border-radius: var(--radius-md); background: var(--surface-2); color: var(--ink); font-size: 12px; line-height: 16px; font-weight: var(--w-strong); cursor: pointer;
     transition: background var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard); -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
@@ -380,15 +380,11 @@ try {
     .qw { position: sticky; top: 0; left: auto; right: auto; bottom: auto; z-index: 5; background: var(--bg); border: 0; padding: 8px 0 4px; }
     .undo-slot { order: 0; }
     .ht-quick { padding: 0; border: 0; }
-    .ht-chip { flex-direction: row; gap: 8px; padding: 6px 12px; font-size: 14px; }
-    .ht-chip-n { position: static; background: var(--surface); }
     .sheet-wrap { align-items: center; }
     .ht-sheet { border-radius: var(--radius-md); max-width: 520px; padding-bottom: 16px; }
     .ht-sheet-grab { display: none; }
   }
 
-  /* 600-719: the chips drop their icon so "Cigarette" and "Alcohol" never break mid-word */
-  @media (min-width: 600px) and (max-width: 719px) { .ht-chip .ht-ico-sm { display: none; } }
   /* ---- 1200 and up: sidebar and content ---- */
   .quick-title { display: none; }
   .ht-settings { display: flex; align-items: center; gap: 8px; }
@@ -413,7 +409,7 @@ try {
     .qw { position: static; background: none; padding: 0; }
     .quick-title { display: block; font-size: 14px; font-weight: 600; margin-bottom: 12px; }
     .ht-quick { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .ht-chip { flex-direction: column; gap: 4px; padding: 12px 24px; background: var(--surface); }
+    .ht-chip { flex-direction: column; gap: 4px; padding: 12px 8px; background: var(--surface); }
     .ht-chip.is-off { background: transparent; }
     .ht-chip-n { position: absolute; left: auto; right: 6px; top: 6px; background: var(--surface-2); }
   }
@@ -432,6 +428,10 @@ try {
   .ht-moods { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .ht-mood { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 76px; min-width: 0; padding: 10px 2px 8px; border: 0; border-radius: var(--radius-md); background: none; color: var(--ink); cursor: pointer; font-size: 12px; line-height: 16px; font-weight: var(--w-strong); }
   .ht-mood svg { width: 36px; height: 36px; }
+  .ht-moods.is-supp { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ht-supp-disc { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--fill-supp); color: var(--on-fill-supp); box-shadow: inset 0 0 0 1px var(--fill-edge); }
+  .ht-moods .ht-supp-disc svg { width: 22px; height: 22px; stroke-width: 2.2; }
+  .ht-mood[aria-disabled="true"] .ht-supp-disc { opacity: .4; }
   .ht-mood span { max-width: 100%; overflow-wrap: anywhere; text-align: center; }
   .ht-mood:hover:not([aria-disabled="true"]) { background: var(--surface-2); }
   .ht-mood:active:not([aria-disabled="true"]) { background: var(--container); color: var(--on-container); }
@@ -613,9 +613,7 @@ try {
         <button type="button" class="ht-chip" data-chip="alcohol"></button>
         <button type="button" class="ht-chip" data-chip="agua"></button>
         <button type="button" class="ht-chip" data-chip="animo" aria-haspopup="dialog" aria-controls="mood-sheet"></button>
-        <button type="button" class="ht-chip is-supp" data-chip="melatonina"></button>
-        <button type="button" class="ht-chip is-supp" data-chip="proteina"></button>
-        <button type="button" class="ht-chip is-supp" data-chip="creatina"></button>
+        <button type="button" class="ht-chip" data-chip="supl" aria-haspopup="dialog" aria-controls="mood-sheet"></button>
         <p id="quick-note" class="ht-quick-note" hidden></p>
       </div>
       <div class="undo-slot"><div id="undo"></div></div>
@@ -718,7 +716,7 @@ try {
     <div class="ht-sheet-grab"></div>
     <div class="ht-sheet-h"><div><h2 class="ht-sheet-t" id="mood-t"></h2><p class="ht-sheet-s" id="mood-last"></p></div><button type="button" class="ht-icon-btn" id="mood-close" data-t-aria="mood.close"></button></div>
     <div class="ht-moods" id="mood-faces"></div>
-    <p class="ht-sheet-f" data-t="mood.hint"></p>
+    <p class="ht-sheet-f" id="mood-hint"></p>
   </div>
 </div>
 
@@ -762,6 +760,10 @@ try {
     'trk.melatonina': ['Melatonin', 'Melatonina'],
     'trk.proteina': ['Protein', 'Proteína'],
     'trk.creatina': ['Creatine', 'Creatina'],
+    'trk.supl': ['Supplements', 'Suplementos'],
+    'quick.logSupp': ['Log a supplement', 'Registrar un suplemento'],
+    'supp.title': ['Supplement at {t}', 'Suplemento a las {t}'],
+    'supp.hint': ['Tap one to save its usual dose at the current time.', 'Toca uno para guardar su dosis habitual con la hora actual.'],
     'dial.legendSupp': ['Supplement', 'Suplemento'],
     'trk.workout': ['Workout', 'Entreno'],
     'quick.group': ['Quick log', 'Registro rápido'],
@@ -1201,8 +1203,9 @@ try {
 
   /* ---- trackers, writes and snapshots ---- */
   const CHIPS = [{ key: 'cafe', id: 'caffeine', k: 'm-caffeine', disc: 'caffeine' }, { key: 'cigarro', id: 'cigarettes', k: 'm-cig', disc: 'cig' }, { key: 'alcohol', id: 'alcohol', k: 'm-alcohol', disc: 'alcohol' },
-    { key: 'agua', id: 'water', k: 'm-water', disc: 'water' }, { key: 'animo', id: null, k: 'ink', disc: 'mood' },
+    { key: 'agua', id: 'water', k: 'm-water', disc: 'water' }, { key: 'animo', id: null, k: 'ink', disc: 'mood' }, { key: 'supl', id: null, k: 'm-supp', disc: 'supp' },
     { key: 'melatonina', id: 'melatonin', k: 'm-supp', disc: 'supp' }, { key: 'proteina', id: 'protein', k: 'm-supp', disc: 'supp' }, { key: 'creatina', id: 'creatine', k: 'm-supp', disc: 'supp' }];
+  const SUPPS = CHIPS.filter((c) => c.disc === 'supp' && c.id);   // the Suplementos chip opens a picker with these
   const MOODS = [['genial', 'great'], ['bien', 'good'], ['tranquilo', 'calm'], ['cansado', 'tired'], ['estresado', 'stressed'], ['ansioso', 'anxious'], ['triste', 'sad'], ['enfadado', 'angry']]
     .map(([face, label]) => ({ face, label, id: 'mood_' + face }));
   function trackerKey(id) {
@@ -1215,13 +1218,13 @@ try {
   const undoArgs = (eventId) => ({ event_id: eventId });
   const available = (snap, id) => !!snap?.trackers?.some((x) => x.id === id && x.default_value != null);
   function summary(snap, key, nowMin) {
-    const ids = key === 'animo' ? MOODS.map((m) => m.id) : [CHIPS.find((c) => c.key === key).id];
+    const ids = key === 'animo' ? MOODS.map((m) => m.id) : key === 'supl' ? SUPPS.map((c) => c.id) : [CHIPS.find((c) => c.key === key).id];
     const trs = (snap?.trackers ?? []).filter((x) => ids.includes(x.id));
     const evs = (snap?.events ?? []).filter((e) => ids.includes(e.tracker_id) && localMinutes(e.local_time) != null);
     const last = snap?.events_truncated ? null : evs[evs.length - 1] ?? null;
     return {
       n: trs.reduce((s, x) => s + (x.n || 0), 0), total: trs.reduce((s, x) => s + (x.total || 0), 0),
-      unit: key === 'animo' ? null : trs[0]?.unit ?? null, last: last?.local_time ?? null,
+      unit: key === 'animo' || key === 'supl' ? null : trs[0]?.unit ?? null, last: last?.local_time ?? null, lastKey: last ? trackerKey(last.tracker_id) : null,
       since: last ? Math.max(0, nowMin - localMinutes(last.local_time)) : null,
       mood: key === 'animo' && last ? moodFace(last.tracker_id) : null
     };
@@ -1354,7 +1357,7 @@ try {
 
   window.HTLogic = {
     COPY, t, tn, pickLang, fmt: { num, signed, dur, ago, day, vital, range }, VITALS, shiftDate, dayValue, typicalRange, rangeStatus, rangeFlag, outliers,
-    recovery, stepGoal, waterGoal, expectedSteps, sunTimes, pulseBuckets, dialAngle, localMinutes, sleepWedge, clipWorkout, mainSession, CHIPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
+    recovery, stepGoal, waterGoal, expectedSteps, sunTimes, pulseBuckets, dialAngle, localMinutes, sleepWedge, clipWorkout, mainSession, CHIPS, SUPPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
     available, summary, dialEvents, dayItems, timelineItems, clusterFacts, stageMinutes, gapRuns, GROUP_MIN, clusterEvents, writeQueue, doubleTap, NIGHT_END, dayFor, bridgeEvents,
     applyLog, applyUndo, acceptSnapshot, syncLabel, errorKind
   };
@@ -1687,7 +1690,8 @@ try {
     cigarro: '<path d="M3 14h14v3H3zM12.5 14v3M20 17v-3M20 11c0-1.3 1.3-1.7 1.3-3S20 6.3 20 5"/>',
     alcohol: '<path d="M8 4h8v3.5a4 4 0 0 1-8 0zM12 11.5v8M8.5 19.5h7"/>',
     agua: '<path d="M12 3.6C9 7.6 6.5 10.6 6.5 14a5.5 5.5 0 0 0 11 0c0-3.4-2.5-6.4-5.5-10.4z"/>',
-    melatonina: '<path d="M7.8 16.2a3.4 3.4 0 0 1 0-4.8l3.6-3.6a3.4 3.4 0 0 1 4.8 4.8l-3.6 3.6a3.4 3.4 0 0 1-4.8 0zM9.6 9.6l4.8 4.8"/>',
+    supl: '<path d="M7.8 16.2a3.4 3.4 0 0 1 0-4.8l3.6-3.6a3.4 3.4 0 0 1 4.8 4.8l-3.6 3.6a3.4 3.4 0 0 1-4.8 0zM9.6 9.6l4.8 4.8"/>',
+    melatonina: '<ellipse cx="12" cy="10" rx="7" ry="3.75"/><path d="M5 10v3.25c0 2.1 3.1 3.75 7 3.75s7-1.65 7-3.75V10M9.5 10h5"/>',
     proteina: '<path d="M8.5 8h7l-1 12h-5zM9.5 8V5h5v3M8.8 12h6.4"/>',
     creatina: '<path d="M4.5 11h9a4.5 4.5 0 0 1-9 0zM13.5 11l6-4"/>',
     animo: '<circle cx="12" cy="12" r="8.25"/><circle cx="9.4" cy="10.2" r="1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="10.2" r="1" fill="currentColor" stroke="none"/><path d="M9 14.4q3 2.1 6 0"/>',
@@ -1745,7 +1749,7 @@ try {
   /* ---- state ---- */
   const localToday = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
   let connector = null, noConnector = false, stopped = false, viewDate = localToday(), clock = null, writeGen = 0, writeAt = 0;
-  let target = null, undone = null, undoneTimer = null, moodOpen = false, active = null, focusChip = 'cafe', lastTap = null;
+  let target = null, undone = null, undoneTimer = null, moodOpen = false, sheetKey = 'animo', active = null, focusChip = 'cafe', lastTap = null;
   const S = {}, scrolls = {};
   const reset = (s) => Object.assign(s, { data: null, error: null, at: null, halted: false, busy: false, input: null });
   SOURCES.forEach((n) => { S[n] = reset({ token: 0, unsubscribe: null }); });
@@ -1901,7 +1905,7 @@ try {
     const at = Date.now(), dbl = L.doubleTap(lastTap, key + (mood || ''), at);
     lastTap = { key: key + (mood || ''), at };
     if (dbl) return;   // a double tap is one log
-    focusChip = key;
+    focusChip = L.SUPPS.some((c) => c.key === key) ? 'supl' : key;
     Q.push({ kind: 'log', args: Object.freeze(L.logArgs(trackerId, L.newKey())), trackerId, key, mood, time: hhmm(now().min) });
   }
   function undo() {
@@ -2283,7 +2287,7 @@ try {
     const box = $('sum-body'), st = sourceState('trackers', 'sum');
     if (st) return swap(box, st);
     const snap = S.trackers.data, past = isPast();
-    swap(box, h('ul', { class: 'ht-trk' }, L.CHIPS.map((c) => {
+    swap(box, h('ul', { class: 'ht-trk' }, L.CHIPS.filter((c) => c.key !== 'supl').map((c) => {
       const s = L.summary(snap, c.key, past ? 1440 : n.min);
       const value = c.key === 'agua' ? t('sum.water', { v: fmt.num(s.total || 0, lang), g: fmt.num(WGOAL, lang) }) : s.n === 0 ? '—' : c.key === 'animo' ? (s.mood ? t('mood.' + s.mood) : fmt.num(s.n, lang)) : amount(s.total, s.unit);
       const last = s.n === 0 ? t(c.key === 'animo' ? 'sum.moodNone' : 'sum.none') : s.since == null ? t('sum.unknown') : past ? t('sum.last', { t: s.last }) : fmt.ago(s.since, lang);
@@ -2769,7 +2773,8 @@ try {
     const tr = S.trackers, snap = tr.data ?? calSnap(), noAccess = pageLevel() || tr.halted, kind = tr.error ? L.errorKind(tr.error.code) : null, na = [], cal = calSnap();
     for (const c of L.CHIPS) {
       const b = document.querySelector('[data-chip="' + c.key + '"]');
-      const ids = c.key === 'animo' ? L.MOODS.map((m) => m.id) : [c.id];
+      if (!b) continue;   // supplements are logged from the Suplementos picker
+      const ids = c.key === 'animo' ? L.MOODS.map((m) => m.id) : c.key === 'supl' ? L.SUPPS.map((x) => x.id) : [c.id];
       const avail = ids.some((id) => L.available(snap, id)), s = L.summary(cal?.date === viewDate ? cal : null, c.key, now().min);   // badges count the calendar day
       const blocked = ids.some(failedLog), saving = !Q.idle() && Q.has((w) => w.kind === 'log' && w.key === c.key);
       const unusable = noAccess || !connector || !snap || blocked || !avail;
@@ -2777,11 +2782,11 @@ try {
       b.setAttribute('aria-disabled', String(unusable));
       b.classList.toggle('is-off', unusable);
       if (saving) b.setAttribute('aria-busy', 'true'); else b.removeAttribute('aria-busy');
-      const name = chipName(c.key), log = c.key === 'animo' ? t('quick.logMood') : t('quick.log', { x: name.toLowerCase() });
+      const name = chipName(c.key), pick = c.key === 'animo' || c.key === 'supl', log = c.key === 'animo' ? t('quick.logMood') : c.key === 'supl' ? t('quick.logSupp') : t('quick.log', { x: name.toLowerCase() });
       const label = blocked ? t('quick.blocked', { x: name })
         : noAccess || (snap && !avail) || (!snap && tr.error) ? name + ', ' + t('quick.na')
         : !snap ? log + ', ' + t('quick.loading')
-        : c.key === 'animo' || !cal ? log + (s.n ? ', ' + t('quick.count', { n: s.n }) : '') : t('quick.logCount', { x: name.toLowerCase(), n: s.n });
+        : pick || !cal ? log + (s.n ? ', ' + t('quick.count', { n: s.n }) : '') : t('quick.logCount', { x: name.toLowerCase(), n: s.n });
       b.setAttribute('aria-label', saving ? t('quick.saving', { x: label }) : label);
       const disc = c.disc, goal = c.key === 'agua' ? ';--p:' + Math.min(1, (s.total || 0) / WGOAL) : '';
       if (c.key === 'agua' && snap) b.setAttribute('aria-label', b.getAttribute('aria-label') + ', ' + t('quick.water', { v: fmt.num(s.total || 0, lang), g: fmt.num(WGOAL, lang) }));
@@ -2830,10 +2835,19 @@ try {
 
   /* ---- mood picker: modal dialog ---- */
   function renderMoodFaces() {
-    const snap = S.trackers.data ?? calSnap(), last = L.summary(calSnap(), 'animo', now().min);
-    $('mood-t').textContent = t('mood.title', { t: hhmm(now().min) });
-    $('mood-last').textContent = last.mood ? t('mood.last', { m: t('mood.' + last.mood), t: last.last }) : '';   // the last mood is text, not a pressed face
+    const snap = S.trackers.data ?? calSnap(), supp = sheetKey === 'supl', last = L.summary(calSnap(), sheetKey, now().min);
+    $('mood-t').textContent = t(supp ? 'supp.title' : 'mood.title', { t: hhmm(now().min) });
+    $('mood-last').textContent = last.last && (supp ? last.lastKey : last.mood) ? t('mood.last', { m: supp ? chipName(last.lastKey) : t('mood.' + last.mood), t: last.last }) : '';   // the last one is text, not a pressed button
     $('mood-close').innerHTML = icon('close');
+    $('mood-hint').textContent = t(supp ? 'supp.hint' : 'mood.hint');
+    $('mood-faces').classList.toggle('is-supp', supp);
+    if (supp) return swap($('mood-faces'), L.SUPPS.map((c) => {
+      const ok = L.available(snap, c.id) && !stopped && !failedLog(c.id);
+      return h('button', { type: 'button', class: 'ht-mood', 'data-fk': 'supp-' + c.key, 'aria-disabled': String(!ok),
+        'aria-label': t('quick.log', { x: chipName(c.key).toLowerCase() }) + (L.available(snap, c.id) ? '' : ', ' + t('quick.na')),
+        html: '<span class="ht-supp-disc" aria-hidden="true">' + icon(c.key) + '</span>',
+        onclick: () => { if (!ok) return; closeMood(true); tap(c.key, c.id, null); } }, h('span', { text: chipName(c.key) }));
+    }));
     swap($('mood-faces'), L.MOODS.map((m) => {
       const ok = L.available(snap, m.id) && !stopped && !failedLog(m.id);
       return h('button', { type: 'button', class: 'ht-mood', 'data-fk': 'mood-' + m.face, 'aria-disabled': String(!ok),
@@ -2841,15 +2855,15 @@ try {
         onclick: () => { if (!ok) return; closeMood(true); tap('animo', m.id, m.face); } }, h('span', { text: t('mood.' + m.face) }));
     }));
   }
-  function openMood() {
+  function openMood(key) {
     if (moodOpen) return;
-    moodOpen = true; renderMoodFaces(); $('mood').hidden = false; $('app').inert = true;   // the page behind the dialog is out of reach
+    sheetKey = key; moodOpen = true; renderMoodFaces(); $('mood').hidden = false; $('app').inert = true;   // the page behind the dialog is out of reach
     $('mood-faces').querySelector('button')?.focus();
   }
   function closeMood(refocus) {
     if (!moodOpen) return;
     moodOpen = false; $('mood').hidden = true; $('app').inert = false;
-    if (refocus) document.querySelector('[data-chip="animo"]').focus();
+    if (refocus) document.querySelector('[data-chip="' + sheetKey + '"]').focus();
   }
   $('mood-close').addEventListener('click', () => closeMood(true));
   $('mood-scrim').addEventListener('click', () => closeMood(true));
@@ -2864,7 +2878,7 @@ try {
   document.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => {
     if (b.getAttribute('aria-disabled') === 'true') return;
     const c = L.CHIPS.find((x) => x.key === b.dataset.chip);
-    if (c.key === 'animo') openMood(); else tap(c.key, c.id, null);
+    if (c.key === 'animo' || c.key === 'supl') openMood(c.key); else tap(c.key, c.id, null);
   }));
 
   /* ---- tabs: WAI-ARIA pattern, hash tokens, scroll kept per tab ---- */
