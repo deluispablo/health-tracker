@@ -228,3 +228,7 @@ def test_standalone_startup_without_pythonpath():
     )
     assert result.returncode == 0, result.stderr
     assert "--out" in result.stdout
+
+
+def test_profile_tables_are_required():
+    assert {"profile", "weight_log"} <= export.REQUIRED_TABLES

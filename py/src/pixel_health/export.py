@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 REQUIRED_TABLES = {
-    "metric_minute", "daily_summary", "sleep_session", "event", "tracker", "audit_log"
+    "metric_minute", "daily_summary", "sleep_session", "event", "tracker", "audit_log", "profile", "weight_log"
 }
 WORKER = Path(__file__).resolve().parents[3] / "worker"
 
