@@ -5,6 +5,7 @@ interface ProfileValues {
   sex: "female" | "male" | null;
   height_cm: number;
   step_goal: number;
+  water_goal_ml: number;
   sleep_goal_min: number;
   max_hr: number;
   smoker: boolean;
@@ -26,6 +27,7 @@ function profileValue(field: string, value: unknown, year: number): ProfileValue
   switch (field) {
     case "birth_year": return numberValue(field, value, 1920, year, true);
     case "height_cm": return numberValue(field, value, 100, 250);
+    case "water_goal_ml": return numberValue(field, value, 500, 6000, true);
     case "step_goal": return numberValue(field, value, 1000, 50000, true);
     case "sleep_goal_min": return numberValue(field, value, 240, 720, true);
     case "max_hr": return numberValue(field, value, 120, 230, true);
@@ -75,6 +77,7 @@ export async function healthProfile(db: D1Database, options: Options) {
     birth_year, sex: get("sex"), height_cm: get("height_cm"),
     weight_kg: weight_history[0]?.kg ?? null, weight_date: weight_history[0]?.date ?? null,
     step_goal: get("step_goal") ?? 7000, sleep_goal_min: get("sleep_goal_min") ?? 450,
+    water_goal_ml: get("water_goal_ml") ?? 2000,
     max_hr: measured ?? (age === null ? null : Math.round(208 - 0.7 * age)),
     max_hr_source: measured !== null ? "measured" : age !== null ? "estimated" : null,
     smoker: get("smoker"), age, weight_history,

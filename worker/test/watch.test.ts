@@ -1,7 +1,9 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { route } from "../src/app";
+import { handleWatchToday } from "../src/watch";
+import { healthSetProfile } from "../src/mcp/tools/profile";
 import { logEvent } from "../src/mcp/tools/trackers";
 
 const TOKEN = "watch-token-0123456789abcdef0123456789";
@@ -22,7 +24,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await env.DB.batch(["sleep_stage", "sleep_session", "workout", "event", "metric_minute"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
+  await env.DB.batch(["sleep_stage", "sleep_session", "workout", "event", "metric_minute", "profile"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
 });
 
 describe("GET /watch/today", () => {
@@ -77,7 +79,7 @@ describe("GET /watch/today", () => {
 
   it("empty day", async () => {
     const body = await (await get(`Bearer ${TOKEN}`)).json();
-    expect(body).toEqual({ date: "2026-10-21", generatedAt: NOW, sleep: [], workouts: [], events: [], totals: {}, counts: {}, hr: Array(96).fill(null) });
+    expect(body).toMatchObject({ water: { ml: 0, goal_ml: 2000 }, date: "2026-10-21", generatedAt: NOW, sleep: [], workouts: [], events: [], totals: {}, counts: {}, hr: Array(96).fill(null) });
   });
 
   it("returns every log of a busy day", async () => {
@@ -96,7 +98,9 @@ describe("GET /watch/today", () => {
         VALUES ('three', 'cigarettes', ?, 120, '2026-10-21', 3, 'mcp', 1), ('cup', 'caffeine', ?, 120, '2026-10-21', 160, 'mcp', 1)`)
         .bind(local("2026-10-21", "09:00"), local("2026-10-21", "09:30")),
     ]);
-    const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: unknown[]; counts: Record<string, number>; totals: Record<string, number> }>();
+    const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: unknown[]; counts: Record<string, number>; totals: Record<string, number>; trackers: Today["trackers"] }>();
+    expect(body.trackers.find((t) => t.id === "cigarettes")?.today).toBe(3);
+    expect(body.trackers.find((t) => t.id === "caffeine")?.today).toBe(160);
     expect(body.events.length).toBe(2);
     expect(body.counts).toEqual({ cigarro: 3, cafe: 1 });
     expect(body.totals).toEqual({ cigarettes: 3, caffeine: 1 });
@@ -225,4 +229,166 @@ describe("DELETE /watch/log", () => {
     const live = await env.DB.prepare("SELECT id FROM event WHERE note = 'private' AND deleted_at IS NULL ORDER BY id").all();
     expect(live.results).toEqual([{ id: "k_mcp-cafe-0001" }, { id: "k_w-mcp-cafe-0001" }]);
   });
+});
+
+type Today = {
+  totals: Record<string, number>;
+  counts: Record<string, number>;
+  water: { ml: number; goal_ml: number };
+  trackers: { id: string; name: string; unit: string; value: number; surface: string; today: number }[];
+  events: { t: number; k: string; id?: string; i?: string }[];
+};
+const today = async () => (await get(`Bearer ${TOKEN}`)).json<Today>();
+const tapTracker = (tracker_id: string, idempotency_key = `tap-${tracker_id}`) => post({
+  tracker_id, idempotency_key, at: "2026-10-21T19:58:00Z",
+});
+const undo = (idempotency_key: string) => route(
+  new Request("https://example.com/watch/log", { method: "DELETE", headers: { authorization: `Bearer ${TOKEN}` },
+    body: JSON.stringify({ idempotency_key }) }),
+  appEnv(), { fetch, now: () => NOW, sleep: () => Promise.resolve() },
+);
+
+describe("catalog watch trackers", () => {
+  afterEach(async () => {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE tracker SET surface = 'face', default_value = 250, archived_at = NULL WHERE id = 'water'"),
+      env.DB.prepare("UPDATE tracker SET archived_at = NULL WHERE id = 'creatine'"),
+      env.DB.prepare("DELETE FROM event WHERE tracker_id = 'future'"),
+      env.DB.prepare("DELETE FROM tracker WHERE id = 'future'"),
+    ]);
+  });
+  it("logs water and supplements with their default doses and exact dial marks", async () => {
+    for (const id of ["water", "melatonin", "protein", "creatine"]) expect((await tapTracker(id)).status).toBe(201);
+    const body = await today();
+    expect(body.water).toEqual({ ml: 250, goal_ml: 2000 });
+    for (const [id, value] of [["water", 250], ["melatonin", 1], ["protein", 30], ["creatine", 5]] as const) {
+      expect(body.trackers.find((t) => t.id === id)).toMatchObject({ value, today: value });
+    }
+    expect(body.events).toEqual([
+      ...["creatine", "melatonin", "protein"].map((id) => ({ t: 1318, k: "suplemento", id, i: `tap-${id}` })),
+      { t: 1318, k: "agua", i: "tap-water" },
+    ]);
+    expect((await undo("tap-melatonin")).status).toBe(200);
+    expect((await today()).trackers.find((t) => t.id === "melatonin")?.today).toBe(0);
+  });
+
+  it.each(["default_value = NULL", "surface = NULL", "archived_at = 1"])(
+    "hides and refuses a tracker with %s while preserving its historical events", async (change) => {
+      await tapTracker("water");
+      await env.DB.prepare(`UPDATE tracker SET ${change} WHERE id = 'water'`).run();
+      expect((await tapTracker("water")).status).toBe(400);
+      expect((await tapTracker("water", "new-water-key")).status).toBe(400);
+      expect((await undo("tap-water")).status).toBe(404);
+      const body = await today();
+      expect(body.trackers.some((t) => t.id === "water")).toBe(false);
+      expect(body.events).toEqual([{ t: 1318, k: "agua", i: "tap-water" }]);
+      expect(body.totals).toEqual({ water: 1 });
+      expect(body.counts).toEqual({ agua: 1 });
+      expect(body.water.ml).toBe(250);
+      expect(await env.DB.prepare("SELECT deleted_at FROM event WHERE id = 'kw_tap-water'").first("deleted_at")).toBeNull();
+    },
+  );
+
+  it.each(["NULL, 'tile', NULL", "1, NULL, NULL", "1, 'tile', 1"])(
+    "keeps historical logs for a DB-only hidden tracker (%s)", async (config) => {
+      await env.DB.prepare(`INSERT INTO tracker (id, name, unit, value_type, default_value, surface, archived_at, created_at)
+        VALUES ('future', 'Hidden', 'g', 'amount', ${config}, 1)`).run();
+      await env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at)
+        VALUES ('kw_hidden-key', 'future', ?, 120, '2026-10-21', 7, 'mcp', 1)`).bind(NOW - 120).run();
+      expect((await tapTracker("future")).status).toBe(400);
+      expect((await undo("hidden-key")).status).toBe(404);
+      const body = await today();
+      expect(body.trackers.some((t) => t.id === "future")).toBe(false);
+      expect(body.events).toEqual([{ t: 1318, k: config.includes("1, NULL") ? "other" : "suplemento",
+        ...(config.includes("1, NULL") ? {} : { id: "future" }), i: "hidden-key" }]);
+      expect(body.totals).toEqual({ future: 1 });
+      expect(body.counts).toEqual({ [config.includes("1, NULL") ? "other" : "suplemento"]: 1 });
+    },
+  );
+
+  it("uses the latest live scale value on the stored local date", async () => {
+    await env.DB.prepare(`INSERT INTO tracker (id, name, unit, value_type, default_value, surface, sort, created_at)
+      VALUES ('future', 'Scale', 'pt', 'scale', 1, 'tile', -1, 1)`).run();
+    expect((await today()).trackers[0].today).toBe(0);
+    await env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at, deleted_at) VALUES
+      ('scale-old', 'future', ?, 120, '2026-10-21', 8, 'mcp', 1, NULL),
+      ('scale-new', 'future', ?, 120, '2026-10-21', 3, 'mcp', 1, NULL),
+      ('scale-deleted', 'future', ?, 120, '2026-10-21', 9, 'mcp', 1, 0),
+      ('scale-other-day', 'future', ?, 120, '2026-10-20', 10, 'mcp', 1, NULL)`)
+      .bind(NOW - 120, NOW - 60, NOW, NOW).run();
+    expect((await today()).trackers[0].today).toBe(3);
+  });
+
+  it.each([['water', 100, 375, 250], ['melatonin', 0.5, 2, 1], ['protein', 12, 45, 30], ['creatine', 2, 7, 5]] as const)(
+    "%s sums stored doses, excludes deleted/other dates, and survives undo and retries", async (id, first, second, dose) => {
+      for (const [value, at] of [[first, "2026-10-21T08:00:00Z"], [second, "2026-10-21T10:00:00Z"],
+        [dose, "2026-10-20T22:30:00Z"], [dose, "2026-10-20T19:00:00Z"]] as const) {
+        await logEvent(env.DB, { tracker_id: id, value, at }, { now: NOW, tz: "Europe/Madrid" });
+      }
+      // 22:30Z belongs to today's Madrid date; mark it deleted (including deleted_at = 0).
+      await env.DB.prepare("UPDATE event SET deleted_at = 0 WHERE tracker_id = ? AND ts = ?").bind(id, Date.parse('2026-10-20T22:30:00Z') / 1000).run();
+      const total = async () => {
+        const body = await today();
+        if (id === "water") expect(body.water.ml).toBe(body.trackers.find((t) => t.id === id)?.today);
+        return body.trackers.find((t) => t.id === id)?.today;
+      };
+      expect(await total()).toBe(first + second);
+      expect((await tapTracker(id)).status).toBe(201);
+      expect((await tapTracker(id)).status).toBe(200);
+      expect(await total()).toBe(first + second + dose);
+      for (let retry = 0; retry < 2; retry++) {
+        expect((await undo(`tap-${id}`)).status).toBe(200);
+        expect(await total()).toBe(first + second);
+      }
+      expect((await tapTracker(id)).status).toBe(200);
+      expect(await total()).toBe(first + second);
+    },
+  );
+
+  it("reads future supplements from the catalog in sort order and sums stored units for count trackers", async () => {
+    await env.DB.prepare(`INSERT INTO tracker (id, name, unit, value_type, default_value, surface, sort, created_at)
+      VALUES ('future', 'Otro suplemento', 'u', 'count', 3, 'tile', -1, 1)`).run();
+    expect((await tapTracker("future")).status).toBe(201);
+    await tapTracker("future", "future-again");
+    await logEvent(env.DB, { tracker_id: "water", value: 500, at: "2026-10-20T19:00:00Z" }, { now: NOW, tz: "Europe/Madrid" });
+    await tapTracker("water");
+    await tapTracker("water", "water-again");
+    await tapTracker("water", "water-deleted");
+    await undo("water-deleted");
+    const body = await today();
+    expect(body.trackers[0]).toEqual({ id: "future", name: "Otro suplemento", unit: "u", value: 3, surface: "tile", today: 6 });
+    expect(body.events[0]).toEqual({ t: 1318, k: "suplemento", id: "future", i: "future-again" });
+    expect((await undo("tap-future")).status).toBe(200);
+    expect((await today()).trackers[0].today).toBe(3);
+    expect(body.water.ml).toBe(500);
+    expect(body.trackers.find((t) => t.id === "water")?.today).toBe(500);
+  });
+
+  it("draws supplement logs from other clients without a watch key", async () => {
+    await logEvent(env.DB, { tracker_id: "melatonin", at: "2026-10-21T19:58:00Z" }, { now: NOW, tz: "Europe/Madrid" });
+    expect((await today()).events).toEqual([{ t: 1318, k: "suplemento", id: "melatonin" }]);
+  });
+
+  it("water goal defaults to 2000 and follows profile", async () => {
+    expect((await today()).water.goal_ml).toBe(2000);
+    await healthSetProfile(env.DB, { water_goal_ml: 2500 }, { now: NOW, tz: "Europe/Madrid" });
+    expect((await today()).water.goal_ml).toBe(2500);
+    for (const value of ["not-json", "null", '"2500"', "true", "{}", "499", "6001", "2500.5"]) {
+      await env.DB.prepare("UPDATE profile SET value = ? WHERE key = 'water_goal_ml'").bind(value).run();
+      expect((await today()).water.goal_ml).toBe(2000);
+    }
+  });
+  it("propagates real D1 failures when reading the water goal", async () => {
+    const db = new Proxy(env.DB, { get(target, property) {
+      if (property === "batch") return target.batch.bind(target);
+      if (property === "prepare") return (sql: string) => target.prepare(
+        sql.includes("FROM profile") ? "SELECT value FROM missing_watch_profile" : sql,
+      );
+      throw new Error(`unexpected operation ${String(property)}`);
+    } });
+    await expect(handleWatchToday(new Request("https://example.com/watch/today", {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    }), { ...appEnv(), DB: db }, NOW)).rejects.toThrow(/no such table: missing_watch_profile/);
+  });
+
 });

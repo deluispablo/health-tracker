@@ -24,7 +24,7 @@ it("T38 AC1 upgrades 0001–0009 and replays 0010 while preserving every prior v
   const beforeView = (await env.DB.prepare("SELECT * FROM v_daily ORDER BY local_date").all()).results;
   for (let replay = 0; replay < 3; replay++) {
     if (replay > 0) await env.DB.prepare("DELETE FROM d1_migrations WHERE name = '0010_daily_mood.sql'").run();
-    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.filter((m) => m.name <= "0010_daily_mood.sql"));
     const columns = (await env.DB.prepare("PRAGMA table_info(v_daily)").all<{ name: string }>()).results.map((c) => c.name);
     expect(columns).toEqual([...oldColumns, ...MOODS]);
     const rows = (await env.DB.prepare("SELECT * FROM v_daily ORDER BY local_date").all()).results;

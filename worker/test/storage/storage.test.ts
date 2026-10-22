@@ -88,9 +88,9 @@ describe("AC1 schema", () => {
     }
     const rows = (await env.DB.prepare("SELECT * FROM tracker WHERE id IN ('alcohol', 'caffeine', 'cigarettes') ORDER BY id").all()).results;
     expect(rows).toEqual([
-      { id: "alcohol", name: "Alcohol", unit: "g", value_type: "amount", default_value: 13, min_value: 1, max_value: 200, archived_at: null, created_at: expect.any(Number) as unknown },
-      { id: "caffeine", name: "Cafeína", unit: "mg", value_type: "amount", default_value: 80, min_value: 1, max_value: 1000, archived_at: null, created_at: expect.any(Number) as unknown },
-      { id: "cigarettes", name: "Cigarrillos", unit: "u", value_type: "count", default_value: 1, min_value: 1, max_value: 20, archived_at: null, created_at: expect.any(Number) as unknown },
+      { id: "alcohol", name: "Alcohol", unit: "g", value_type: "amount", default_value: 13, min_value: 1, max_value: 200, archived_at: null, surface: "face", sort: 2, created_at: expect.any(Number) as unknown },
+      { id: "caffeine", name: "Cafeína", unit: "mg", value_type: "amount", default_value: 80, min_value: 1, max_value: 1000, archived_at: null, surface: "face", sort: 0, created_at: expect.any(Number) as unknown },
+      { id: "cigarettes", name: "Cigarrillos", unit: "u", value_type: "count", default_value: 1, min_value: 1, max_value: 20, archived_at: null, surface: "face", sort: 1, created_at: expect.any(Number) as unknown },
     ]);
     for (const row of rows) {
       expect(row.created_at).toBeGreaterThanOrEqual(migrationStart);

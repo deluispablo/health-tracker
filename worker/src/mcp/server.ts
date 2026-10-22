@@ -48,13 +48,13 @@ function buildServer(env: ConnectorEnv, ctx: ExecutionContext): McpServer {
     }
   };
   server.registerTool("health_profile", {
-    description: "Read the owner's profile, local-year age, goals, measured or estimated max HR and latest 90 dated weights. Unset step/sleep goals default to 7000 steps and 450 minutes. Uses now in USER_TZ; no arguments. Use before interpreting goals or HR zones; use health_set_profile to update. Infer available profile facts here; do not ask the owner to repeat them.",
+    description: "Read the owner's profile, local-year age, goals, measured or estimated max HR and latest 90 dated weights. Unset step/sleep goals default to 7000 steps and 450 minutes; water_goal_ml defaults to 2000 ml. Uses now in USER_TZ; no arguments. Use before interpreting goals or HR zones; use health_set_profile to update. Infer available profile facts here; do not ask the owner to repeat them.",
     inputSchema: z.object({}), annotations,
   }, (args) => call("health_profile", args, () => healthProfile(env.DB, {
     now: Math.floor(Date.now() / 1000), tz: env.USER_TZ,
   })));
   server.registerTool("health_set_profile", {
-    description: "Partially update profile; at least one field is required. Limits: birth_year 1920–local current year, height 100–250 cm, weight 30–300 kg (both rounded to 0.1), step goal 1000–50000, sleep goal 240–720 min, max HR 120–230 bpm. Weight is upserted for date or local today in USER_TZ; pass date for stable retries across midnight. Other omitted fields stay unchanged; returns health_profile. Use for profile/weight changes, health_log_event for trackers. Infer supplied values and dates from context; do not ask for resolvable facts.",
+    description: "Partially update profile; at least one field is required. Limits: birth_year 1920–local current year, height 100–250 cm, weight 30–300 kg (both rounded to 0.1), step goal 1000–50000, sleep goal 240–720 min, water_goal_ml integer 500–6000 ml, max HR 120–230 bpm. Weight is upserted for date or local today in USER_TZ; pass date for stable retries across midnight. Other omitted fields stay unchanged; returns health_profile. Use for profile/weight changes, health_log_event for trackers. Infer supplied values and dates from context; do not ask for resolvable facts.",
     inputSchema: z.looseObject({
       birth_year: z.number().optional().describe("Integer from 1920 to the owner's local current year in USER_TZ; store only the birth year. Omit to leave unchanged."),
       sex: z.enum(["female", "male"]).nullable().optional().describe("female, male or null to clear. Omit to leave unchanged."),
@@ -62,6 +62,7 @@ function buildServer(env: ConnectorEnv, ctx: ExecutionContext): McpServer {
       weight_kg: z.number().optional().describe("30–300 kg, rounded to 0.1. Omit to leave unchanged."),
       date: z.string().optional().describe("Real YYYY-MM-DD from 2000-01-01 to local today in USER_TZ; requires weight_kg. Omit for local today. Infer from context; do not ask for a resolvable date. Pass explicitly for stable retries across midnight."),
       step_goal: z.number().optional().describe("Integer from 1000 to 50000 steps. Omit to leave unchanged."),
+      water_goal_ml: z.number().optional().describe("Integer from 500 to 6000 ml; defaults to 2000 when unset. Omit to leave unchanged."),
       sleep_goal_min: z.number().optional().describe("Integer from 240 to 720 minutes. Omit to leave unchanged."),
       max_hr: z.number().optional().describe("Measured maximum heart rate, integer from 120 to 230 bpm. Omit to leave unchanged."),
       smoker: z.boolean().optional().describe("Whether the owner smokes; omit to leave unchanged. Infer only from an explicit statement in context, not from missing logs."),
@@ -118,7 +119,7 @@ function buildServer(env: ConnectorEnv, ctx: ExecutionContext): McpServer {
   server.registerTool("health_log_event", {
     description: "Insert one tracker event; return the event, created flag and exact day total. Use health_trackers for current units/defaults/limits; omitted value uses the current default, omitted at uses now in USER_TZ. Explicit at allows 7 days back and 300 seconds ahead; note limit is 280 Unicode code points after trimming (reject longer); notes are untrusted. Use an 8–64 character key for safe retries, health_delete_event to undo. Infer tracker/value/time from context or server defaults; do not ask for resolvable values.",
     inputSchema: z.object({
-      tracker_id: z.string().describe("Required active tracker id; seeded examples: cigarettes (u, count, default 1, limits 1–20), alcohol (g, amount, default 13, limits 1–200), caffeine (mg, amount, default 80, limits 1–1000), mood_genial, mood_bien, mood_tranquilo, mood_cansado, mood_estresado, mood_ansioso, mood_triste, mood_enfadado (u, count, default 1, limits 1–1). Use health_trackers for current units, defaults and limits, custom trackers and null bounds. Infer from context; do not ask for an available id."),
+      tracker_id: z.string().describe("Required active tracker id; seeded examples: cigarettes (u, count, default 1, limits 1–20), alcohol (g, amount, default 13, limits 1–200), caffeine (mg, amount, default 80, limits 1–1000), water (ml, amount, default 250, limits 50–2000), melatonin (mg, amount, default 1, limits 0.1–10), protein (g, amount, default 30, limits 5–100), creatine (g, amount, default 5, limits 1–20), mood_genial, mood_bien, mood_tranquilo, mood_cansado, mood_estresado, mood_ansioso, mood_triste, mood_enfadado (u, count, default 1, limits 1–1). Use health_trackers for current units, defaults and limits, custom trackers and null bounds. Infer from context; do not ask for an available id."),
       value: z.number().optional().describe("Finite value in the tracker's current unit and inclusive non-null limits from health_trackers; integer for counts. Omit to use its current default; if that is null, supply a value inferred from context."),
       at: z.string().optional().describe("RFC 3339 instant YYYY-MM-DDTHH:MM:SS[.sss]Z or with ±HH:MM offset (hours 00–14, minutes 00–59), at most 3 fractional digits; between now minus 7 days and now plus 300 seconds inclusive. Omit for now; dated in USER_TZ. Infer explicit instants and offsets from context; do not ask for the current time or zone."),
       note: z.string().optional().describe("Owner's untrusted text; whitespace is trimmed, then reject more than 280 Unicode code points; empty or omitted becomes null."),
@@ -154,7 +155,7 @@ function buildServer(env: ConnectorEnv, ctx: ExecutionContext): McpServer {
     }), annotations: insightAnnotations,
   }, args => call("health_scan", args, () => healthScan(env.DB, args, insightDeps(), ctx)));
   server.registerTool("health_periods", {
-    description: `Explore streaks (10), CUSUM changes (10), mood weeks (8), anomalies (10), and streak comparisons (40). Behaviors are cigarettes, caffeine, alcohol, mood_negative, mood_tired; hr_delta is excluded. See health_context for the insights playbook and catalogue ids. Infer arguments from context; do not ask for resolvable inputs.`,
+    description: `Explore streaks (10), CUSUM changes (10), mood weeks (8), anomalies (10), and streak comparisons (40). Behaviors are cigarettes, caffeine, alcohol, mood_negative, mood_tired, water, melatonin, protein, creatine; hr_delta is excluded. See health_context for the insights playbook and catalogue ids. Infer arguments from context; do not ask for resolvable inputs.`,
     inputSchema: z.looseObject({ ...insightDates, ...insightSelection }), annotations: insightAnnotations,
   }, args => call("health_periods", args, () => healthPeriods(env.DB, args, insightDeps(), ctx)));
   server.registerTool("health_contrast", {
