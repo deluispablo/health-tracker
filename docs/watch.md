@@ -85,7 +85,7 @@ The first sync runs when the app starts, then every 60 minutes while the watch h
 
 The four slots sit on the diagonals of the bezel. By default the top-right slot shows battery (`WATCH_BATTERY`, `RANGED_VALUE`) and the bottom-right slot shows steps (`STEP_COUNT`, `GOAL_PROGRESS`); both left slots start empty. Long-press the face (or use the phone's watch app) and choose **Edit** to change them. Edge slots accept providers with progress (`RANGED_VALUE` or `GOAL_PROGRESS`), shown as icon, value and a progress arc on one curved line, and short text (`SHORT_TEXT`), shown as icon and text centred on the diagonal. The lower slots read upright. They hide in ambient mode, which shows only the bezel, the hands and the night's sleep.
 
-Tapping the centre of the face opens the log menu: coffee, cigarette and drink with today's count, plus mood. One tap logs and closes the menu; mood first shows the dashboard's eight moods. The new log appears on the dial at once.
+Tapping the centre of the face opens the log menu: four round buttons for coffee, cigarette and drink (each with today's count) and mood. One tap logs and closes the menu; mood first swaps the grid for a ring of the dashboard's eight mood faces. The new log appears on the dial at once.
 
 Every log is queued on the watch first, with a random id as its idempotency key and the tap time as the event time, then sent to `POST /watch/log` when there is a connection. A tap is removed from the queue only once a fresh `GET /watch/today` already includes it, so retries never double-count. The endpoint accepts only coffee, cigarettes, alcohol and the eight moods, and rejects taps older than seven days. The Worker stores watch logs like any other log; undo one from the dashboard or with `health_delete_event`.
 

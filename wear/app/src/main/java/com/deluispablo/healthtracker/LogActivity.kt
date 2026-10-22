@@ -7,8 +7,10 @@ import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.View
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -17,11 +19,13 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import kotlin.concurrent.thread
+import kotlin.math.cos
+import kotlin.math.sin
 
 private val TRACKERS = listOf(
-    Triple("caffeine", "Café", R.drawable.ic_cafe),
-    Triple("cigarettes", "Cigarro", R.drawable.ic_cigarro),
-    Triple("alcohol", "Copa", R.drawable.ic_alcohol),
+    Triple("caffeine", R.string.log_coffee, R.drawable.ic_cafe),
+    Triple("cigarettes", R.string.log_cigarette, R.drawable.ic_cigarro),
+    Triple("alcohol", R.string.log_drink, R.drawable.ic_alcohol),
 )
 
 private val MOODS = listOf(
@@ -32,11 +36,11 @@ private val MOODS = listOf(
 )
 
 /**
- * Opened by tapping the centre of the face: syncs now and offers coffee, cigarette, drink and mood.
- * One tap logs and closes; mood first swaps the list for the 8 moods.
+ * Opened by tapping the centre of the face: syncs now and shows a 2x2 grid (coffee, cigarette,
+ * drink, mood). One tap logs and closes; mood swaps the grid for a ring of the 8 moods.
  */
 class LogActivity : Activity() {
-    private lateinit var list: LinearLayout
+    private lateinit var screen: FrameLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,53 +52,63 @@ class LogActivity : Activity() {
                 Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
             ).setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST).build(),
         )
-        list = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            // Round screen: generous top and bottom room so the first and last rows clear the bezel.
-            setPadding(dp(30), dp(40), dp(30), dp(48))
-        }
-        val scroll = ScrollView(this).apply {
-            isVerticalScrollBarEnabled = false
-            setBackgroundColor(Color.BLACK)
-            addView(list)
-        }
-        setContentView(scroll)
-        scroll.requestFocus()  // the crown scrolls the focused view
-        showMenu()
+        screen = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        setContentView(screen)
+        showGrid()
     }
 
-    private fun showMenu() {
-        list.removeAllViews()
+    private fun showGrid() {
         val today = todayWithTaps(this)
-        for ((tracker, name, icon) in TRACKERS) {
+        TRACKERS.forEachIndexed { i, (tracker, label, icon) ->
             val count = today?.events?.count { it.k == kindOf(tracker) } ?: 0
-            add("$name · $count", icon) { log(tracker) }
+            place(button(icon, 26, count.toString(), getString(label)) { log(tracker) }, 72, gridX(i), gridY(i))
         }
-        add("Ánimo", R.drawable.ic_mood_bien) {
-            list.removeAllViews()
-            for ((mood, icon) in MOODS) add(mood.replaceFirstChar { it.uppercase() }, icon) { log("mood_$mood") }
-            (list.parent as ScrollView).scrollTo(0, 0)
+        place(button(R.drawable.ic_mood_bien, 30, null, getString(R.string.log_mood)) { showRing() }, 72, gridX(3), gridY(3))
+    }
+
+    private fun showRing() {
+        screen.removeAllViews()
+        MOODS.forEachIndexed { i, (mood, icon) ->
+            val a = i * Math.PI / 4
+            place(button(icon, 26, null, "Ánimo: $mood") { log("mood_$mood") }, 44,
+                (76 * sin(a)).toFloat(), (-76 * cos(a)).toFloat())
         }
     }
+
+    private fun gridX(i: Int) = if (i % 2 == 0) -40f else 40f
+    private fun gridY(i: Int) = if (i < 2) -40f else 40f
 
     private fun log(tracker: String) {
-        list.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        screen.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
         val ctx = applicationContext
         thread { logTap(ctx, tracker) }
         finish()
     }
 
-    private fun add(label: String, icon: Int, onClick: () -> Unit) = list.addView(TextView(this).apply {
-        text = label
-        setTextColor(0xffe7e9f0.toInt())
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(14), 0, dp(14), 0)
-        compoundDrawablePadding = dp(10)
-        setCompoundDrawablesRelativeWithIntrinsicBounds(getDrawable(icon), null, null, null)
-        background = GradientDrawable().apply { cornerRadius = dp(26).toFloat(); setColor(0xff1c2233.toInt()) }
-        setOnClickListener { onClick() }
-    }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(52)).apply { bottomMargin = dp(4) })
+    /** A round button with an icon and an optional count under it. */
+    private fun button(icon: Int, iconDp: Int, count: String?, description: String, onClick: () -> Unit): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xff1c2233.toInt()) }
+            contentDescription = description
+            addView(ImageView(context).apply { setImageResource(icon) }, LinearLayout.LayoutParams(dp(iconDp), dp(iconDp)))
+            if (count != null) addView(TextView(context).apply {
+                text = count
+                setTextColor(0xffe7e9f0.toInt())
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                gravity = Gravity.CENTER
+            })
+            setOnClickListener { onClick() }
+        }
+
+    /** Centres [view] of [sizeDp] at ([dx], [dy]) dp from the middle of the screen. */
+    private fun place(view: View, sizeDp: Int, dx: Float, dy: Float) =
+        screen.addView(view, FrameLayout.LayoutParams(dp(sizeDp), dp(sizeDp), Gravity.CENTER).apply {
+            leftMargin = dp(dx)
+            topMargin = dp(dy)
+        })
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private fun dp(v: Float) = (v * resources.displayMetrics.density).toInt()
 }
