@@ -32,6 +32,7 @@ fun kindOf(tracker: String): String = when {
     tracker == "caffeine" -> "cafe"
     tracker == "cigarettes" -> "cigarro"
     tracker == "alcohol" -> "alcohol"
+    tracker == "water" -> "agua"
     tracker.startsWith("mood_") -> "animo"
     else -> "other"
 }
@@ -81,7 +82,8 @@ class FetchOrder {
 fun withTaps(data: DialData, taps: List<Tap>): DialData {
     val today = taps.mapNotNull { tap ->
         val local = Instant.ofEpochSecond(tap.at).atZone(MADRID)
-        if (local.toLocalDate().toString() == data.date) tap to Mark(minutesSince(data.date, local), kindOf(tap.tracker),
+        // Only the face's trackers have a mark; supplements live in the Tile and the dashboard.
+        if (local.toLocalDate().toString() == data.date && kindOf(tap.tracker) != "other") tap to Mark(minutesSince(data.date, local), kindOf(tap.tracker),
             tap.tracker.removePrefix("mood_").takeIf { tap.tracker.startsWith("mood_") }, tap.id) else null
     }
     if (today.isEmpty()) return data

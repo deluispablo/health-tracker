@@ -23,6 +23,7 @@ private val M_CAFFEINE = Color.parseColor("#f2c46b")  // the menu button colours
 private val BEAN_SEAM = Color.parseColor("#2a1a00")
 private val CIGARETTE = Color.WHITE
 private val M_ALCOHOL = Color.parseColor("#b48ae8")
+private val M_WATER = Color.parseColor("#8fd3f4")  // placeholder until the shared water glyph lands
 private val AMBIENT_SLEEP = Color.parseColor("#2a3363")
 
 // Ring radii in the 360 design box: the log ring sits at R_LOG, the night band fills R_LOG..R_BEZEL
@@ -72,7 +73,7 @@ private fun drawLayers(c: Canvas, data: DialData, nowMin: Int, ambient: Boolean)
 
     // Log ring with marks; clusters get a bracket inside it with feet at the true times.
     c.drawCircle(0f, 0f, R_LOG, stroke(LINE, 2.25f))
-    val placed = fanOut(data.events.filter { it.t in 0..nowMin }, stepDeg = 6.5f * MARK * 102f / R_LOG)
+    val placed = fanOut(data.events.filter { it.t in 0..nowMin && it.k != "other" }, stepDeg = 6.5f * MARK * 102f / R_LOG)
     clusters(placed).filter { it.size > 1 }.forEach { cl ->
         val p = stroke(LINE_STRONG, 1.85f)
         c.drawArc(box(R_LOG - 13f * MARK), cl.first().second - 90f, cl.last().second - cl.first().second, false, p)
@@ -170,6 +171,17 @@ private fun mark(c: Canvas, kind: String, deg: Float, mood: String?) {
             c.drawPath(foot, stroke(HALO, 3.8f))
             c.drawPath(GLASS, fill(M_ALCOHOL))
             c.drawPath(foot, stroke(M_ALCOHOL, 1.6f))
+        }
+        "agua" -> {
+            val drop = Path().apply {
+                moveTo(0f, -5.8f)
+                cubicTo(3.2f, -1.8f, 4.4f, 0.4f, 4.4f, 2f)
+                arcTo(RectF(-4.4f, -2.4f, 4.4f, 6.4f), 0f, 180f)
+                cubicTo(-4.4f, 0.4f, -3.2f, -1.8f, 0f, -5.8f)
+                close()
+            }
+            c.drawPath(drop, stroke(HALO, 2.2f).apply { strokeJoin = Paint.Join.ROUND })
+            c.drawPath(drop, fill(M_WATER))
         }
         "animo" -> {
             c.drawCircle(0f, 0f, 4.6f, stroke(HALO, 2.2f))
