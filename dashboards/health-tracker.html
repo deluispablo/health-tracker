@@ -1,6 +1,6 @@
 <title>Health Tracker</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<script type="application/json" id="mcp-manifest">{"servers":[{"server":"Pixel Health","tools":["health_status","health_daily","health_sleep","health_workouts","health_trackers","health_profile","health_log_event","health_delete_event","health_intraday","health_sql"]}]}</script>
+<script type="application/json" id="mcp-manifest">{"servers":[{"server":"Health Tracker","tools":["health_status","health_daily","health_sleep","health_workouts","health_trackers","health_profile","health_log_event","health_delete_event","health_intraday","health_sql"]}]}</script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Red+Hat+Mono:wght@400;500&display=swap');
   /* Tokens: Health Tracker design system (tokens.css). Light by default; dark by preference or data-theme. */
@@ -803,7 +803,7 @@
     'st.allowX': ['Allow access to {x}', 'Permitir el acceso a {x}'],
     'st.same': ['See {x} above.', 'Mira {x}, más arriba.'],
     'st.connT': ["This view can't access your data", 'Esta vista no tiene acceso a tus datos'],
-    'st.connB': ['Turn on the Pixel Health connector in Settings › Connectors, then reopen this page.', 'Activa el conector de Pixel Health en Ajustes › Conectores y vuelve a abrir esta página.'],
+    'st.connB': ['Turn on the Health Tracker connector in Settings › Connectors, then reopen this page.', 'Activa el conector de Health Tracker en Ajustes › Conectores y vuelve a abrir esta página.'],
     'st.connBtn': ['Allow connection', 'Permitir conexión'],
     'icon.alert': ['Alert', 'Aviso'],
     'icon.retry': ['Retry', 'Reintentar'],
@@ -897,17 +897,17 @@
     'card.ev': ['the timeline', 'la cronología'],
     'card.since': ['the logs since midnight', 'los registros desde medianoche'],
     'card.workouts': ['workouts', 'los entrenos'],
-    'err.needs_reauth': ['Reconnect Pixel Health in Settings › Connectors.', 'Vuelve a conectar Pixel Health en Ajustes › Conectores.'],
-    'err.server_not_connected': ['Add Pixel Health in Settings › Connectors.', 'Añade Pixel Health en Ajustes › Conectores.'],
-    'err.selection_required': ['Choose one Pixel Health connection in the connector picker, then reload.', 'Elige una conexión de Pixel Health en el selector de conectores y vuelve a cargar.'],
-    'err.server_not_found': ['That Pixel Health connection no longer exists. Check Settings › Connectors.', 'Esa conexión de Pixel Health ya no existe. Revisa Ajustes › Conectores.'],
-    'err.not_in_manifest': ['Pixel Health is not allowed for this view.', 'Pixel Health no está permitido en esta vista.'],
+    'err.needs_reauth': ['Reconnect Health Tracker in Settings › Connectors.', 'Vuelve a conectar Health Tracker en Ajustes › Conectores.'],
+    'err.server_not_connected': ['Add Health Tracker in Settings › Connectors.', 'Añade Health Tracker en Ajustes › Conectores.'],
+    'err.selection_required': ['Choose one Health Tracker connection in the connector picker, then reload.', 'Elige una conexión de Health Tracker en el selector de conectores y vuelve a cargar.'],
+    'err.server_not_found': ['That Health Tracker connection no longer exists. Check Settings › Connectors.', 'Esa conexión de Health Tracker ya no existe. Revisa Ajustes › Conectores.'],
+    'err.not_in_manifest': ['Health Tracker is not allowed for this view.', 'Health Tracker no está permitido en esta vista.'],
     'err.blocked_by_policy': ["Your organisation's policy blocks this.", 'La política de tu organización lo bloquea.'],
     'err.approval_required': ['This needs your approval.', 'Esto necesita tu aprobación.'],
     'err.consent_required': ['Allow this connection to show your data.', 'Permite esta conexión para ver tus datos.'],
     'err.server_unavailable': ['The server did not respond.', 'El servidor no ha respondido.'],
     'err.rate_limited': ['Too many requests. Wait a moment.', 'Demasiadas consultas. Espera un momento.'],
-    'err.tool_error': ['Pixel Health could not complete it.', 'Pixel Health no ha podido completarlo.'],
+    'err.tool_error': ['Health Tracker could not complete it.', 'Health Tracker no ha podido completarlo.'],
     'err.bad_request': ["This view couldn't start the request. Reopen it.", 'Esta vista no ha podido iniciar la consulta. Vuelve a abrirla.'],
     'err.transform_error': ["This view couldn't prepare the request. Reopen it.", 'Esta vista no ha podido preparar la consulta. Vuelve a abrirla.'],
     'err.self_only': ['This request is not allowed here.', 'Esta consulta no está permitida aquí.'],
@@ -916,7 +916,7 @@
     'err.capability_disabled': ['This view has no access to connectors.', 'Esta vista no tiene acceso a los conectores.'],
     'err.capability_removed': ['This view has no access to connectors. Reopen it.', 'Esta vista no tiene acceso a los conectores. Vuelve a abrirla.'],
     'err.user_changed': ['The account changed. Reopen this page to continue.', 'La cuenta ha cambiado. Vuelve a abrir la página para seguir.'],
-    'err.upstream_error': ["Couldn't reach Pixel Health.", 'No se ha podido contactar con Pixel Health.'],
+    'err.upstream_error': ["Couldn't reach Health Tracker.", 'No se ha podido contactar con Health Tracker.'],
     /* ==== Health tab ==== */
     'hv.title': ['Vitals', 'Constantes'],
     'hv.bandNote': ['Shaded: your usual range', 'Sombreado: tu rango habitual'],
@@ -1420,7 +1420,7 @@
 (async () => {
   'use strict';
   const L = window.HTLogic, $ = (id) => document.getElementById(id);
-  const SERVER = 'Pixel Health';
+  const SERVER = 'Health Tracker';
   let GOAL = L.stepGoal(null);
   const WATCH = { cache: { staleTime: 300000, gcTime: 86400000 }, refetchInterval: 300000 };
   const FRESH = { cache: { refresh: true, gcTime: 86400000 } };
