@@ -43,7 +43,7 @@ SELECT d.local_date, m.rhr, m.hrv_rmssd, CASE WHEN m.hrv_rmssd > 0 THEN ln(m.hrv
   s.minutes_asleep, s.efficiency, s.deep_min, s.rem_min, s.latency_min,
   strftime('%H:%M', s.start_ts + s.tz_offset_min * 60, 'unixepoch'),
   strftime('%H:%M', s.end_ts + s.tz_offset_min * 60, 'unixepoch'),
-  m.steps, m.azm, w.minutes, COALESCE(h.minutes, 0), ?3
+  m.steps, m.azm, w.minutes, h.minutes, ?3
 FROM dates d
 LEFT JOIN metrics m ON m.local_date = d.local_date
 LEFT JOIN sleeps s ON s.local_date = d.local_date AND s.rank = 1
