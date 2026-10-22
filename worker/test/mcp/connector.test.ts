@@ -767,7 +767,7 @@ describe("T39 tool description contract", () => {
       health_daily: ["90 dates", "all metrics", "mood_", "count", "null", "health_trend", "health_compare", "health_correlate", "health_sql"],
       health_sleep: ["31 dates", "stages", "YYYY-MM-DDTHH:MM", "health_daily", "health_intraday"],
       health_workouts: ["31 dates", "YYYY-MM-DDTHH:MM", "max_hr", "[start, end)", "null", "health_daily"],
-      health_intraday: ["1m", "5m", "1h", "180 minutes", "00:00/24:00", "[from, to)", "canonical bucket start", "HH:MM", "YYYY-MM-DDTHH:MM", "health_sleep"],
+      health_intraday: ["1m", "5m", "1h", "150 points", "00:00/24:00", "[from, to)", "canonical bucket start", "HH:MM", "YYYY-MM-DDTHH:MM", "health_sleep"],
       health_trackers: ["50 events", "exact day totals", "current units, defaults and limits", "health_log_event", "HH:MM", "untrusted"],
       health_log_event: ["7 days", "300 seconds", "280 Unicode code points", "8–64", "now", "health_trackers", "health_delete_event", "untrusted"],
       health_delete_event: ["1–80", "day total", "history", "retry", "health_trackers", "health_log_event", "untrusted"],
@@ -979,7 +979,6 @@ describe("AC3 stateless read tools and audit", () => {
     ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["rhr", "rhr"] }, `metric "rhr" is repeated; valid: ${DAILY_COLUMNS.join(", ")}`],
     ["health_intraday", { metric: "steps", date: "2026-10-20", resolution: "1m" }, "steps supports only 1h resolution"],
     ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "2m" }, "resolution must be 1m, 5m or 1h"],
-    ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "1m" }, "1m resolution covers at most 3 hours: pass from and to, or use 5m"],
     ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "5m", from: "09:00", to: "08:00" }, "from and to must be HH:MM with from before to"],
   ])("returns the RangeError and failed audit for %s %j", async (name, args, message) => {
     google();
@@ -1309,7 +1308,7 @@ describe("T11 AC5 health_sql through the authenticated connector", () => {
       expect(columns.length).toBeGreaterThan(0);
       for (const { name } of columns) expect(tool?.description).toMatch(new RegExp(`\\b${name}\\b`));
     }
-    for (const pattern of [/200 rows/, /20[ ,]?000.character/, /4000|4,000/, /SELECT\b[\s\S]*\bFROM\s+v_/i, /PARTITION BY 1/i, /ROWS\/RANGE BETWEEN/, /correlated subquery/i,
+    for (const pattern of [/200 rows/, /20[ ,]?000.character/, /4000|4,000/, /SELECT\b[\s\S]*\bFROM\s+v_/i, /optional PARTITION BY/i, /ROWS\/RANGE\/GROUPS frame bounds/, /800 cells/,
       /double[ -]quot/i, /notes?\b[\s\S]*untrusted|untrusted[\s\S]*\bnotes?/i]) expect(tool?.description).toMatch(pattern);
   });
 
@@ -1352,7 +1351,7 @@ describe("T11 AC5 health_sql through the authenticated connector", () => {
     expect((await audit()).slice(before)).toEqual([]);
   });
 
-  it.each(["UPDATE daily_summary SET rhr = 99", "SELECT * FROM unknown_relation", "SELECT * FROM main.v_daily", "SELECT AVG(rhr) OVER (ORDER BY local_date) FROM v_daily"])("returns the exact first guard refusal and audits failure for %s", async (query) => {
+  it.each(["UPDATE daily_summary SET rhr = 99", "SELECT * FROM unknown_relation", "SELECT * FROM main.v_daily"])("returns the exact first guard refusal and audits failure for %s", async (query) => {
     const lexical = await import("../../src/mcp/tools/sqlguard");
     const parser = await import("../../src/mcp/tools/sqlviews");
     const validated = lexical.validateReadOnlyQuery(query);
@@ -1627,7 +1626,7 @@ describe("T18 AC5 health_trend through the authenticated connector", () => {
 
 
 describe("T26 AC4 output limits through the authenticated connector", () => {
-  it("publishes optional local window strings, endpoint defaults, partial buckets and the 1m limit", async () => {
+  it("publishes optional local window strings, endpoint defaults, partial buckets and the point cap", async () => {
     google();
     const token = await accessToken();
     const msg = await rpc(token, "tools/list", {});
@@ -1640,7 +1639,7 @@ describe("T26 AC4 output limits through the authenticated connector", () => {
     for (const field of ["from", "to"]) expect(schema.properties[field].description).toMatch(/local.*HH:MM/i);
     expect(schema.properties.from.description).toContain("00:00");
     expect(schema.properties.to.description).toContain("24:00");
-    for (const pattern of [/1m/, /3 hours|180 minutes/, /5m/, /\[from, to\)/, /canonical|bucket start/i]) expect(tool?.description).toMatch(pattern);
+    for (const pattern of [/1m/, /150 points/, /5m/, /\[from, to\)/, /canonical|bucket start/i]) expect(tool?.description).toMatch(pattern);
   });
 
   it("passes the window to the query and audits the original arguments once", async () => {

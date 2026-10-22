@@ -200,15 +200,15 @@ describe("T26 AC1 local intraday windows", () => {
     expect(seen.sql).toEqual([]);
   });
 
-  it("accepts exactly 180 minutes and refuses longer or missing 1m windows before reading", async () => {
+  it("accepts long and default 1m windows with output bounded separately", async () => {
     await expect(healthIntraday(env.DB, { ...base, resolution: "1m", from: "08:00", to: "11:00" }))
       .resolves.toMatchObject({ points: [] });
     const [db, seen] = guarded();
     for (const window of [{}, { from: "20:00" }, { to: "03:01" }, { from: "08:00", to: "11:01" }]) {
       await expect(healthIntraday(db, { ...base, resolution: "1m", ...window }))
-        .rejects.toThrow(new RangeError("1m resolution covers at most 3 hours: pass from and to, or use 5m"));
+        .resolves.toMatchObject({ points: [] });
     }
-    expect(seen.sql).toEqual([]);
+    expect(seen.sql).toHaveLength(4);
   });
 });
 
@@ -244,5 +244,21 @@ describe("T36 AC3 hourly steps", () => {
         .rejects.toThrow(new RangeError("steps supports only 1h resolution"));
     }
     expect(seen.sql).toEqual([]);
+  });
+});
+
+describe("QA1 intraday response bounds", () => {
+  it("truncates a full day to 150 ordered points while keeping full-window coverage", async () => {
+    await env.DB.batch(Array.from({ length: 688 }, (_, i) => env.DB.prepare(
+      "INSERT INTO metric_minute (metric, ts, tz_offset_min, value, source) VALUES ('hr', ?, 0, 60, 'gh')",
+    ).bind(at("2026-10-07T00:00:00Z") + i * 60)));
+    const result = await healthIntraday(env.DB, { metric: "hr", date: "2026-10-07", resolution: "1m" });
+    expect(result.points).toHaveLength(150);
+    expect(result.points[149]).toEqual(["2026-10-07T02:29", 60, 60, 60]);
+    expect(result.coverage).toEqual({ minutes_with_data: 688 });
+    expect(result).toMatchObject({ truncated: true, hint: expect.stringMatching(/narrow.*5m.*1h/i) });
+    const small = await healthIntraday(env.DB, { metric: "hr", date: "2026-10-07", resolution: "1m", to: "00:02" });
+    expect(small.points).toEqual(result.points.slice(0, 2));
+    expect(small).not.toHaveProperty("hint");
   });
 });
