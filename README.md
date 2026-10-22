@@ -41,11 +41,14 @@ Health Tracker is a single-user health pipeline. One Cloudflare Worker receives 
 | Sleep | Sessions dated by wake day; short daytime sleep (under 3 h in bed, starting 09:00–19:59 local) is stored as a nap |
 | Daily summaries | Recomputed from the earliest changed date through the latest changed date's 28-day score tail (capped at today and 366 dates per batch); z-scores against a 28-day baseline and a heuristic readiness proxy |
 | Connector | Remote MCP server (Streamable HTTP), OAuth 2.1 with PKCE, dynamic client registration and client ID metadata documents; Google sign-in limited to one email |
-| Trackers | Coffee (caffeine), cigarettes, alcohol and eight mood emotions; safe retries with an idempotency key, undo by soft delete |
+| Trackers | Coffee (caffeine), cigarettes, alcohol, eight mood emotions, water with a daily goal, and supplements (melatonin, protein, creatine); safe retries with an idempotency key, undo by soft delete |
+| Watch | A Pixel Watch face with today's dial and a one-tap log menu that works offline: [docs/watch.md](docs/watch.md) |
 | Analytics | Group comparisons with Welch CIs, lagged correlations after AR(1) pre-whitening, weekly/monthly trends, read-only SQL over views |
 | Profile | Birth year, sex, height, goals, max HR (measured or estimated) and dated weight history |
 | Operations | Watch-sync monitoring with alerts, 90-day audit log retention, manual local export with a verified restore |
 | CI | Typecheck, lint and tests for the Worker; ruff and pytest for `py/` |
+
+<p align="center"><img src="docs/assets/watch/watch.png" width="100%" alt="The watch face with today's dial, the centre log menu, the mood ring and the supplements ring, on sample data"></p>
 
 ## Architecture
 
@@ -315,7 +318,7 @@ No dates; these are ideas, in no particular order.
 
 - Insights on how coffee, cigarettes and alcohol relate to minute-level heart rate and to that night's sleep.
 - Merge the Health Tracker dashboard (on its branch today).
-- Pixel Watch quick-log tile and watch face.
+- A Wear OS tile for logging without opening the face menu.
 - macOS menu bar widget.
 
 ## FAQ
