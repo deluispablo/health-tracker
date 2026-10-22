@@ -73,7 +73,7 @@ private fun drawLayers(c: Canvas, data: DialData, nowMin: Int, ambient: Boolean)
 
     // Log ring with marks; clusters get a bracket inside it with feet at the true times.
     c.drawCircle(0f, 0f, R_LOG, stroke(LINE, 2.25f))
-    val placed = fanOut(data.events.filter { it.t in 0..nowMin }, stepDeg = 6.5f * MARK * 102f / R_LOG)
+    val placed = fanOut(data.events.filter { it.t in 0..nowMin && it.k != "other" }, stepDeg = 6.5f * MARK * 102f / R_LOG)
     clusters(placed).filter { it.size > 1 }.forEach { cl ->
         val p = stroke(LINE_STRONG, 1.85f)
         c.drawArc(box(R_LOG - 13f * MARK), cl.first().second - 90f, cl.last().second - cl.first().second, false, p)
