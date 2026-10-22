@@ -238,9 +238,9 @@ function simulateMetric(r: Random, phi: number, binary: boolean): boolean {
   metric[binary ? "mood_tired" : "steps"] = outcome;
   const t: DayTable = {
     dates, idx: date => dates.indexOf(date), start: 43, end: 222, weekend, metric,
-    behavior: { alcohol: Array<number>(length).fill(0), cigarettes: [], caffeine: [], mood_negative: [], mood_tired: [], workout: [], steps: [], short_sleep: [] },
-    beforeBed: { cigarettes: [], caffeine: [], alcohol: [], mood_negative: [], workout: [] }, moodTaps: { mood_genial: [], mood_bien: [], mood_tranquilo: [], mood_cansado: [], mood_estresado: [], mood_ansioso: [], mood_triste: [], mood_enfadado: [] },
-    first: { cigarettes: null, caffeine: null, alcohol: null, mood: null }, tests_last_24h: 0,
+    behavior: { alcohol: Array<number>(length).fill(0), cigarettes: [], caffeine: [], mood_negative: [], mood_tired: [], workout: [], steps: [], short_sleep: [], water: [], melatonin: [], protein: [], creatine: [] },
+    beforeBed: { cigarettes: [], caffeine: [], alcohol: [], mood_negative: [], workout: [], melatonin: [] }, moodTaps: { mood_genial: [], mood_bien: [], mood_tranquilo: [], mood_cansado: [], mood_estresado: [], mood_ansioso: [], mood_triste: [], mood_enfadado: [] },
+    first: { cigarettes: null, caffeine: null, alcohol: null, water: null, melatonin: null, protein: null, creatine: null, mood: null }, tests_last_24h: 0,
   };
   const rope = ropeOf(outcome);
   const bl = { sleep_min: baseline(sleep, ropeOf(sleep)), ...(!binary ? { steps: baseline(outcome, rope) } : {}) };

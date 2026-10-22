@@ -9,6 +9,7 @@ import { acuteDraft, behaviorDraft, finalizeFamily, tertiles, type RowDraft } fr
 import { evaluateMetricPair, finalizeMetricLabel } from "../../src/mcp/tools/insights/metric";
 import { loadDayTable, resolveRange, type DayTable } from "../../src/mcp/tools/insights/units";
 import type { EvalOptions, FamilyResult, InsightRow, Origin } from "../../src/mcp/tools/insights/types";
+import { benjaminiHochberg } from "../../src/mcp/tools/stats";
 import { FIXTURE, seedInsightsFixture } from "../fixtures/insights";
 let ctx: ExecutionContext;
 beforeEach(() => { ctx = createExecutionContext(); });
@@ -23,10 +24,10 @@ function synthetic(): DayTable {
     const dates = Array.from({ length: 224 }, (_, i) => new Date(Date.parse(range.fetchStart) + i * 86400000).toISOString().slice(0, 10));
     return {
         dates, idx: d => dates.indexOf(d), start: 43, end: 222, weekend: dates.map(d => [0, 6].includes(new Date(d).getUTCDay())),
-        behavior: Object.fromEntries(["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "workout", "steps", "short_sleep"].map((b, j) => [b, dates.map((_, i) => b === "steps" ? 5000 + (i * 7919 % 7000) : (i * 17 + j * 7) % 11 < 5 ? 1 : 0)])) as DayTable["behavior"],
+        behavior: Object.fromEntries(["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "workout", "steps", "short_sleep", "water", "melatonin", "protein", "creatine"].map((b, j) => [b, dates.map((_, i) => b === "steps" ? 5000 + (i * 7919 % 7000) : (i * 17 + j * 7) % 11 < 5 ? 1 : 0)])) as DayTable["behavior"],
         beforeBed: Object.fromEntries(Object.keys(BEFORE_BED_HOURS).map(b => [b, dates.map((_, i) => i % 2)])) as DayTable["beforeBed"],
         metric: Object.fromEntries(Object.keys(METRICS).filter(m => m !== "hr_delta").map((m, j) => [m, dates.map((_, i) => METRICS[m as keyof typeof METRICS].binary ? i % 2 : 100.0123 + (i * 7919 + j * 139) % 101)])) as DayTable["metric"],
-        moodTaps: {} as DayTable["moodTaps"], first: { cigarettes: null, caffeine: null, alcohol: null, mood: null }, tests_last_24h: 0,
+        moodTaps: {} as DayTable["moodTaps"], first: { cigarettes: null, caffeine: null, alcohol: null, water: null, melatonin: null, protein: null, creatine: null, mood: null }, tests_last_24h: 0,
     };
 }
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
@@ -50,12 +51,12 @@ it("scan on an empty database returns sin_datos rows and no error", async () => 
     expect(publicRows(r)).toHaveLength(10);
     expect(publicRows(r).every(row => row.label === "sin_datos" && row.diff === null)).toBe(true);
     expect(r.skipped).toEqual(expect.arrayContaining(["cigarettes", "caffeine", "alcohol"]));
-    expect(r).toMatchObject({ tests: 264, truncated: true, tests_last_24h: 264 });
+    expect(r).toMatchObject({ tests: 376, truncated: true, tests_last_24h: 376 });
 });
-it("tests is 264 with full data and at most 308 always; excluded pairs are never tested", () => {
+it("tests is 376 with full data and at most 420 always; excluded pairs are never tested", () => {
     const r = computeScan(synthetic(), null, origin, opts);
-    expect(r.tests).toBe(264);
-    expect(r.tests).toBeLessThanOrEqual(308);
+    expect(r.tests).toBe(376);
+    expect(r.tests).toBeLessThanOrEqual(420);
     expect(r.rows).toHaveLength(r.tests);
     for (const row of r.rows) {
         const key = present(row.ref).key;
@@ -143,7 +144,7 @@ describe("main fixture", () => {
     });
     it("evaluateScan writes nothing and returns the full family before ranking", async () => {
         const before = await env.DB.prepare("SELECT COUNT(*) AS n FROM analysis_log").first();
-        expect((await evaluateScan(env.DB, origin, opts)).rows).toHaveLength(264);
+        expect((await evaluateScan(env.DB, origin, opts)).rows).toHaveLength(376);
         expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM analysis_log").first()).toEqual(before);
         expect(present(family.rows[0].ref).key).toMatchObject(SCAN_PAIRS[0]);
     });
@@ -159,7 +160,7 @@ describe("main fixture", () => {
         await waitOnExecutionContext(ctx);
         const log = await env.DB.prepare("SELECT * FROM analysis_log").all();
         expect(log.results).toHaveLength(1);
-        expect(log.results[0]).toMatchObject({ tests: 264, tool: "health_scan", ts: opts.nowSec * 1000 });
+        expect(log.results[0]).toMatchObject({ tests: 376, tool: "health_scan", ts: opts.nowSec * 1000 });
         expect(JSON.stringify(r)).not.toMatch(BANNED);
         expect(JSON.stringify(r).length).toBeLessThanOrEqual(20000);
         expect(publicRows(r)[0]).not.toHaveProperty("kind");
@@ -222,7 +223,10 @@ function referenceRows(t: DayTable, acute: AcuteDays[]) {
                 extra: { planned_id: p.id, expected: p.expected, adjusted_for: s.adjusted_for, sensitivity: s.sensitivity },
                 labelWith: q => finalizeMetricLabel(s, q, METRICS[p.outcome].rope, p.expected) });
         }
-    return finalizeFamily(drafts, t, origin, cuts).rows;
+    const rows = finalizeFamily(drafts, t, origin, cuts).rows;
+    const qs = benjaminiHochberg(drafts.map(d => d.stats.n_a < 3 || d.stats.n_b < 3 ? null : d.stats.p));
+    expect(rows.map(row => row.q)).toEqual(qs.map(q => q === null ? null : Math.round(q * 10000) / 10000));
+    return rows;
 }
 
 it("shared rolling baseline exactly matches sorted trailing median and MAD with gaps and ties", () => {

@@ -3,15 +3,17 @@ import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, expect, it } from "vitest";
 import { lastCompletedBday, loadDayTable, originRange, rangeFromOrigin, resolveRange } from "../../src/mcp/tools/insights/units";
 import { anomalyFlags, computeBaselines } from "../../src/mcp/tools/insights/baseline";
+import { computeScan, validateScanArgs } from "../../src/mcp/tools/insights/scan";
+import { evaluateContrast, validateContrastArgs } from "../../src/mcp/tools/insights/contrast";
 import { FIXTURE, seedInsightsFixture } from "../fixtures/insights";
 
 const now = Date.parse("2026-10-22T08:00:00Z") / 1000;
 const tz = "Europe/Madrid";
 const range = () => resolveRange({start:"2026-10-01",end:"2026-10-21"},now,tz);
-async function event(id:string, tracker:string, at:string, deleted = false, offset = 120) {
+async function event(id:string, tracker:string, at:string, deleted = false, offset = 120, value = 1) {
   const ts = Date.parse(at)/1000;
-  await env.DB.prepare("INSERT INTO event (id,tracker_id,ts,tz_offset_min,local_date,value,origin,created_at,deleted_at) VALUES (?,?,?,?,?,1,'import',1,?)")
-    .bind(id,tracker,ts,offset,new Date((ts+offset*60)*1000).toISOString().slice(0,10),deleted ? 1 : null).run();
+  await env.DB.prepare("INSERT INTO event (id,tracker_id,ts,tz_offset_min,local_date,value,origin,created_at,deleted_at) VALUES (?,?,?,?,?,?,'import',1,?)")
+    .bind(id,tracker,ts,offset,new Date((ts+offset*60)*1000).toISOString().slice(0,10),value,deleted ? 1 : null).run();
 }
 async function sleep(id:string, wake:string, start = wake+"T00:00:00Z", bed = 480, end = wake+"T07:00:00Z", nap = 0, offset = 120, asleep = 420) {
   await env.DB.prepare("INSERT INTO sleep_session (source_id,start_ts,end_ts,tz_offset_min,local_date,is_nap,minutes_asleep,minutes_in_bed,deep_min,rem_min,updated_at) VALUES (?,?,?,?,?,?,?,?,60,90,1)")
@@ -22,6 +24,8 @@ async function summary(day:string,wear:number|null,workout:number|null = null) {
 }
 beforeAll(async () => {
   await applyD1Migrations(env.DB,env.TEST_MIGRATIONS);
+  for (const [id,unit,value] of [["water","ml",250],["melatonin","mg",1],["protein","g",30],["creatine","g",5]] as const)
+    await env.DB.prepare("INSERT OR IGNORE INTO tracker (id,name,value_type,unit,default_value,created_at) VALUES (?,?,'amount',?,?,1)").bind(id,id,unit,value).run();
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS analysis_log (ts INTEGER NOT NULL, tool TEXT NOT NULL, tests INTEGER NOT NULL)").run();
 });
 beforeEach(async () => {
@@ -304,4 +308,114 @@ it("keeps behaviour-date boundary taps when bounding stored local dates", async 
   expect(t.first.cigarettes?.bday).toBe("2020-01-01");
   expect(t.behavior.cigarettes[0]).toBe(1);
   expect(t.behavior.cigarettes[t.dates.length-1]).toBe(3);
+});
+
+it.each([["water",250],["melatonin",1],["protein",30],["creatine",5]] as const)("sums %s doses on known logging days only", async (id,dose) => {
+  await event("first",id,"2026-10-01T10:00:00Z",true,120,dose);
+  await event("partial",id,"2026-10-01T11:00:00Z",false,120,dose);
+  await event("day",id,"2026-10-02T10:00:00Z",false,120,dose);
+  await event("late",id,"2026-10-02T23:30:00Z",false,120,dose*2);
+  await event("deleted",id,"2026-10-02T12:00:00Z",true,120,dose*10);
+  await event("active","caffeine","2026-10-03T10:00:00Z");
+  const t=await loadDayTable(env.DB,range(),now);
+  expect(t.first[id]).toEqual({ts:Date.parse("2026-10-01T10:00:00Z")/1000,bday:"2026-10-01"});
+  expect(["2026-09-30","2026-10-01","2026-10-02","2026-10-03","2026-10-04"].map(day=>t.behavior[id][t.idx(day)]))
+    .toEqual([null,null,dose*3,0,null]);
+});
+it("keeps unstarted water and supplements unknown on active days", async () => {
+  await event("active","caffeine","2026-10-03T10:00:00Z");
+  const t=await loadDayTable(env.DB,range(),now);
+  for (const id of ["water","melatonin","protein","creatine"] as const) {
+    expect(t.first[id]).toBeNull();
+    expect(t.behavior[id].every(value=>value===null)).toBe(true);
+  }
+  expect(t.beforeBed.melatonin.every(value=>value===null)).toBe(true);
+});
+it("uses a half-open three-hour melatonin window across midnight", async () => {
+  await event("first","melatonin","2026-09-30T10:00:00Z",true);
+  await event("active","caffeine","2026-10-02T10:00:00Z");
+  await sleep("s","2026-10-03");
+  await event("before","melatonin","2026-10-02T20:59:59Z");
+  await event("at-bed","melatonin","2026-10-03T00:00:00Z");
+  let t=await loadDayTable(env.DB,range(),now);
+  expect(t.beforeBed.melatonin[t.idx("2026-10-03")]).toBe(0);
+  await event("boundary","melatonin","2026-10-02T21:00:00Z");
+  t=await loadDayTable(env.DB,range(),now);
+  expect(t.beforeBed.melatonin[t.idx("2026-10-03")]).toBe(1);
+  await env.DB.prepare("UPDATE event SET deleted_at=1 WHERE id='boundary'").run();
+  t=await loadDayTable(env.DB,range(),now);
+  expect(t.beforeBed.melatonin[t.idx("2026-10-03")]).toBe(0);
+});
+it("nulls melatonin windows before tracking, without logging or without sleep", async () => {
+  await event("first","melatonin","2026-10-02T22:00:00Z");
+  await sleep("first-night","2026-10-03");
+  await sleep("inactive-night","2026-10-04");
+  const t=await loadDayTable(env.DB,range(),now);
+  for (const day of ["2026-10-03","2026-10-04","2026-10-05"])
+    expect(t.beforeBed.melatonin[t.idx(day)]).toBeNull();
+});
+
+it.each(["water","melatonin","protein","creatine"] as const)("keeps %s's start independent and stable when its first tap is deleted", async id => {
+  for (const other of ["water","melatonin","protein","creatine","caffeine"])
+    if (other !== id) await event(other,other,"2026-09-29T10:00:00Z");
+  await event("active-before","caffeine","2026-10-01T10:00:00Z");
+  await event("first",id,"2026-10-02T10:00:00Z",false,120,2.5);
+  await event("active-after","caffeine","2026-10-03T10:00:00Z");
+  await event("next",id,"2026-10-04T10:00:00Z",false,120,7.5);
+  const before = await loadDayTable(env.DB,range(),now);
+  expect(["2026-10-01","2026-10-02","2026-10-03","2026-10-04"].map(day=>before.behavior[id][before.idx(day)]))
+    .toEqual([null,null,0,7.5]);
+  await env.DB.prepare("UPDATE event SET deleted_at=1 WHERE id='first'").run();
+  const after = await loadDayTable(env.DB,range(),now);
+  expect(after.first[id]).toEqual(before.first[id]);
+  expect(after.behavior[id]).toEqual(before.behavior[id]);
+});
+
+it.each([["water",375],["melatonin",2.5],["protein",22],["creatine",3]] as const)("sums actual %s doses across the exact 05:00 boundary", async (id,dose) => {
+  await event("first",id,"2026-09-30T10:00:00Z");
+  await event("day",id,"2026-10-02T10:00:00Z",false,120,dose);
+  await event("before-5",id,"2026-10-03T02:59:59Z",false,120,dose*2);
+  await event("at-5",id,"2026-10-03T03:00:00Z",false,120,dose*4);
+  await event("deleted",id,"2026-10-03T03:00:01Z",true,120,dose*10);
+  const t = await loadDayTable(env.DB,range(),now);
+  expect(t.behavior[id][t.idx("2026-10-02")]).toBe(dose*3);
+  expect(t.behavior[id][t.idx("2026-10-03")]).toBe(dose*4);
+  expect(t.behavior[id][t.idx("2026-10-04")]).toBeNull();
+});
+
+it.each([0.3,2.5,5])("treats a %s mg melatonin tap as presence and pairs it with the wake date", async dose => {
+  await event("first","melatonin","2026-09-30T10:00:00Z",true);
+  await event("active","caffeine","2026-10-02T10:00:00Z");
+  await event("dose","melatonin","2026-10-02T23:30:00Z",false,120,dose);
+  await sleep("s","2026-10-03");
+  const args = {start:"2026-10-02",end:"2026-10-02"};
+  const t = await loadDayTable(env.DB,resolveRange(args,now,tz),now);
+  expect(t.beforeBed.melatonin[t.idx("2026-10-02")]).toBeNull();
+  expect(t.beforeBed.melatonin[t.idx("2026-10-03")]).toBe(1);
+  const scan = computeScan(t,null,validateScanArgs({...args,behaviors:["melatonin"],timings:["before_bed"],metrics:["sleep_min"]},now,tz).origin,{nowSec:now,tz});
+  expect(scan.rows).toHaveLength(1);
+  expect(scan.rows[0]).toMatchObject({n_a:1,n_b:0});
+  const origin = validateContrastArgs({...args,timing:"before_bed",metrics:["sleep_min"],
+    a:{where:[{behavior:"melatonin",timing:"before_bed",op:"=",value:1}]},
+    b:{where:[{behavior:"melatonin",timing:"before_bed",op:"=",value:0}]}},now,tz);
+  expect((await evaluateContrast(env.DB,origin,{nowSec:now,tz})).rows[0]).toMatchObject({n_a:1,n_b:0});
+  await env.DB.prepare("UPDATE event SET deleted_at=1 WHERE id='dose'").run();
+  expect((await loadDayTable(env.DB,resolveRange(args,now,tz),now)).beforeBed.melatonin[t.idx("2026-10-03")]).toBe(0);
+});
+
+it("requires melatonin tracking before the whole window and activity on the paired behaviour day", async () => {
+  await sleep("unstarted","2026-10-02");
+  await event("active","caffeine","2026-10-01T10:00:00Z");
+  let t = await loadDayTable(env.DB,range(),now);
+  expect(t.beforeBed.melatonin[t.idx("2026-10-02")]).toBeNull();
+  await event("first","melatonin","2026-10-02T22:00:00Z");
+  await sleep("late-start","2026-10-03");
+  await sleep("inactive","2026-10-04");
+  await sleep("known-zero","2026-10-05");
+  await event("active-later","caffeine","2026-10-04T10:00:00Z");
+  t = await loadDayTable(env.DB,range(),now);
+  expect(t.beforeBed.melatonin[t.idx("2026-10-03")]).toBeNull();
+  expect(t.beforeBed.melatonin[t.idx("2026-10-04")]).toBeNull();
+  expect(t.beforeBed.melatonin[t.idx("2026-10-05")]).toBe(0);
+  expect(t.beforeBed.melatonin[t.idx("2026-10-06")]).toBeNull();
 });

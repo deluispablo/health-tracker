@@ -1,8 +1,8 @@
 export type Label = "sólido" | "probable" | "indicio" | "sin_diferencia" | "sin_datos" | "cambio";
 export type Reason = "few_days" | "few_effective_days" | "uncertain" | "small_effect" | "not_robust" | "confounded";
 export type Expected = "+" | "-" | "0" | "none";
-export type BehaviorId = "cigarettes" | "caffeine" | "alcohol" | "mood_negative" | "mood_tired" | "workout" | "steps" | "short_sleep";
-export type BeforeBedId = "cigarettes" | "caffeine" | "alcohol" | "mood_negative" | "workout";
+export type BehaviorId = "water" | "melatonin" | "protein" | "creatine" | "cigarettes" | "caffeine" | "alcohol" | "mood_negative" | "mood_tired" | "workout" | "steps" | "short_sleep";
+export type BeforeBedId = "melatonin" | "cigarettes" | "caffeine" | "alcohol" | "mood_negative" | "workout";
 export type MoodId = "mood_genial" | "mood_bien" | "mood_tranquilo" | "mood_cansado" | "mood_estresado" | "mood_ansioso" | "mood_triste" | "mood_enfadado";
 export type MetricId = "sleep_min" | "deep_min" | "rem_min" | "light_min" | "awake_min" | "deep_pct" | "rem_pct" | "efficiency" | "latency_min"
   | "awakenings" | "bedtime" | "rhr" | "hrv" | "spo2_avg" | "skin_temp_dev" | "resp_rate" | "steps" | "workout_min"

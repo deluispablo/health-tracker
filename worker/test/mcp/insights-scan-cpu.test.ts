@@ -17,7 +17,7 @@ it("scan JS path takes at most 20 ms cold and 8 ms warm in a fresh module", asyn
   const rows = dates.map((local_date, i) => {
     const row: Record<string, number | string | null> & { local_date: string } = { local_date, active: 1, previous_active: 1, hr_wear_min: 1440, window_mood_taps: 1, bed: first + i * 86400 + 23 * 3600 };
     Object.keys(METRICS).forEach((m, j) => { row[m] = METRICS[m as keyof typeof METRICS].binary ? i % 2 : 100.0123 + (i * 7919 + j * 139) % 101; });
-    ["cigarettes", "caffeine", "alcohol", "mood"].forEach((id, j) => {
+    ["cigarettes", "caffeine", "alcohol", "mood", "water", "melatonin", "protein", "creatine"].forEach((id, j) => {
       row[`first_${id}_ts`] = first - 86400; row[`first_${id}_bday`] = "2025-12-31";
       row[id] = (i * 17 + j * 7) % 11 < 5 ? 1 : 0;
     });
@@ -51,7 +51,7 @@ it("scan JS path takes at most 20 ms cold and 8 ms warm in a fresh module", asyn
     result.truncated ||= family.rows.length > 10;
     const end = performance.now();
     times.push(end - a); phases.push([b - a, c - b, d - c, end - d]);
-    expect(family.tests).toBe(264);
+    expect(family.tests).toBe(376);
     expect(acute.map(a => a.events)).toEqual([40, 40, 40]);
     expect(acute.map(a => a.eventDays)).toEqual([28, 28, 28]);
     expect(result.rows).toHaveLength(10);

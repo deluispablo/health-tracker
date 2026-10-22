@@ -18,10 +18,10 @@ function table(n = 114): DayTable {
   const dates = Array.from({length:n}, (_,i)=>new Date(Date.UTC(2026,0,i+1)).toISOString().slice(0,10));
   return {
     dates, idx: d=>dates.indexOf(d), start:0, end:n-2, weekend:dates.map(()=>false),
-    behavior:Object.fromEntries(["cigarettes","caffeine","alcohol","mood_negative","mood_tired","workout","steps","short_sleep"].map(b=>[b,dates.map((_,i)=>i%2)])) as DayTable["behavior"],
+    behavior:Object.fromEntries(["cigarettes","caffeine","alcohol","mood_negative","mood_tired","workout","steps","short_sleep","water","melatonin","protein","creatine"].map(b=>[b,dates.map((_,i)=>i%2)])) as DayTable["behavior"],
     beforeBed:Object.fromEntries(Object.keys(BEFORE_BED_HOURS).map(b=>[b,dates.map((_,i)=>i%2)])) as DayTable["beforeBed"],
     metric:Object.fromEntries(Object.keys(METRICS).filter(m=>m!=="hr_delta").map(m=>[m,dates.map((_,i)=>100+i)])) as DayTable["metric"],
-    moodTaps:{} as DayTable["moodTaps"], first:{cigarettes:null,caffeine:null,alcohol:null,mood:null}, tests_last_24h:0,
+    moodTaps:{} as DayTable["moodTaps"], first:{cigarettes:null,caffeine:null,alcohol:null,water:null,melatonin:null,protein:null,creatine:null,mood:null}, tests_last_24h:0,
   };
 }
 function draft(p: number | null = 0.02): RowDraft {
