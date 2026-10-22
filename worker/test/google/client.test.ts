@@ -347,7 +347,8 @@ describe("T36 AC1 hourly steps", () => {
     ]);
     expect(calls[1]).toMatchObject({ url: `${API}/dataTypes/steps/dataPoints:rollUp`, method: "POST",
       headers: expect.objectContaining({ authorization: "Bearer at-1", "content-type": "application/json" }) as unknown });
-    expect(JSON.parse(calls[1]?.body ?? "")).toEqual({ range: { startTime: start, endTime: end }, windowSize: "3600s" });
+    expect(JSON.parse(calls[1]?.body ?? "")).toEqual({ range: { startTime: start, endTime: end }, windowSize: "3600s",
+      dataSourceFamily: "users/me/dataSourceFamilies/google-wearables" });
   });
 
   it("validates the range before fetching, allowing exactly 14 elapsed days", async () => {

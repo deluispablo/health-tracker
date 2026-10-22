@@ -114,6 +114,7 @@ describe("AC2 dailyRollUp", () => {
     expect(calls[1]?.method).toBe("POST");
     expect(calls[1]?.contentType).toContain("application/json");
     expect(JSON.parse(calls[1]?.body ?? "")).toEqual({
+      dataSourceFamily: "users/me/dataSourceFamilies/google-wearables",
       range: { start: { date: { year: 2026, month: 10, day: 18 } }, end: { date: { year: 2026, month: 10, day: 20 } } } });
   });
 
@@ -123,8 +124,18 @@ describe("AC2 dailyRollUp", () => {
     const out = await client(fetch).dailyRollUp("steps", "2027-12-31", "2028-03-02");
     expect(out.map((x: { date: string }) => x.date)).toEqual(["2027-12-31", "2028-01-09", "2028-02-29", "2028-03-01"]);
     expect(JSON.parse(calls[1]?.body ?? "")).toEqual({
+      dataSourceFamily: "users/me/dataSourceFamilies/google-wearables",
       range: { start: { date: { year: 2027, month: 12, day: 31 } }, end: { date: { year: 2028, month: 3, day: 2 } } } });
   });
+
+  it.each(["active-zone-minutes", "heart-rate", "active-minutes", "total-calories", "active-energy-burned"])(
+    "T37 AC1 preserves the unfiltered daily request body for %s", async (type) => {
+      const { fetch, calls } = scripted(token, json({}));
+      await client(fetch).dailyRollUp(type, "2026-10-19", "2026-10-20");
+      expect(JSON.parse(calls[1]?.body ?? "")).toEqual({
+        range: { start: { date: { year: 2026, month: 10, day: 19 } }, end: { date: { year: 2026, month: 10, day: 20 } } } });
+    },
+  );
 
   it("replays the same JSON body on retry", async () => {
     const { fetch, calls } = scripted(token, json({}, 429), json({}));
