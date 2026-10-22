@@ -112,10 +112,12 @@ export async function drainSyncPending(
   let failed = 0;
   const types = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
     "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"];
+  // Recent heart-rate notifications take precedence over historical backfills.
   const { results: heads } = await db.prepare(`SELECT * FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY data_type ORDER BY received_at, start_ts, operation, end_ts) AS rank
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY data_type ORDER BY
+      CASE WHEN data_type = 'heart-rate' AND end_ts < ? THEN 1 ELSE 0 END, received_at, start_ts, operation, end_ts) AS rank
     FROM sync_pending WHERE attempts < 5 AND data_type IN (${types.map(() => "?").join(", ")})
-  ) WHERE rank = 1`).bind(...types).all<PendingRow>();
+  ) WHERE rank = 1`).bind((opts.now?.() ?? Math.floor(Date.now() / 1000)) - 86400, ...types).all<PendingRow>();
   for (const type of types) {
     const row = heads.find((head) => head.data_type === type);
     if (!row) continue;
@@ -299,7 +301,7 @@ export async function drainSyncPending(
       } else {
         const start = Math.floor(row.start_ts / 60) * 60;
         const roundedEnd = Math.ceil(row.end_ts / 60) * 60;
-        const end = Math.min(roundedEnd, start + 3600);
+        const end = Math.min(roundedEnd, start + 86400);
         const points = await client.rollUpHeartRate(new Date(start * 1000).toISOString(), new Date(end * 1000).toISOString(), 60);
 
         const formatter = dateTimeFormat("en-US", { timeZone: env.USER_TZ, timeZoneName: "longOffset" });

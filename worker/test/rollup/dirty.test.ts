@@ -108,7 +108,7 @@ describe("T24 AC2 drain marks", () => {
     await drainSyncPending(appEnv(), emptyClient());
     const dates = await dirtyDates();
     expect(dates[0]).toBe(type === "steps" ? "2026-09-01" : "2026-08-31");
-    expect(dates.at(-1)).toBe(type === "steps" ? "2026-10-01" : type === "heart-rate" ? "2026-09-01" : "2026-09-08");
+    expect(dates.at(-1)).toBe(type === "steps" ? "2026-10-01" : type === "heart-rate" ? "2026-09-02" : "2026-09-08");
     expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first("n")).toBe(1);
   });
 
