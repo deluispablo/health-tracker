@@ -2,6 +2,7 @@ import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { drainSyncPending } from "../../src/ingest/drain";
+import { recomputeDailySummary } from "../../src/rollup/daily";
 
 const at = (iso: string) => Date.parse(iso) / 1000;
 const NOW = at("2026-10-21T00:00:00Z");
@@ -93,6 +94,48 @@ describe("T25 AC1/AC3 daytime naps", () => {
     await queue(start, end);
     await drainSyncPending(drainEnv(), client, opts);
     expect(await sessions()).toEqual(first);
+  });
+
+  it.each([
+    ["2026-07-19T13:37:00Z", 74, 69, undefined],
+    ["2026-08-07T14:11:00Z", 49, 44, null],
+    ["2026-09-22T14:34:00Z", 61, 56, "invalid"],
+    ["2026-10-21T14:42:00Z", 29, 24, undefined],
+  ])("keeps short daytime sleep out of v_daily without a usable period duration (%s)", async (iso, elapsed, asleep, inBed) => {
+    const start = at(iso);
+    const end = start + elapsed * 60;
+    const date = iso.slice(0, 10);
+    const item = session("missing-period", iso, new Date(end * 1000).toISOString(), {
+      summary: { minutesAsleep: asleep, minutesInSleepPeriod: inBed }, stages: [],
+    });
+    await queue(start, end);
+    expect(await drainSyncPending(drainEnv(), fakeClient([item]).client, opts)).toEqual({ processed: 1, failed: 0 });
+    expect(await sessions()).toEqual([expect.objectContaining({ is_nap: 1, minutes_asleep: asleep, minutes_in_bed: null })]);
+    await recomputeDailySummary(env.DB, date, date, NOW);
+    expect(await env.DB.prepare("SELECT sleep_min, bedtime_local, waketime_local FROM v_daily WHERE local_date = ?").bind(date).first())
+      .toEqual({ sleep_min: null, bedtime_local: null, waketime_local: null });
+  });
+
+  it.each([
+    ["daytime without a summary", "13:37:00", "7200s", 74, 1],
+    ["at 09:00", "07:00:00", "7200s", 20, 1],
+    ["before 09:00", "06:59:59", "7200s", 90, 0],
+    ["before 20:00", "17:59:59", "7200s", 90, 1],
+    ["at 20:00", "18:00:00", "7200s", 90, 0],
+    ["negative offset", "20:37:00", "-18000s", 89, 1],
+    ["half-hour offset", "03:30:00", "19800s", 90, 1],
+    ["after midnight", "23:10:00", "7200s", 90, 0],
+    ["late bedtime", "01:10:00", "7200s", 420, 0],
+    ["long daytime sleep", "13:37:00", "7200s", 420, 0],
+    ["three-hour threshold", "13:37:00", "7200s", 180, 0],
+  ])("uses elapsed time for %s when the summary is absent", async (_name, time, offset, minutes, isNap) => {
+    const start = at(`2026-10-06T${time}Z`);
+    const end = start + minutes * 60;
+    await queue(start, end);
+    await drainSyncPending(drainEnv(), fakeClient([session("elapsed", new Date(start * 1000).toISOString(), new Date(end * 1000).toISOString(), {
+      endUtcOffset: offset, summary: undefined, stages: [],
+    })]).client, opts);
+    expect((await sessions()).map((row) => row.is_nap)).toEqual([isNap]);
   });
 
   it.each([
