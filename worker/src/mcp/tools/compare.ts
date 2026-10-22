@@ -36,12 +36,32 @@ export async function analysisSeries(db: D1Database, start: string, end: string,
   const days = (calendarTime(end) - first) / DAY + 1;
   if (days < 1 || days > 365) throw new RangeError("range must contain 1 to 365 dates");
   const dates = Array.from({ length: days + lag }, (_, i) => new Date(first + i * DAY).toISOString().slice(0, 10));
+  const trackers: Record<string, string> = { cigarettes: "cigarettes", alcohol_g: "alcohol", caffeine_mg: "caffeine" };
+  const behaviors = [...new Set(columns.filter((column) => BEHAVIORS.includes(column)))];
+  const eligibility = behaviors.length === 0 ? [] : [
+    "EXISTS (SELECT 1 FROM event e WHERE e.deleted_at IS NULL AND e.local_date = calendar.local_date) AS active_logging",
+    ...behaviors.map((column) => `(SELECT date(ts + tz_offset_min * 60 - 18000, 'unixepoch') FROM event WHERE tracker_id = ? ORDER BY ts LIMIT 1) AS first_bday_${column}`),
+  ];
+  const source = behaviors.length === 0 ? "v_daily WHERE local_date BETWEEN ? AND ?" : `(
+    WITH RECURSIVE dates(local_date) AS (
+      SELECT ? UNION ALL SELECT date(local_date, '+1 day') FROM dates WHERE local_date < ?
+    ) SELECT local_date FROM dates
+  ) calendar LEFT JOIN v_daily USING (local_date)
+    ${behaviors.map((column) => `LEFT JOIN tracker_daily total_${column}
+      ON total_${column}.local_date = calendar.local_date AND total_${column}.tracker_id = '${trackers[column]}'`).join(" ")}`;
+  const selected = columns.map((column) => behaviors.includes(column) ? `total_${column}.total AS ${column}` : `v_daily.${column}`);
+  const dateColumn = behaviors.length === 0 ? "local_date" : "calendar.local_date";
   const { results } = await db.prepare(
-    `SELECT local_date, ${columns.join(", ")} FROM v_daily WHERE local_date BETWEEN ? AND ? ORDER BY local_date`,
-  ).bind(start, dates[dates.length - 1]).all<{ local_date: string; [column: string]: unknown }>();
+    `SELECT ${dateColumn}, ${[...selected, ...eligibility].join(", ")} FROM ${source} ORDER BY ${dateColumn}`,
+  ).bind(...behaviors.map((column) => trackers[column]), start, dates[dates.length - 1]).all<{ local_date: string; [column: string]: unknown }>();
   const rows = new Map(results.map((row) => [row.local_date, row]));
   return { days, series: columns.map((column) => dates.map((date) => {
-    const value = rows.get(date)?.[column];
+    const row = rows.get(date);
+    if (BEHAVIORS.includes(column)) {
+      const firstBday = row?.[`first_bday_${column}`];
+      if (!row?.active_logging || typeof firstBday !== "string" || date <= firstBday) return null;
+    }
+    const value = row?.[column];
     return typeof value === "number" && Number.isFinite(value) ? value : BEHAVIORS.includes(column) ? 0 : null;
   })) };
 }
@@ -66,8 +86,8 @@ export async function healthCompare(db: D1Database, { behavior, outcome, start, 
   let nonZeroDays = 0;
   for (let i = 0; i < days; i++) {
     const value = outcomes[i + lag_days];
-    if (value === null) continue;
-    const total = behaviors[i] ?? 0;
+    const total = behaviors[i];
+    if (value === null || total === null) continue;
     const group = total <= 0 ? 0 : 1 + bins.filter((t) => total > t).length;
     groups[group].push(value);
     n++;
@@ -85,11 +105,11 @@ export async function healthCompare(db: D1Database, { behavior, outcome, start, 
   }
   const notes: string[] = [];
   if (nonZeroDays < 3) {
-    notes.push(`${behavior} solo tiene valores distintos de 0 en ${String(nonZeroDays)} de ${String(n)} días; los días sin registro cuentan como 0.`);
+    notes.push(`${behavior} solo tiene valores distintos de 0 en ${String(nonZeroDays)} de ${String(n)} días; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0.`);
   } else if (comparisons.length === 0) {
     notes.push("Ningún grupo distinto del de referencia tiene al menos 2 días; no hay comparaciones.");
   }
-  notes.push(`${behavior} tiene registros en ${String(behavior_logging.logged_days)} día(s) del rango solicitado; primer registro: ${behavior_logging.first_logged_date ?? "ninguno"}; último registro: ${behavior_logging.last_logged_date ?? "ninguno"}. Se usa todo el rango solicitado; los días sin registro cuentan como 0.`);
+  notes.push(`${behavior} tiene registros en ${String(behavior_logging.logged_days)} día(s) del rango solicitado; primer registro: ${behavior_logging.first_logged_date ?? "ninguno"}; último registro: ${behavior_logging.last_logged_date ?? "ninguno"}. Se usa todo el rango solicitado; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0.`);
   if (comparisons.length === 0) {
     notes.push(`Se necesitan al menos ${String(MIN_DAYS_PER_GROUP)} días con resultado disponible en cada uno de al menos 2 grupos para una comparación.`);
   }

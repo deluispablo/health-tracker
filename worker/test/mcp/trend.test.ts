@@ -13,6 +13,10 @@ const names = ["cigarettes", "alcohol_g", "caffeine_mg", "rhr", "hrv_rmssd", "ln
 const base = { metric: "rhr", period: "week", start: "2026-12-28", end: "2027-01-10" };
 const caveats = "Descriptivo. z compara cada periodo con la media del rango; los periodos parciales tienen menos días.";
 const empty = { n: 0, mean: null, sd: null, min: null, max: null, z: null };
+async function log(day: string, tracker = "cigarettes") {
+  await env.DB.prepare("INSERT OR IGNORE INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at) VALUES (?, ?, ?, 0, ?, 1, 'import', 1)")
+    .bind(`${tracker}-${day}`, tracker, Date.parse(`${day}T10:00:00Z`) / 1000, day).run();
+}
 async function row(day: string, value: number | null) {
   await env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, computed_at) VALUES (?, ?, 1)").bind(day, value).run();
 }
@@ -39,7 +43,7 @@ function observed(rewrite: (value: unknown) => unknown = (value) => value) {
 }
 
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
-beforeEach(async () => { await env.DB.batch(["daily_summary", "tracker_daily"].map((table) => env.DB.prepare(`DELETE FROM ${table}`))); });
+beforeEach(async () => { await env.DB.batch(["event", "daily_summary", "tracker_daily"].map((table) => env.DB.prepare(`DELETE FROM ${table}`))); });
 
 describe("T18 AC2–AC4 health_trend aggregates", () => {
   it("returns every empty ISO week across a year boundary, oldest first, with the exact output shape", async () => {
@@ -72,23 +76,34 @@ describe("T18 AC2–AC4 health_trend aggregates", () => {
     ], caveats });
   });
 
-  it.each(["cigarettes", "alcohol_g", "caffeine_mg"])("counts absent/null %s as zero and preserves negative/fractional totals", async (metric) => {
-    for (const day of ["2026-12-28", "2026-12-29", "2026-12-30"]) await row(day, null);
+  it.each(["cigarettes", "alcohol_g", "caffeine_mg"])("counts missing %s totals as zero on known days and preserves negative/fractional totals without summaries", async (metric) => {
     const tracker = { cigarettes: "cigarettes", alcohol_g: "alcohol", caffeine_mg: "caffeine" }[metric];
     for (const [day, total] of [["2026-12-28", -0.5], ["2026-12-29", 1.5]] as const) {
       await env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES (?, ?, ?, 1, 0)")
         .bind(day, tracker, total).run();
     }
+    await log("2026-12-27", tracker);
+    for (const day of ["2026-12-28", "2026-12-29", "2026-12-30"]) await log(day, "mood_bien");
     const args = { ...base, metric, end: "2026-12-31" };
-    expect(await trend(env.DB, args)).toEqual({ ...args, baseline: { mean: 0.25, sd: 0.866, n: 4 },
-      buckets: [{ period_start: "2026-12-28", days: 4, n: 4, mean: 0.25, sd: 0.866, min: -0.5, max: 1.5, z: 0 }], caveats });
+    expect(await trend(env.DB, args)).toEqual({ ...args, baseline: { mean: 0.333, sd: 1.041, n: 3 },
+      buckets: [{ period_start: "2026-12-28", days: 4, n: 3, mean: 0.333, sd: 1.041, min: -0.5, max: 1.5, z: 0 }], caveats });
   });
 
-  it.each(["week", "month"])("returns all-zero behaviour buckets for an empty database (%s)", async (period) => {
+  it("counts only known behaviour days in buckets and the baseline", async () => {
+    for (const day of ["2026-12-28", "2026-12-29", "2026-12-30", "2027-01-04", "2027-01-05"]) await row(day, null);
+    await log("2026-12-29");
+    await log("2026-12-30", "mood_bien");
+    await log("2027-01-05", "mood_bien");
+    const out = await trend(env.DB, { ...base, metric: "cigarettes" });
+    expect(out.baseline).toEqual({ n: 2, mean: 0, sd: 0 });
+    expect(out.buckets.map(({ n }) => n)).toEqual([1, 1]);
+  });
+
+  it.each(["week", "month"])("returns empty behaviour buckets for an empty database (%s)", async (period) => {
     const args = { ...base, metric: "cigarettes", period, start: "2026-12-31", end: "2027-01-01" };
-    expect(await trend(env.DB, args)).toEqual({ ...args, baseline: { n: 2, mean: 0, sd: 0 },
+    expect(await trend(env.DB, args)).toEqual({ ...args, baseline: { n: 0, mean: null, sd: null },
       buckets: (period === "week" ? [["2026-12-28", 2]] : [["2026-12-01", 1], ["2027-01-01", 1]])
-        .map(([period_start, days]) => ({ period_start, days, n: days, mean: 0, sd: days === 1 ? null : 0, min: 0, max: 0, z: null })), caveats });
+        .map(([period_start, days]) => ({ period_start, days, ...empty })), caveats });
   });
 
   it.each([0, -1.2345])("keeps singleton value %s, excludes nulls and rounds negative ties with Math.round", async (value) => {
@@ -135,6 +150,8 @@ describe("T18 AC2–AC4 health_trend aggregates", () => {
       if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]: [string, unknown]) => [k, rewrite(v)]));
       return value;
     };
+    await log("2026-12-27");
+    for (let i = 28; i <= 31; i++) await log(`2026-12-${String(i)}`);
     const out = await trend(observed(rewrite).db, { ...base, metric, end: "2026-12-31" });
     const n = metric === "rhr" ? 1 : 4;
     const sd = n === 1 ? null : 0;
@@ -145,6 +162,8 @@ describe("T18 AC2–AC4 health_trend aggregates", () => {
   it.each(names)("accepts and reads metric %s", async (metric) => {
     const tracker = { cigarettes: "cigarettes", alcohol_g: "alcohol", caffeine_mg: "caffeine" }[metric];
     if (tracker) {
+      await log("2026-12-27", tracker);
+      await log(base.start, tracker);
       await row(base.start, null);
       await env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES (?, ?, 7, 1, 0)").bind(base.start, tracker).run();
     } else {

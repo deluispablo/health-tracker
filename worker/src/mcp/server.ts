@@ -131,7 +131,7 @@ export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionCon
   server.registerTool("health_compare", {
     description: "Compare outcome means across behavior groups with Welch 95% confidence intervals for 1 to 365 dates inclusive; sleep uses wake dates. lag_days: 0 to 7, default 1; bins: 1 to 5 ascending positive thresholds, defaults by behavior (see bins). Dates/behavior/outcome are required. Associational, not causal. Use for grouped differences, health_correlate for lagged series, health_trend for period summaries. Infer inputs from context and the owner's local today in USER_TZ; do not ask for resolvable values.",
     inputSchema: {
-      behavior: z.string().describe(`Behavior name: ${BEHAVIORS.join(", ")}. Missing or non-finite totals count as 0; totals at or below 0 share the zero group.`),
+      behavior: z.string().describe(`Behavior name: ${BEHAVIORS.join(", ")}. Days up to the tracker's first logged behaviour day (05:00–05:00) and days without any log are excluded; on other days a missing total counts as 0. Non-finite totals count as 0 on eligible days; totals at or below 0 share the zero group.`),
       outcome: z.string().describe(`Outcome name: ${OUTCOMES.join(", ")}. Missing or non-finite outcomes are excluded.`),
       ...analysisDates,
       lag_days: z.number().int().optional().describe("Integer from 0 to 7; default 1. Behavior on D pairs with outcome on D + lag_days, including dates after end."),
@@ -141,8 +141,8 @@ export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionCon
   server.registerTool("health_correlate", {
     description: "Correlate distinct dated series after AR(1) prewhitening with x's coefficient, for 1 to 365 dates inclusive. max_lag: 0 to 7, default 3; positive lags pair x on D with y on D + lag. Returns phi, r and pair counts per lag; r is null with fewer than 5 pairs or zero variance. Dates/x/y are required. Associational, not causal. Use for lagged associations, health_compare for behavior groups. Infer inputs from context and the owner's local today in USER_TZ; do not ask for resolvable values.",
     inputSchema: {
-      x: z.string().describe(`Name distinct from y: ${ANALYSIS_NAMES.join(", ")}. Estimates phi over start through end; missing behaviors count as 0 and missing outcomes are excluded.`),
-      y: z.string().describe(`Name distinct from x: ${ANALYSIS_NAMES.join(", ")}. Filtered with x's phi; missing behaviors count as 0 and missing outcomes are excluded.`),
+      x: z.string().describe(`Name distinct from y: ${ANALYSIS_NAMES.join(", ")}. Estimates phi over start through end. Days up to the tracker's first logged behaviour day (05:00–05:00) and days without any log are excluded; on other days a missing total counts as 0. Missing outcomes are excluded.`),
+      y: z.string().describe(`Name distinct from x: ${ANALYSIS_NAMES.join(", ")}. Filtered with x's phi. Days up to the tracker's first logged behaviour day (05:00–05:00) and days without any log are excluded; on other days a missing total counts as 0. Missing outcomes are excluded.`),
       ...analysisDates,
       max_lag: z.number().int().optional().describe("Integer from 0 to 7; default 3. Returns lags 0 through max_lag, reading y through end + max_lag; r is null with fewer than 5 pairs or zero variance."),
     }, annotations,
@@ -150,7 +150,7 @@ export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionCon
   server.registerTool("health_trend", {
     description: "Summarize a daily metric by ISO week (Monday start) or calendar month for 1 to 365 dates inclusive. Returns period means, sample SD, min/max, counts and z relative to the range's daily baseline; partial periods include only requested dates. All arguments are required, without server defaults. Use for period summaries, health_daily for daily values, health_compare for groups, health_correlate for lagged associations. Infer inputs from context and the owner's local today in USER_TZ; do not ask for resolvable values.",
     inputSchema: {
-      metric: z.string().describe(`Metric name: ${ANALYSIS_NAMES.join(", ")}. Missing or non-finite behaviors count as 0; missing or non-finite outcomes are excluded.`),
+      metric: z.string().describe(`Metric name: ${ANALYSIS_NAMES.join(", ")}. Days up to the tracker's first logged behaviour day (05:00–05:00) and days without any log are excluded; on other days a missing total counts as 0. Non-finite behaviors count as 0 on eligible days; missing or non-finite outcomes are excluded.`),
       period: z.string().describe("Period: week (ISO week starting Monday) or month (calendar month). Partial periods include only requested dates."),
       ...analysisDates,
     }, annotations,

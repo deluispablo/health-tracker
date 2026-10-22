@@ -1143,6 +1143,9 @@ describe("T17 AC4 analysis tools through the authenticated connector", () => {
       const lag = schema.properties[name === "health_compare" ? "lag_days" : "max_lag"].description ?? "";
       for (const text of ["0", "7", name === "health_compare" ? "1" : "3"]) expect(lag).toContain(text);
       expect(lag).toMatch(/default/i);
+      for (const field of name === "health_compare" ? ["behavior"] : ["x", "y"]) {
+        expect(schema.properties[field].description).toContain("Days up to the tracker's first logged behaviour day (05:00–05:00) and days without any log are excluded; on other days a missing total counts as 0.");
+      }
       if (name === "health_compare") {
         for (const value of behaviors) expect(schema.properties.behavior.description).toContain(value);
         for (const value of outcomes) expect(schema.properties.outcome.description).toContain(value);
@@ -1166,9 +1169,13 @@ describe("T17 AC4 analysis tools through the authenticated connector", () => {
     google();
     const token = await accessToken();
     await initialize(token);
+    await env.DB.prepare("INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at) VALUES ('compare-start', 'cigarettes', ?, 0, '2025-12-31', 1, 'import', 1)")
+      .bind(Date.parse("2025-12-31T10:00:00Z") / 1000).run();
     const values = [1, 3, 5, 7, 2, 4, 8];
     for (let i = 0; i < values.length; i++) {
       const day = `2026-01-0${String(i + 1)}`;
+      await env.DB.prepare("INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at) VALUES (?, 'cigarettes', ?, 0, ?, 1, 'import', 1)")
+        .bind(`compare-${day}`, Date.parse(`${day}T10:00:00Z`) / 1000, day).run();
       await env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, computed_at) VALUES (?, ?, 1)").bind(day, values[i]).run();
       await env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES (?, 'cigarettes', ?, 1, 0)")
         .bind(day, i < 4 ? 0 : 1).run();
@@ -1181,7 +1188,7 @@ describe("T17 AC4 analysis tools through the authenticated connector", () => {
       groups: [{ label: "0", n: 4, mean: 4, sd: 2.582 }, { label: ">0–5", n: 3, mean: 4.667, sd: 3.055 },
         { label: ">5–10", n: 0, mean: null, sd: null }, { label: ">10", n: 0, mean: null, sd: null }],
       comparisons: [{ group: ">0–5", vs: "0", diff: 0.667, df: 3.959, ci95: [-5.427, 6.76] }],
-      notes: ["cigarettes tiene registros en 7 día(s) del rango solicitado; primer registro: 2026-01-01; último registro: 2026-01-07. Se usa todo el rango solicitado; los días sin registro cuentan como 0."],
+      notes: ["cigarettes tiene registros en 7 día(s) del rango solicitado; primer registro: 2026-01-01; último registro: 2026-01-07. Se usa todo el rango solicitado; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0."],
       caveats: caveats(7), behavior_logging: { logged_days: 7, first_logged_date: "2026-01-01", last_logged_date: "2026-01-07" }, min_days_per_group: 2 });
     expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
     await toolAudit("health_compare", compareArgs, 1, before);
@@ -1197,8 +1204,8 @@ describe("T17 AC4 analysis tools through the authenticated connector", () => {
     expect(msg.result?.isError).not.toBe(true);
     expect(msg.result?.structuredContent).toEqual({ behavior: args.behavior, outcome: args.outcome, ...window, lag_days: 1, n: 0,
       groups: ["0", ">0–0.5", ">0.5–2.5", ">2.5"].map((label) => ({ label, n: 0, mean: null, sd: null })),
-      comparisons: [], notes: ["caffeine_mg solo tiene valores distintos de 0 en 0 de 0 días; los días sin registro cuentan como 0.",
-        "caffeine_mg tiene registros en 0 día(s) del rango solicitado; primer registro: ninguno; último registro: ninguno. Se usa todo el rango solicitado; los días sin registro cuentan como 0.",
+      comparisons: [], notes: ["caffeine_mg solo tiene valores distintos de 0 en 0 de 0 días; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0.",
+        "caffeine_mg tiene registros en 0 día(s) del rango solicitado; primer registro: ninguno; último registro: ninguno. Se usa todo el rango solicitado; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0.",
         "Se necesitan al menos 2 días con resultado disponible en cada uno de al menos 2 grupos para una comparación."],
       caveats: caveats(0), behavior_logging: { logged_days: 0, first_logged_date: null, last_logged_date: null }, min_days_per_group: 2 });
     expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
@@ -1274,7 +1281,7 @@ describe("T17 AC4 analysis tools through the authenticated connector", () => {
     const before = (await audit()).length;
     const db = new Proxy(env.DB, { get(t, p) {
       if (p === "prepare") return (sql: string) => {
-        if (/\bFROM\s+v_daily\b/i.test(sql)) throw new Error("private D1 analysis failure");
+        if (/\b(?:FROM|JOIN)\s+v_daily\b/i.test(sql)) throw new Error("private D1 analysis failure");
         return t.prepare(sql);
       };
       const value: unknown = Reflect.get(t, p);
@@ -1553,6 +1560,7 @@ describe("T18 AC5 health_trend through the authenticated connector", () => {
       expect(schema?.properties[field]?.description.length).toBeGreaterThan(0);
     }
     for (const name of names) expect(schema?.properties.metric.description).toContain(name);
+    expect(schema?.properties.metric.description).toContain("Days up to the tracker's first logged behaviour day (05:00–05:00) and days without any log are excluded; on other days a missing total counts as 0.");
     for (const period of ["week", "month"]) expect(schema?.properties.period.description).toContain(period);
     for (const field of ["start", "end"]) {
       for (const limit of ["YYYY-MM-DD", "2000", "2099", "365"]) expect(schema?.properties[field]?.description).toContain(limit);
