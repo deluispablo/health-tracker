@@ -9,4 +9,6 @@
     <string name="log_mood">Registrar ánimo</string>
     <string name="log_undo">Deshacer el último registro</string>
     <string name="log_back">Volver</string>
+    <string name="log_more">Más registros</string>
+    <string name="tile_label">Registrar</string>
 </resources>

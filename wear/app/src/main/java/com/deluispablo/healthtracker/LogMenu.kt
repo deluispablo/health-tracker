@@ -12,6 +12,11 @@ data class LogItem(val id: String, val name: String, val today: String, val prog
  */
 data class LogMenu(val face: List<LogItem>, val more: List<LogItem>)
 
+/** The Tile's 2x3 grid: up to four face trackers, then mood and «more»; the rest go to the list. */
+data class TileGrid(val trackers: List<LogItem>, val more: List<LogItem>)
+
+fun tileGrid(menu: LogMenu): TileGrid = TileGrid(menu.face.take(4), menu.face.drop(4) + menu.more)
+
 // Before the Worker sends its catalog, the watch still offers what it always had.
 private val FALLBACK = listOf(
     CatalogItem("caffeine", "Café", "mg", 80.0, "face", 0.0),

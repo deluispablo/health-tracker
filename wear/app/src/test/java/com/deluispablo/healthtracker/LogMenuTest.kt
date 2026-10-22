@@ -40,6 +40,15 @@ class LogMenuTest {
     }
 
     @Test
+    fun theTileGridHoldsFourFaceTrackersAndTheRestGoToTheList() {
+        val menu = logMenu(parseDialData(catalogJson()), emptyList())
+        assertEquals(listOf("caffeine", "cigarettes", "alcohol", "water"), tileGrid(menu).trackers.map { it.id })
+        assertEquals(listOf("melatonin", "protein", "creatine"), tileGrid(menu).more.map { it.id })
+        val five = menu.copy(face = menu.face + LogItem("tea", "Té", "1"))
+        assertEquals(listOf("tea", "melatonin", "protein", "creatine"), tileGrid(five).more.map { it.id })
+    }
+
+    @Test
     fun anArchivedTrackerIsSimplyNotOffered() {
         assertEquals(listOf("melatonin", "creatine"), logMenu(parseDialData(catalogJson(archivedProtein = true)), emptyList()).more.map { it.id })
     }
@@ -60,6 +69,14 @@ class LogMenuTest {
         assertEquals(listOf("caffeine" to "2", "cigarettes" to "1", "alcohol" to "1"), menu.face.map { it.id to it.today })
         assertEquals(emptyList<LogItem>(), menu.more)
         assertEquals(listOf("caffeine", "cigarettes", "alcohol"), logMenu(null, emptyList()).face.map { it.id })
+    }
+
+    @Test
+    fun aNewDayStartsTheTotalsAtZero() {
+        val tomorrow = ZonedDateTime.parse("2026-10-23T08:00:00+02:00[Europe/Madrid]")
+        val d = dataForToday(parseDialData(catalogJson()), tomorrow)
+        assertEquals(Water(0, 2000), d.water)
+        assertEquals(listOf("0", "0", "0", "0 ml"), logMenu(d, emptyList()).face.map { it.today })
     }
 
     @Test

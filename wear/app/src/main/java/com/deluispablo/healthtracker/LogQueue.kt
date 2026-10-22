@@ -152,6 +152,12 @@ private fun send(ctx: Context) {
     )
 }
 
+/** The menus as of now: cached totals plus unsent taps, or the built-in trackers before the first sync. */
+fun menuNow(ctx: Context): LogMenu = synchronized(cacheLock) {
+    val data = chooseCached(null, File(ctx.filesDir, "dial.json").takeIf { it.exists() }?.readText())?.let { dataForToday(it) }
+    logMenu(data, readTaps(ctx))
+}
+
 /** Today's dial as drawn, unsent taps included; null before the first sync. */
 fun todayWithTaps(ctx: Context): DialData? = synchronized(cacheLock) {
     val data = chooseCached(null, File(ctx.filesDir, "dial.json").takeIf { it.exists() }?.readText()) ?: return null
