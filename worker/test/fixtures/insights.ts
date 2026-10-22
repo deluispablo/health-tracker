@@ -50,7 +50,8 @@ export async function seedInsightsFixture(db:D1Database,opts: {variant?:"main"|"
     const alcohol=random()<0.4;
     const workout=random()<0.5;
     const lateWorkout=random()<0.5;
-    const late=random()<0.5;
+    // Keep the usual bedtime dominant so rolling medians stay in the same cluster.
+    const late=random()<0.3;
     const tired=random()<0.3;
     const negative=random()<0.3;
     const missing=random()<0.15;
@@ -80,7 +81,7 @@ export async function seedInsightsFixture(db:D1Database,opts: {variant?:"main"|"
     const end=bed+(sleepMin+30)*60;
     const deep=90+d.deepNoise-(previous?.smoking && previous.lateCig ? 9 : 0);
     const rem=95+d.remNoise;
-    const rhr=62+d.rhrNoise+(opts.variant==="common_cause" ? previous?.alcohol ? 4 : 0 : late ? 2 : 0)
+    const rhr=62+d.rhrNoise+(opts.variant==="common_cause" ? previous?.alcohol ? 2.5 : 0 : late ? 2 : 0)
       +(i>=173 && i<180 ? -4 : 0)+(illness ? 12 : 0);
     const hrv=Math.log(45)+d.hrvNoise+(previous?.alcohol ? Math.log(0.88) : 0);
     const offset=offsetAt(end);

@@ -264,5 +264,5 @@ it("keeps the common-cause variant free of a direct bedtime effect", async () =>
   const mean=(xs:number[])=>xs.reduce((a,b)=>a+b,0)/xs.length;
   expect(Math.min(late.length,early.length)).toBeGreaterThanOrEqual(8);
   expect(Math.abs(mean(late)-mean(early))).toBeLessThan(0.5);
-  expect(mean(alcohol)-mean(sober)).toBeCloseTo(4,0);
+  expect(mean(alcohol)-mean(sober)).toBeCloseTo(2.5,0);
 },30000);
