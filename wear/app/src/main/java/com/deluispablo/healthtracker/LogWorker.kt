@@ -32,7 +32,7 @@ class LogWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, p
             synchronized(cacheLock) {
                 val queue = readTaps(ctx)
                 if (code >= 300) Log.w(TAG, "dropping tap ${tap.id} after $code")
-                writeTaps(ctx, if (code >= 300) queue - tap else ackTap(queue, tap, System.currentTimeMillis()))
+                writeTaps(ctx, if (code >= 300) queue - tap else ackTap(queue, tap, ticket()))
             }
         }
         if (taps.isNotEmpty() && fetchToday(ctx) != 200) retry = true

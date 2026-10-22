@@ -56,7 +56,7 @@ class UndoTest {
         // The log landed and shows on the dial: the undo still has to go out.
         assertEquals(undone, confirmedBy(undone, dial("x-1"), 2_000))
         assertEquals(undone, confirmedBy(undone, dial(), 2_000))
-        assertEquals(emptyList<Tap>(), confirmedBy(ackTap(undone, undone[0], 1_000), dial(), 500))
+        assertEquals(emptyList<Tap>(), confirmedBy(ackTap(undone, undone[0], 1_000), dial(), 999))
     }
 
     @Test
@@ -74,7 +74,8 @@ class UndoTest {
         // Deleted elsewhere, logged on another day or on an archived tracker: the key never shows up.
         val acked = Tap("x-1", "cigarettes", at, acked = 1_000)
         assertEquals(listOf(acked), confirmedBy(listOf(acked), dial(), 999))
-        assertEquals(emptyList<Tap>(), confirmedBy(listOf(acked), dial(), 1_000))
+        assertEquals(listOf(acked), confirmedBy(listOf(acked), dial(), 1_000))
+        assertEquals(emptyList<Tap>(), confirmedBy(listOf(acked), dial(), 1_001))
         assertEquals(listOf(Tap("y-2", "caffeine", at)), confirmedBy(listOf(Tap("y-2", "caffeine", at)), dial(), 9_000))
     }
 
@@ -84,6 +85,23 @@ class UndoTest {
         assertEquals(listOf(true, true), listOf(1_000L, 2_000L).map(inOrder::accept))
         val late = FetchOrder()
         assertEquals(listOf(true, false), listOf(2_000L, 1_000L).map(late::accept))
+        // The same request never applies twice.
+        assertEquals(listOf(true, false), listOf(5L, 5L).map(FetchOrder()::accept))
+    }
+
+    @Test
+    fun ticketsKeepRisingWhateverTheWallClockDoes() {
+        val a = ticket()
+        val b = ticket()
+        assertEquals(true, b > a)
+    }
+
+    @Test
+    fun anAckFromAnEarlierRunIsForgottenSoTheTapIsSentAgain() {
+        val acked = Tap("x-1", "cigarettes", at, acked = 7)
+        assertEquals(listOf(acked), parseTaps(tapsJson(listOf(acked), "run-a"), "run-a"))
+        assertEquals(listOf(acked.copy(acked = null)), parseTaps(tapsJson(listOf(acked), "run-a"), "run-b"))
+        assertEquals(listOf(acked.copy(acked = null)), parseTaps("""[{"id":"x-1","tracker":"cigarettes","at":$at,"acked":7}]"""))
     }
 
     @Test
