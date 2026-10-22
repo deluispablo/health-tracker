@@ -339,13 +339,12 @@ try {
     border: 0; border-radius: var(--radius-md); background: var(--surface-2); color: var(--ink); font-size: 12px; line-height: 16px; font-weight: var(--w-strong); cursor: pointer;
     transition: background var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard); -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   .ht-chip .ht-chip-disc { position: relative; display: grid; place-items: center; color: var(--on-disc); }
-  .ht-chip .ht-chip-disc::before { content: ""; position: absolute; width: 30px; height: 30px; top: calc(50% - 3px); left: 50%; transform: translate(-50%, -50%); border-radius: var(--radius-full); background: var(--disc); box-shadow: inset 0 0 0 1px var(--fill-edge); }
-  .ht-chip .ht-chip-disc.has-goal::after { content: ""; position: absolute; width: 38px; height: 38px; top: calc(50% - 3px); left: 50%; transform: translate(-50%, -50%); border-radius: var(--radius-full);
+  .ht-chip .ht-chip-disc::before { content: ""; position: absolute; width: 30px; height: 30px; top: 50%; left: 50%; transform: translate(-50%, -50%); border-radius: var(--radius-full); background: var(--disc); box-shadow: inset 0 0 0 1px var(--fill-edge); }
+  .ht-chip .ht-chip-disc.has-goal::after { content: ""; position: absolute; width: 38px; height: 38px; top: 50%; left: 50%; transform: translate(-50%, -50%); border-radius: var(--radius-full);
     background: conic-gradient(var(--m-water) calc(var(--p) * 360deg), var(--line) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); }
-  .ht-chip .ht-ico-sm svg { position: relative; width: 18px; height: 18px; transform: translateY(-3px); stroke-width: 2.4; }
+  .ht-chip .ht-ico-sm svg { position: relative; width: 18px; height: 18px; stroke-width: 2.4; }
   .ht-chip .ht-ico-sm .mood-face { color: var(--on-disc); stroke-width: 1.9; }
   .ht-mood[aria-disabled="true"] svg { opacity: .4; }
-  .ht-chip-l { max-width: 100%; overflow-wrap: break-word; hyphens: auto; text-align: center; }
   .spin { transform-origin: center; }
   @media (prefers-reduced-motion: no-preference) { .spin { animation: ht-spin .9s linear infinite; } }
   @keyframes ht-spin { to { transform: rotate(360deg); } }
@@ -408,7 +407,7 @@ try {
     .ht-settings { flex-wrap: wrap; }
     .qw { position: static; background: none; padding: 0; }
     .quick-title { display: block; font-size: 14px; font-weight: 600; margin-bottom: 12px; }
-    .ht-quick { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ht-quick { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .ht-chip { flex-direction: column; gap: 4px; padding: 12px 8px; background: var(--surface); }
     .ht-chip.is-off { background: transparent; }
     .ht-chip-n { position: absolute; left: auto; right: 6px; top: 6px; background: var(--surface-2); }
@@ -2791,7 +2790,7 @@ try {
       const disc = c.disc, goal = c.key === 'agua' ? ';--p:' + Math.min(1, (s.total || 0) / WGOAL) : '';
       if (c.key === 'agua' && snap) b.setAttribute('aria-label', b.getAttribute('aria-label') + ', ' + t('quick.water', { v: fmt.num(s.total || 0, lang), g: fmt.num(WGOAL, lang) }));
       b.innerHTML = saving ? SPIN : '<span class="ht-ico-sm ht-chip-disc' + (goal ? ' has-goal' : '') + '" style="--disc:var(--fill-' + disc + ');--on-disc:var(--on-fill-' + disc + ')' + goal + '" aria-hidden="true">' + (c.key === 'animo' ? '<svg class="mood-face" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + (FACE[s.mood || 'bien'] || '') + '</svg>' : icon(c.key)) + '</span>';
-      b.append(h('span', { class: 'ht-chip-l', text: name }));
+      b.title = name;   // symbols only, as on the watch; the name is in the label and the hover tip
       if (s.n > 0) b.append(h('span', { class: 'ht-chip-n', 'aria-hidden': 'true', text: fmt.num(s.n, lang) }));
     }
     const note = $('quick-note'), why = noAccess ? 'quick.unavailable' : !snap && kind === 'consent' ? 'quick.consent' : !snap && tr.error ? 'quick.failed' : null;
