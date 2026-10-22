@@ -88,7 +88,7 @@ Freshness depends first on how often the watch syncs to the Google Health app (m
 
 ## MCP tools
 
-Fourteen tools. Eleven are read-only; three write.
+Nineteen tools. Twelve are read-only; seven write (including exploration logs).
 
 | Tool | Access | Returns |
 |---|---|---|
@@ -106,12 +106,18 @@ Fourteen tools. Eleven are read-only; three write.
 | `health_log_event` | insert | Logs one tracker event (time from 7 days ago to 5 minutes ahead, optional note; pass an idempotency key for safe retries) and returns the day total |
 | `health_delete_event` | soft delete | Undoes a logged event by its `event.id`; the row is kept with `deleted_at` |
 | `health_set_profile` | profile write | Partial profile update; weight is upserted per date (2000-01-01 to local today) |
+| `health_scan` | analysis log write | Ranked behavior and planned metric comparisons with confidence labels (default 120 days, max 180) |
+| `health_periods` | analysis log write | Streak comparisons, CUSUM changes, mood weeks and anomalies |
+| `health_contrast` | analysis log write | Filtered group comparisons; filter dates are clipped to start/end |
+| `health_findings` | finding write | List, save, recheck or retire canonical comparisons; confirmation uses new days |
+| `health_context` | read | Static playbook, labels, units, ROPEs and physiology priors (≤9,000 characters) |
 
 Notes:
 
-- All tools, including the three writes, use the single OAuth scope `health:read`.
+- All tools, including the seven writes, use the single OAuth scope `health:read`.
 - Tracker ids: `caffeine` (mg, default 80), `alcohol` (g, default 13), `cigarettes` (count, default 1), and `mood_genial`, `mood_bien`, `mood_tranquilo`, `mood_cansado`, `mood_estresado`, `mood_ansioso`, `mood_triste`, `mood_enfadado` (count, 1 per event; several per day allowed). Daily mood counts are columns of `health_daily` / `v_daily`; individual mood events are in `v_events`.
-- Analysis tools accept dates in 2000–2099. Their behaviors are `cigarettes`, `alcohol_g` and `caffeine_mg`; mood columns are not in their allowlists (use `health_sql`). Results are associational, not causal, and include the sample size and a caveat.
+- `health_compare`, `health_correlate` and `health_trend` accept dates in 2000–2099. Their behaviors are `cigarettes`, `alcohol_g` and `caffeine_mg`; mood columns are not in their allowlists (use `health_sql`). Results are associational, not causal, and include the sample size and a caveat.
+- Insight tools (`health_scan`, `health_periods`, `health_contrast`) use separate selections: behaviors `cigarettes`, `caffeine`, `alcohol`, `mood_negative`, `mood_tired`, `workout`, `steps`, `short_sleep`; metrics include sleep, activity, physiology and individual/grouped mood outcomes. Scan also accepts `timings`; filter `metrics`/`timings` to reach planned M1–M8 rows beyond the unfiltered top 10. Acute `hr_delta` rows cover only the last 28 days ending at `end`. `health_context` lists units, timings and interpretation rules.
 - `health_profile` defaults to 7000 steps and 450 sleep minutes when goals are unset, and estimates max HR as round(208 − 0.7 × age) when only the birth year is known. Only the birth year is stored, never a full birth date.
 - Each executed tool call is audited on a best-effort basis (arguments, outcome, duration); profile tools record field names only. Calls refused by schema validation are not audited.
 

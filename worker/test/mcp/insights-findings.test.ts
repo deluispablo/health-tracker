@@ -225,15 +225,32 @@ describe("confirmation display", () => {
     expect(finding(await recheck(row({ label: "indicio", diff: 1 }))).result.label).toBe("sólido");
     expect((await call({ action: "list" })).findings).toMatchObject([{ result: { label: "sólido" }, last_verdict: "holds" }]);
     expect(finding(await save()).result.label).toBe("sólido");
-    expect(finding(await recheck(row({ diff: -4, ci95: [-6, -2] }))).result.label).toBe("probable");
+    const reversed = await recheck(row({ diff: -4, ci95: [-6, -2] }));
+    expect(reversed.verdict).toBe("reversed");
+    expect(finding(reversed).result.label).toBe("probable");
+    expect((await call({ action: "list" })).findings).toMatchObject([{ result: { label: "probable" }, last_verdict: "reversed" }]);
     expect(finding(await recheck(row())).result.label).toBe("sólido");
-    expect(finding(await recheck(row({ label: "indicio", diff: 0.1 }))).result.label).toBe("probable");
+    const weakened = await recheck(row({ label: "indicio", diff: 0.1 }));
+    expect(weakened.verdict).toBe("weakened");
+    expect(finding(weakened).result.label).toBe("probable");
+    expect((await call({ action: "list" })).findings).toMatchObject([{ result: { label: "probable" }, last_verdict: "weakened" }]);
     expect((await env.DB.prepare("SELECT result FROM finding WHERE id = ?").bind(id).first<{ result: string }>())?.result).toContain('"label":"probable"');
   });
   it.each([{ label: "indicio" }, { binary: true }, { kind: "acute" } ] as const)("never promotes ineligible saved findings %s", async (changes) => {
     evaluator.family.mockResolvedValue({ rows: [row(changes)], resolved, tests: 1, excluded: {}, tests_last_24h: 0, extra: {} });
     const { id } = finding(await save());
-    expect(finding(await call({ action: "recheck", id })).result.label).not.toBe("sólido");
+    const result = await call({ action: "recheck", id });
+    expect(result.verdict).toBe("label" in changes && changes.label === "indicio" ? "holds" : "confirmed");
+    expect(finding(result).result.label).not.toBe("sólido");
+    expect((await call({ action: "list" })).findings).toMatchObject([{ result: { label: "label" in changes ? changes.label : "probable" } }]);
+  });
+  it("holds without prior confirmation never shows sólido", async () => {
+    const { id } = finding(await save());
+    evaluator.single.mockResolvedValue(row({ label: "indicio", diff: 1 }));
+    const result = await call({ action: "recheck", id });
+    expect(result.verdict).toBe("holds");
+    expect(finding(result).result.label).toBe("probable");
+    expect((await call({ action: "list" })).findings).toMatchObject([{ result: { label: "probable" }, last_verdict: "holds" }]);
   });
 });
 

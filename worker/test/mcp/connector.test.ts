@@ -9,6 +9,14 @@ import { healthSleep } from "../../src/mcp/tools/sleep";
 // @ts-expect-error Vite loads this Markdown as text; there is no raw-module declaration.
 import architectureSource from "../../../docs/architecture.md?raw";
 
+const INSIGHT_NAMES = ["health_scan", "health_periods", "health_contrast", "health_findings", "health_context"];
+const insightAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+const insightDatesContract = { start: { type: "string" }, end: { type: "string" } };
+const insightSelectionContract = { behaviors: { type: "array", items: { type: "string" } }, metrics: { type: "array", items: { type: "string" } } };
+const looseObjectContract = { type: "object", properties: {}, additionalProperties: {} };
+const insightContract = (properties: object, required?: string[]) => ({ inputSchema: { $schema: "http://json-schema.org/draft-07/schema#", type: "object", properties,
+  ...(required ? { required } : {}), additionalProperties: {} }, annotations: insightAnnotations });
+
 const ORIGIN = "https://health.test";
 const REDIRECT = "https://client.example/callback";
 const CLIENT_NAME = "Health <script>alert(1)</script> & reader";
@@ -379,6 +387,11 @@ describe("T39 tool description contract", () => {
       annotations: tool.annotations,
     }]));
     expect(contracts).toEqual({
+      health_scan: insightContract({ ...insightDatesContract, ...insightSelectionContract, timings: { type: "array", items: { type: "string" } }, limit: { type: "number" } }),
+      health_periods: insightContract({ ...insightDatesContract, ...insightSelectionContract }),
+      health_contrast: insightContract({ ...insightDatesContract, a: looseObjectContract, b: looseObjectContract, metrics: insightSelectionContract.metrics, timing: { type: "string" } }, ["a", "b"]),
+      health_findings: insightContract({ action: { type: "string" }, id: { type: "number" }, statement: { type: "string" }, ref: looseObjectContract }, ["action"]),
+      health_context: { inputSchema: { $schema: "http://json-schema.org/draft-07/schema#", type: "object", properties: {} }, annotations: { readOnlyHint: true, openWorldHint: false } },
       "health_profile": {
         "inputSchema": {
           "$schema": "http://json-schema.org/draft-07/schema#",
@@ -761,6 +774,11 @@ describe("T39 tool description contract", () => {
   it("pins every tool's limits, defaults, selection guidance and argument documentation", async () => {
     // Limits checked against the handlers; tracker configuration is deliberately discovered at runtime.
     const required: Record<string, string[]> = {
+      health_scan: ["10 ranked rows", "limit defaults to 10", "health_findings", "health_context"],
+      health_periods: ["streaks", "CUSUM", "mood weeks", "anomalies"],
+      health_contrast: ["filter dates are clipped to start/end", "Widen start/end", "sin_datos as no difference"],
+      health_findings: ["list", "save", "recheck", "retire", "untrusted"],
+      health_context: ["9000 characters", "no data read", "ROPEs", "physiology"],
       health_profile: ["90 dated weights", "7000 steps", "450 minutes", "USER_TZ", "health_set_profile"],
       health_set_profile: ["at least one field", "0.1", "local today", "1920", "100–250", "30–300", "1000–50000", "240–720", "120–230", "health_profile", "midnight"],
       health_status: ["14-day", "48 hours", "24 hours", "5 attempts", "USER_TZ", "YYYY-MM-DDTHH:MM", "health_daily"],
@@ -786,14 +804,14 @@ describe("T39 tool description contract", () => {
       expect(tool.description, tool.name).toMatch(/Infer.*do not ask/);
       expect(tool.description, tool.name).not.toMatch(/\bcauses?\b/i);
       if (["health_compare", "health_correlate"].includes(tool.name)) expect(tool.description).toContain("not causal");
-      if (tool.name !== "health_sql") {
+      if (tool.name !== "health_sql" && !INSIGHT_NAMES.includes(tool.name)) {
         expect(tool.description.length, tool.name).toBeLessThanOrEqual(600);
         expect(tool.description, tool.name).not.toMatch(/[\r\n]/);
       }
       const schema = tool.inputSchema as { properties: Record<string, { description?: string }> };
       for (const [field, argument] of Object.entries(schema.properties)) {
         expect(argument.description?.trim().length ?? 0, `${tool.name}.${field}`).toBeGreaterThan(0);
-        if (["start", "end", "date"].includes(field) && tool.name !== "health_set_profile") {
+        if (["start", "end", "date"].includes(field) && tool.name !== "health_set_profile" && !INSIGHT_NAMES.includes(tool.name)) {
           expect(argument.description, `${tool.name}.${field}`).toMatch(/Required.*Infer.*USER_TZ.*Europe\/Madrid.*do not ask/);
         }
       }
@@ -807,17 +825,17 @@ describe("T39 tool description contract", () => {
 });
 
 describe("AC3 stateless read tools and audit", () => {
-  it("initializes and lists exactly fourteen described tools, with profile, log and delete writing", async () => {
+  it("initializes and lists exactly nineteen described tools, with profile, log and delete writing", async () => {
     google();
     const token = await accessToken();
     await initialize(token);
     const msg = await rpc(token, "tools/list", {});
     expect(msg.error).toBeUndefined();
-    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_delete_event", "health_intraday", "health_log_event", "health_profile", "health_set_profile", "health_sleep", "health_sql", "health_status", "health_trackers", "health_trend", "health_workouts"]);
+    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_delete_event", "health_intraday", "health_log_event", "health_profile", "health_set_profile", "health_sleep", "health_sql", "health_status", "health_trackers", "health_trend", "health_workouts", ...INSIGHT_NAMES].sort());
     for (const tool of msg.result?.tools ?? []) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.inputSchema).toMatchObject({ type: "object" });
-      expect(tool.annotations).toMatchObject((tool.name === "health_log_event" || tool.name === "health_set_profile")
+      expect(tool.annotations).toMatchObject(INSIGHT_NAMES.includes(tool.name) && tool.name !== "health_context" ? insightAnnotations : (tool.name === "health_log_event" || tool.name === "health_set_profile")
         ? { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
         : tool.name === "health_delete_event"
           ? { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
@@ -1542,6 +1560,7 @@ describe("T18 AC5 health_trend through the authenticated connector", () => {
 
   it("lists health_trend in architecture documentation", () => {
     expect(architectureSource as string).toContain("health_trend");
+    for (const name of INSIGHT_NAMES) expect(architectureSource as string).toContain(name);
   });
 
   it("describes all four required fields, allowed names/periods and date limits with read-only annotations", async () => {
@@ -1817,5 +1836,96 @@ describe("T35 AC4 owner profile connector", () => {
     expect(msg.result?.structuredContent).toBeUndefined();
     await toolAudit(name, { fields: Object.keys(args) }, 0, before);
     expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
+  });
+});
+
+describe("insight tool contracts", () => {
+  it("counts executed statements through the real handler including deferred audits", async () => {
+    google();
+    const token = await accessToken();
+    let count = 0;
+    const originals = new WeakMap<D1PreparedStatement, D1PreparedStatement>();
+    const wrap = (statement: D1PreparedStatement): D1PreparedStatement => {
+      const proxy = new Proxy(statement, { get(target, key) {
+        if (key === "bind") return (...values: unknown[]) => wrap(target.bind(...values));
+        if (["all", "first", "run", "raw"].includes(String(key))) return (...args: unknown[]) => {
+          count++;
+          return (Reflect.get(target, key) as (...args: unknown[]) => unknown).apply(target, args);
+        };
+        return Reflect.get(target, key) as unknown;
+      } });
+      originals.set(proxy, statement);
+      return proxy;
+    };
+    const db = new Proxy(env.DB, { get(target, key) {
+      if (key === "prepare") return (sql: string) => wrap(target.prepare(sql));
+      if (key === "batch") return (statements: D1PreparedStatement[]) => {
+        count += statements.length;
+        return target.batch(statements.map(statement => originals.get(statement) ?? statement));
+      };
+      return Reflect.get(target, key) as unknown;
+    } });
+    const invoke = async (name: string, args: object, statements: number) => {
+      count = 0;
+      const msg = await rpc(token, "tools/call", { name, arguments: args }, 1, { ...connectorEnv, DB: db });
+      expect(msg.error).toBeUndefined();
+      expect(msg.result?.isError, JSON.stringify(msg.result?.content)).not.toBe(true);
+      expect(count, name).toBe(statements);
+      const result = msg.result?.structuredContent as Record<string, unknown>;
+      for (const key of ["range", "excluded", "truncated", "tests", "tests_last_24h"]) expect(result, `${name}.${key}`).toHaveProperty(key);
+      expect(JSON.stringify(result).length).toBeLessThanOrEqual(20000);
+      return result;
+    };
+    const scan = await invoke("health_scan", {}, 4);
+    await invoke("health_periods", {}, 3);
+    const contrast = await invoke("health_contrast", { start: "2026-07-01", end: "2026-09-30", a: { weekdays: [1, 2, 3] }, b: { weekdays: [4, 5, 6, 7] }, metrics: ["rhr"] }, 3);
+    await invoke("health_findings", { action: "list" }, 2);
+    await invoke("health_context", {}, 1);
+    const scanRef = (scan.rows as { ref: object }[])[0].ref;
+    const saved = await invoke("health_findings", { action: "save", statement: "Observed pattern", ref: scanRef }, 4);
+    const id = (saved.finding as { id: number }).id;
+    await env.DB.prepare("UPDATE finding SET saved_at = saved_at - ? WHERE id = ?").bind(3 * 86400000, id).run();
+    await invoke("health_findings", { action: "recheck", id }, 4);
+    await invoke("health_findings", { action: "retire", id }, 2);
+    const contrastRef = (contrast.rows as { ref: object }[])[0].ref;
+    const historical = await invoke("health_findings", { action: "save", statement: "Weekday pattern", ref: contrastRef }, 3);
+    await invoke("health_findings", { action: "recheck", id: (historical.finding as { id: number }).id }, 4);
+    const acute = await invoke("health_scan", { metrics: ["hr_delta"] }, 4);
+    const acuteSaved = await invoke("health_findings", { action: "save", statement: "Acute pattern", ref: (acute.rows as { ref: object }[])[0].ref }, 4);
+    await invoke("health_findings", { action: "recheck", id: (acuteSaved.finding as { id: number }).id }, 5);
+  });
+
+  it("trims a list of 20 findings with 500-character statements to 20000 characters", async () => {
+    google();
+    const token = await accessToken();
+    const scan = await rpc(token, "tools/call", { name: "health_scan", arguments: {
+      behaviors: ["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "workout", "steps", "short_sleep"],
+      metrics: ["sleep_min", "rhr", "hrv", "steps", "hr_delta", "deep_min", "rem_min", "efficiency", "awake_min", "light_min", "bedtime", "skin_temp_dev"],
+      timings: ["following_night", "before_bed", "next_day", "same_day"],
+    } });
+    const ref = (scan.result?.structuredContent as { rows: { ref: unknown }[] }).rows[0].ref;
+    const saved = await rpc(token, "tools/call", { name: "health_findings", arguments: { action: "save", statement: "x".repeat(500), ref } });
+    expect(saved.result?.isError).not.toBe(true);
+    const id = (saved.result?.structuredContent as { finding: { id: number } }).finding.id;
+    await env.DB.batch(Array.from({ length: 19 }, (_, i) => env.DB.prepare(`INSERT INTO finding (saved_at,statement,ref,ref_hash,result)
+      SELECT saved_at,statement,ref,?,result FROM finding WHERE id = ?`).bind(`list-${String(i)}`, id)));
+    const msg = await rpc(token, "tools/call", { name: "health_findings", arguments: { action: "list" } });
+    expect(msg.result?.isError).not.toBe(true);
+    const body = msg.result?.structuredContent as { findings: unknown[]; truncated: boolean };
+    expect(JSON.stringify(body).length).toBeLessThanOrEqual(20000);
+    expect(body.truncated).toBe(true);
+    expect(body.findings.length).toBeLessThan(20);
+    expect(body.findings.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["health_scan", { limit: 1.5 }, "limit"],
+    ["health_contrast", { a: { where: [{ behavior: "invalid", op: ">", value: 0 }] }, b: {} }, "contrast"],
+    ["health_findings", { action: "save", statement: "Pattern", ref: { mode: "prospective" } }, "ref"],
+  ])("forwards domain validation errors for %s", async (name, args, field) => {
+    google();
+    const msg = await rpc(await accessToken(), "tools/call", { name, arguments: args });
+    expect(msg.result?.isError).toBe(true);
+    expect(msg.result?.content?.[0].text).toContain(field);
   });
 });
