@@ -15,6 +15,7 @@ from pathlib import Path
 REQUIRED_TABLES = {
     "metric_minute", "daily_summary", "sleep_session", "event",
     "tracker", "audit_log", "profile", "weight_log",
+    "tracker_daily", "finding", "secret_blob", "sync_pending",
 }
 WORKER = Path(__file__).resolve().parents[3] / "worker"
 
@@ -75,8 +76,10 @@ def main(argv=None, *, run=subprocess.run, now=None):
             temporary.append(Path(file.name))
             json.dump(manifest, file)
             file.write("\n")
-        os.replace(sql, directory / f"health-tracker-{day}.sql")
+        # Invalidate the old pair before either replacement can fail or be interrupted.
+        (directory / f"health-tracker-{day}.sql").unlink(missing_ok=True)
         os.replace(temporary[1], directory / f"health-tracker-{day}.json")
+        os.replace(sql, directory / f"health-tracker-{day}.sql")
     except Exception as error:
         message = str(error)
         if isinstance(error, subprocess.CalledProcessError):
@@ -108,12 +111,12 @@ def main(argv=None, *, run=subprocess.run, now=None):
         return 1
     status = 0
     for sql in pairs[:-8]:
-        for path in (sql.with_suffix(".json"), sql):
-            try:
-                path.unlink()
-            except OSError as error:
-                print(f"Retention failed: {error}", file=sys.stderr)
-                status = 1
+        try:
+            sql.unlink()
+            sql.with_suffix(".json").unlink()
+        except OSError as error:
+            print(f"Retention failed: {error}", file=sys.stderr)
+            status = 1
     return status
 
 

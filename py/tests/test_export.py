@@ -102,6 +102,12 @@ def test_success_manifest_and_same_day_replacement(tmp_path, monkeypatch):
         assert source.parent == directory
         replacements.append(target.suffix)
         replace(source, target)
+        sql = directory / f"{BASE}.sql"
+        manifest = directory / f"{BASE}.json"
+        if sql.exists() and manifest.exists():
+            assert json.loads(manifest.read_text())["sha256"] == hashlib.sha256(
+                sql.read_bytes()
+            ).hexdigest()
 
     monkeypatch.setattr(export.os, "replace", record)
     assert invoke(directory, run=runner()) == 0
@@ -116,7 +122,7 @@ def test_success_manifest_and_same_day_replacement(tmp_path, monkeypatch):
     assert invoke(directory, run=runner(updated)) == 0
     assert (directory / f"{BASE}.sql").read_text() == updated
     assert json.loads((directory / f"{BASE}.json").read_text())["tables"]["extra"] == 2
-    assert replacements == [".sql", ".json", ".sql", ".json"]
+    assert replacements == [".json", ".sql", ".json", ".sql"]
     assert len(list(directory.iterdir())) == 2
 
 
@@ -141,8 +147,14 @@ def test_corrupt_same_day_rerun_preserves_pair(tmp_path):
 
 
 @pytest.mark.parametrize("stage", ["manifest", ".sql", ".json"])
-def test_write_or_publication_failure_never_prunes(tmp_path, monkeypatch, capsys, stage):
+@pytest.mark.parametrize("same_day", [False, True])
+def test_write_or_publication_failure_never_prunes(
+    tmp_path, monkeypatch, capsys, stage, same_day,
+):
+    if same_day:
+        assert invoke(tmp_path, run=runner()) == 0
     seed_pairs(tmp_path)
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
     replace = export.os.replace
 
     def fail_replace(source, target):
@@ -156,13 +168,45 @@ def test_write_or_publication_failure_never_prunes(tmp_path, monkeypatch, capsys
     monkeypatch.setattr(export.os, "replace", fail_replace)
     if stage == "manifest":
         monkeypatch.setattr(export.json, "dump", fail_dump)
-    assert invoke(tmp_path, run=runner()) == 1
+    updated = SQL + "\nINSERT INTO extra VALUES ('second');"
+    assert invoke(tmp_path, run=runner(updated)) == 1
     assert "refused" in capsys.readouterr().err
-    assert len(list(tmp_path.glob("health-tracker-2026-09-*"))) == 20
-    expected = 21 if stage == ".json" else 20
-    assert len(list(tmp_path.iterdir())) == expected
-    if stage == ".json":
-        assert (tmp_path / f"{BASE}.sql").read_text() == SQL
+    assert {
+        path.name: path.read_bytes() for path in tmp_path.glob("health-tracker-2026-09-*")
+    } == {name: contents for name, contents in before.items() if "2026-09-" in name}
+    assert all(path.name.startswith("health-tracker-") for path in tmp_path.iterdir())
+    if stage == "manifest":
+        assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before
+        return
+    assert not (tmp_path / f"{BASE}.sql").exists()
+    if stage == ".sql":
+        assert json.loads((tmp_path / f"{BASE}.json").read_text())["sha256"] == hashlib.sha256(
+            updated.encode()
+        ).hexdigest()
+    elif same_day:
+        assert (tmp_path / f"{BASE}.json").read_bytes() == before[f"{BASE}.json"]
+    else:
+        assert not (tmp_path / f"{BASE}.json").exists()
+
+
+def test_same_day_sql_removal_failure_preserves_pair_and_never_prunes(
+    tmp_path, monkeypatch, capsys,
+):
+    assert invoke(tmp_path, run=runner()) == 0
+    seed_pairs(tmp_path)
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    unlink = Path.unlink
+
+    def fail_sql_removal(path, *args, **kwargs):
+        if path.name == f"{BASE}.sql":
+            raise OSError("removal refused")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_sql_removal)
+    updated = SQL + "\nINSERT INTO extra VALUES ('second');"
+    assert invoke(tmp_path, run=runner(updated)) == 1
+    assert "removal refused" in capsys.readouterr().err
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before
 
 
 def test_retention_keeps_eight_pairs_and_leaves_orphans(tmp_path, monkeypatch):
@@ -182,7 +226,7 @@ def test_retention_keeps_eight_pairs_and_leaves_orphans(tmp_path, monkeypatch):
     assert invoke(tmp_path, run=runner()) == 0
     assert deletions == [
         f"health-tracker-2026-09-{number:02}.{suffix}"
-        for number in range(1, 4) for suffix in ("json", "sql")
+        for number in range(1, 4) for suffix in ("sql", "json")
     ]
     assert len(list(tmp_path.iterdir())) == 19
     for name in orphans:
@@ -192,12 +236,13 @@ def test_retention_keeps_eight_pairs_and_leaves_orphans(tmp_path, monkeypatch):
         assert (tmp_path / f"health-tracker-2026-09-{number:02}.json").exists()
 
 
-def test_deletion_failure_continues_other_deletions(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("suffix", ["sql", "json"])
+def test_deletion_failure_continues_other_deletions(tmp_path, monkeypatch, capsys, suffix):
     seed_pairs(tmp_path)
     unlink = Path.unlink
 
     def fail_second_pair(path, *args, **kwargs):
-        if path.name == "health-tracker-2026-09-02.sql":
+        if path.name == f"health-tracker-2026-09-02.{suffix}":
             raise OSError("delete refused")
         return unlink(path, *args, **kwargs)
 
@@ -205,10 +250,10 @@ def test_deletion_failure_continues_other_deletions(tmp_path, monkeypatch, capsy
     assert invoke(tmp_path, run=runner()) == 1
     assert "delete refused" in capsys.readouterr().err
     assert not (tmp_path / "health-tracker-2026-09-01.sql").exists()
-    assert not (tmp_path / "health-tracker-2026-09-02.json").exists()
+    assert (tmp_path / "health-tracker-2026-09-02.json").exists()
     assert not (tmp_path / "health-tracker-2026-09-03.sql").exists()
     assert not (tmp_path / "health-tracker-2026-09-03.json").exists()
-    assert (tmp_path / "health-tracker-2026-09-02.sql").exists()
+    assert (tmp_path / "health-tracker-2026-09-02.sql").exists() == (suffix == "sql")
     assert (tmp_path / f"{BASE}.sql").exists()
     assert (tmp_path / f"{BASE}.json").exists()
 
@@ -232,3 +277,12 @@ def test_standalone_startup_without_pythonpath():
 
 def test_profile_tables_are_required():
     assert {"profile", "weight_log"} <= export.REQUIRED_TABLES
+
+
+@pytest.mark.parametrize("table", ["tracker_daily", "finding", "secret_blob", "sync_pending"])
+def test_export_rejects_missing_required_table(tmp_path, capsys, table):
+    assert table in export.REQUIRED_TABLES
+    contents = SQL.replace(f'CREATE TABLE "{table}" (id INTEGER);', "")
+    assert invoke(tmp_path, run=runner(contents)) == 1
+    assert f"Missing required tables: {table}" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
