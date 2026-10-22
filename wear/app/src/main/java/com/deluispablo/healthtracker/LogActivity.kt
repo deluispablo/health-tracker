@@ -37,7 +37,8 @@ private val MOODS = listOf(
 
 /**
  * Opened by tapping the centre of the face: syncs now and shows a 2x2 grid (coffee, cigarette,
- * drink, mood). One tap logs and closes; mood swaps the grid for a ring of the 8 moods.
+ * drink, mood) around an undo button for the last watch log. One tap logs and closes; mood swaps the
+ * grid for a ring of the 8 moods around a back button.
  */
 class LogActivity : Activity() {
     private lateinit var screen: FrameLayout
@@ -61,9 +62,15 @@ class LogActivity : Activity() {
         val today = todayWithTaps(this)
         TRACKERS.forEachIndexed { i, (tracker, label, icon) ->
             val count = today?.events?.count { it.k == kindOf(tracker) } ?: 0
-            place(button(icon, 26, count.toString(), getString(label)) { log(tracker) }, 72, gridX(i), gridY(i))
+            place(button(icon, 26, count.toString(), getString(label)) { log(tracker) }, 68, gridX(i), gridY(i))
         }
-        place(button(R.drawable.ic_mood_bien, 30, null, getString(R.string.log_mood)) { showRing() }, 72, gridX(3), gridY(3))
+        place(button(R.drawable.ic_mood_bien, 30, null, getString(R.string.log_mood)) { showRing() }, 68, gridX(3), gridY(3))
+        if (lastTap(this) != null) place(button(R.drawable.ic_undo, 22, null, getString(R.string.log_undo)) {
+            screen.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            val ctx = applicationContext
+            thread { undoLast(ctx) }
+            finish()
+        }, 48, 0f, 0f)
     }
 
     private fun showRing() {
@@ -73,10 +80,15 @@ class LogActivity : Activity() {
             place(button(icon, 26, null, "Ánimo: $mood") { log("mood_$mood") }, 44,
                 (76 * sin(a)).toFloat(), (-76 * cos(a)).toFloat())
         }
+        place(button(R.drawable.ic_back, 22, null, getString(R.string.log_back)) {
+            screen.removeAllViews()
+            showGrid()
+        }, 48, 0f, 0f)
     }
 
-    private fun gridX(i: Int) = if (i % 2 == 0) -40f else 40f
-    private fun gridY(i: Int) = if (i < 2) -40f else 40f
+    // Spread enough to leave the centre free for undo.
+    private fun gridX(i: Int) = if (i % 2 == 0) -46f else 46f
+    private fun gridY(i: Int) = if (i < 2) -46f else 46f
 
     private fun log(tracker: String) {
         screen.performHapticFeedback(HapticFeedbackConstants.CONFIRM)

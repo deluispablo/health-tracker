@@ -13,8 +13,11 @@ import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** A log waiting for the Worker: [id] is its idempotency key, [at] the tap time in epoch seconds. */
-data class Tap(val id: String, val tracker: String, val at: Long)
+/**
+ * A log waiting for the Worker: [id] is its idempotency key, [at] the tap time in epoch seconds.
+ * An [undo] tap asks the Worker to delete the already-sent log with the same id.
+ */
+data class Tap(val id: String, val tracker: String, val at: Long, val undo: Boolean = false)
 
 fun kindOf(tracker: String): String = when {
     tracker == "caffeine" -> "cafe"
@@ -26,20 +29,25 @@ fun kindOf(tracker: String): String = when {
 
 fun parseTaps(json: String): List<Tap> = JSONArray(json).let { a ->
     List(a.length()) { i ->
-        runCatching { a.getJSONObject(i).run { Tap(getString("id"), getString("tracker"), getLong("at")) } }.getOrNull()
+        runCatching {
+            a.getJSONObject(i).run { Tap(getString("id"), getString("tracker"), getLong("at"), optBoolean("undo")) }
+        }.getOrNull()
     }.filterNotNull()
 }
 
 fun tapsJson(taps: List<Tap>): String =
-    JSONArray(taps.map { JSONObject().put("id", it.id).put("tracker", it.tracker).put("at", it.at) }).toString()
+    JSONArray(taps.map { JSONObject().put("id", it.id).put("tracker", it.tracker).put("at", it.at).put("undo", it.undo) }).toString()
 
-/** Adds the day's unsent taps to the dial, so a log shows before the Worker confirms it. */
+/** Applies the day's unsent taps to the dial, so a log or an undo shows before the Worker confirms it. */
 fun withTaps(data: DialData, taps: List<Tap>): DialData {
-    val marks = taps.mapNotNull { tap ->
+    val today = taps.mapNotNull { tap ->
         val local = Instant.ofEpochSecond(tap.at).atZone(MADRID)
-        if (local.toLocalDate().toString() == data.date) Mark(minutesSince(data.date, local), kindOf(tap.tracker)) else null
+        if (local.toLocalDate().toString() == data.date) tap to Mark(minutesSince(data.date, local), kindOf(tap.tracker)) else null
     }
-    return if (marks.isEmpty()) data else data.copy(events = (data.events + marks).sortedBy { it.t })
+    if (today.isEmpty()) return data
+    val events = (data.events + today.filter { !it.first.undo }.map { it.second }).toMutableList()
+    for ((_, mark) in today.filter { it.first.undo }) events.remove(mark)
+    return data.copy(events = events.sortedBy { it.t })
 }
 
 private fun tapsFile(ctx: Context) = File(ctx.filesDir, "taps.json")
@@ -50,9 +58,43 @@ internal fun readTaps(ctx: Context): List<Tap> =
 
 internal fun writeTaps(ctx: Context, taps: List<Tap>) = writeAtomic(tapsFile(ctx), tapsJson(taps).toByteArray())
 
+private fun lastFile(ctx: Context) = File(ctx.filesDir, "last.json")
+
+/** The last log made on the watch while it can still be undone, else null. */
+fun lastTap(ctx: Context, nowSec: Long = System.currentTimeMillis() / 1000): Tap? = synchronized(cacheLock) {
+    lastFile(ctx).takeIf { it.exists() }?.let { runCatching { parseTaps(it.readText()).single() }.getOrNull() }
+        ?.takeIf { nowSec - it.at <= UNDO_WINDOW_SEC }
+}
+
+const val UNDO_WINDOW_SEC = 15 * 60
+
+/**
+ * Drops [last] from the queue and always queues its deletion: a queued log may already have reached
+ * the Worker (it stays queued until a refresh confirms it), and deleting an unknown key is harmless.
+ */
+fun undoTaps(taps: List<Tap>, last: Tap): List<Tap> = taps.filter { it.id != last.id } + last.copy(undo = true)
+
 /** Queues one log, redraws at once and asks [LogWorker] to send it. */
 fun logTap(ctx: Context, tracker: String, nowSec: Long = System.currentTimeMillis() / 1000) {
-    synchronized(cacheLock) { writeTaps(ctx, readTaps(ctx) + Tap(UUID.randomUUID().toString(), tracker, nowSec)) }
+    val tap = Tap(UUID.randomUUID().toString(), tracker, nowSec)
+    synchronized(cacheLock) {
+        writeTaps(ctx, readTaps(ctx) + tap)
+        writeAtomic(lastFile(ctx), tapsJson(listOf(tap)).toByteArray())
+    }
+    send(ctx)
+}
+
+/** Takes back the last watch log, whether or not it was sent yet. */
+fun undoLast(ctx: Context) {
+    synchronized(cacheLock) {
+        val last = lastTap(ctx) ?: return
+        writeTaps(ctx, undoTaps(readTaps(ctx), last))
+        lastFile(ctx).delete()
+    }
+    send(ctx)
+}
+
+private fun send(ctx: Context) {
     refreshCache(ctx, null)
     WorkManager.getInstance(ctx).enqueueUniqueWork(
         "log-send",

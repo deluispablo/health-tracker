@@ -7,4 +7,6 @@
     <string name="log_cigarette">Registrar cigarro</string>
     <string name="log_drink">Registrar copa</string>
     <string name="log_mood">Registrar ánimo</string>
+    <string name="log_undo">Deshacer el último registro</string>
+    <string name="log_back">Volver</string>
 </resources>

@@ -32,3 +32,22 @@ class LogQueueTest {
             listOf("caffeine", "cigarettes", "alcohol", "mood_genial", "water").map(::kindOf))
     }
 }
+
+class UndoTest {
+    private val day = DialData("2026-10-22", 0, emptyList(), emptyList(), listOf(Mark(570, "cigarro")), List(96) { null })
+    private val at = java.time.ZonedDateTime.parse("2026-10-22T09:30:00+02:00[Europe/Madrid]").toEpochSecond()
+
+    @Test
+    fun undoReplacesTheQueuedLogWithItsDeletion() {
+        val log = Tap("x-1", "cigarettes", at)
+        val other = Tap("y-2", "caffeine", at)
+        assertEquals(listOf(other, log.copy(undo = true)), undoTaps(listOf(log, other), log))
+        assertEquals(listOf(log.copy(undo = true)), undoTaps(emptyList(), log))
+        assertEquals(listOf(log.copy(undo = true)), parseTaps(tapsJson(listOf(log.copy(undo = true)))))
+    }
+
+    @Test
+    fun anUndoHidesTheSentMarkUntilTheNextRefresh() {
+        assertEquals(emptyList<Mark>(), withTaps(day, listOf(Tap("x-1", "cigarettes", at, undo = true))).events)
+    }
+}
