@@ -12,7 +12,13 @@ const names = [...behaviors, "rhr", "hrv_rmssd", "ln_rmssd", "resp_rate", "spo2_
 const base = { x: "rhr", y: "sleep_min", start: "2026-01-01", end: "2026-01-07" };
 const date = (i: number) => new Date(Date.UTC(2026, 0, i)).toISOString().slice(0, 10);
 const caveats = (n: number) => `Asociacional, no causal. n=${String(n)}. Posibles confusores: alcohol, entrenamiento, hora de acostarse, enfermedad.`;
+async function log(day: string, tracker = "cigarettes") {
+  await env.DB.prepare("INSERT OR IGNORE INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at) VALUES (?, ?, ?, 0, ?, 1, 'import', 1)")
+    .bind(`${tracker}-${day}`, tracker, Date.parse(`${day}T10:00:00Z`) / 1000, day).run();
+}
 async function row(day: string, x: number | null, y: number | null) {
+  await log("2025-12-30");
+  await log(day);
   await env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, sleep_min, computed_at) VALUES (?, ?, ?, 1)").bind(day, x, y).run();
 }
 function observed(rewrite: (value: unknown) => unknown = (value) => value) {
@@ -38,9 +44,24 @@ function observed(rewrite: (value: unknown) => unknown = (value) => value) {
 }
 
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
-beforeEach(async () => { await env.DB.batch(["daily_summary", "tracker_daily"].map((table) => env.DB.prepare(`DELETE FROM ${table}`))); });
+beforeEach(async () => { await env.DB.batch(["event", "daily_summary", "tracker_daily"].map((table) => env.DB.prepare(`DELETE FROM ${table}`))); });
 
 describe("T17 AC2/AC3 health_correlate", () => {
+  it("pairs two behaviours on active days without daily summaries", async () => {
+    await log(date(1));
+    await log(date(1), "alcohol");
+    for (const day of [date(3), date(4)]) {
+      await log(day, "mood_bien");
+      await env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES (?, 'alcohol', 7, 1, 0)")
+        .bind(day).run();
+    }
+    const seen = observed();
+    const out = await correlate(seen.db, { ...base, x: "cigarettes", y: "alcohol_g", max_lag: 0 });
+    expect(out.lags).toEqual([{ lag: 0, n: 1, r: null }]);
+    expect(seen.executions()).toBe(1);
+    expect(seen.reads[0].bindings).toEqual(["cigarettes", "alcohol", base.start, base.end]);
+  });
+
   it("returns the exact empty shape, default max_lag 3 and lag-0 caveats", async () => {
     expect(await correlate(env.DB, base)).toEqual({ ...base, phi: 0,
       lags: [0, 1, 2, 3].map((lag) => ({ lag, r: null, n: 0 })), caveats: caveats(0) });
@@ -93,11 +114,20 @@ describe("T17 AC2/AC3 health_correlate", () => {
     expect((await correlate(env.DB, { ...base, max_lag: 0 })).lags).toEqual([{ lag: 0, n: 6, r: null }]);
   });
 
-  it("fills absent behaviour rows with zero even in an entirely empty database", async () => {
+  it("excludes unknown behaviour rows in an entirely empty database", async () => {
     const out = await correlate(env.DB, { ...base, x: "cigarettes", y: "caffeine_mg" });
     expect(out.phi).toBe(0);
-    expect(out.lags).toEqual([0, 1, 2, 3].map((lag) => ({ lag, n: 6, r: null })));
-    expect(out.caveats).toBe(caveats(6));
+    expect(out.lags).toEqual([0, 1, 2, 3].map((lag) => ({ lag, n: 0, r: null })));
+    expect(out.caveats).toBe(caveats(0));
+  });
+
+  it.each(["x", "y"])("skips unknown behaviour dates in %s and keeps calendar gaps through prewhitening", async (side) => {
+    for (let i = 1; i <= 10; i++) await row(date(i), i, null);
+    await env.DB.prepare("DELETE FROM event").run();
+    await log(date(3));
+    for (const i of [4, 5, 7, 8, 9, 10]) await log(date(i), "mood_bien");
+    const out = await correlate(env.DB, { ...base, end: date(10), x: side === "x" ? "cigarettes" : "rhr", y: side === "y" ? "cigarettes" : "rhr", max_lag: 1 });
+    expect(out.lags.map(({ n }) => n)).toEqual([4, side === "x" ? 3 : 4]);
   });
 
   it("uses stored negative and fractional behaviour values and clamps negative phi", async () => {

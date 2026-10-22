@@ -1,7 +1,7 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { healthCompare } from "../../src/mcp/tools/compare";
+import { analysisSeries, healthCompare } from "../../src/mcp/tools/compare";
 
 interface Args { behavior: string; outcome: string; start: string; end: string; lag_days?: number; bins?: number[] }
 interface Comparison { group: string; vs: string; diff: number; df: number | null; ci95: [number, number] | null }
@@ -19,9 +19,15 @@ const base = { behavior: "cigarettes", outcome: "rhr", start: "2026-01-01", end:
 const date = (i: number) => new Date(Date.UTC(2026, 0, i)).toISOString().slice(0, 10);
 const caveats = (n: number) => `Asociacional, no causal. n=${String(n)}. Posibles confusores: alcohol, entrenamiento, hora de acostarse, enfermedad.`;
 const loggingNote = (n: number, first: string | null, last: string | null, behavior = "cigarettes") =>
-  `${behavior} tiene registros en ${String(n)} día(s) del rango solicitado; primer registro: ${first ?? "ninguno"}; último registro: ${last ?? "ninguno"}. Se usa todo el rango solicitado; los días sin registro cuentan como 0.`;
+  `${behavior} tiene registros en ${String(n)} día(s) del rango solicitado; primer registro: ${first ?? "ninguno"}; último registro: ${last ?? "ninguno"}. Se usa todo el rango solicitado; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0.`;
 const comparisonRequirement = "Se necesitan al menos 2 días con resultado disponible en cada uno de al menos 2 grupos para una comparación.";
+async function log(day: string, tracker = "cigarettes", at = `${day}T10:00:00Z`, offset = 0, deleted: number | null = null) {
+  await env.DB.prepare("INSERT OR IGNORE INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, 1, 'import', 1, ?)")
+    .bind(`${tracker}-${at}`, tracker, Date.parse(at) / 1000, offset, day, deleted).run();
+}
 async function row(day: string, value: number | null, behavior?: number, tracker = "cigarettes") {
+  await log("2025-12-30", tracker);
+  await log(day, tracker);
   await env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, computed_at) VALUES (?, ?, 1)").bind(day, value).run();
   if (behavior !== undefined) await env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES (?, ?, ?, 1, 0)")
     .bind(day, tracker, behavior).run();
@@ -50,16 +56,118 @@ function observed(rewrite: (value: unknown) => unknown = (value) => value) {
 }
 
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
-beforeEach(async () => { await env.DB.batch(["daily_summary", "tracker_daily"].map((table) => env.DB.prepare(`DELETE FROM ${table}`))); });
+beforeEach(async () => { await env.DB.batch(["event", "daily_summary", "tracker_daily"].map((table) => env.DB.prepare(`DELETE FROM ${table}`))); });
 
 describe("T17 AC1/AC3 health_compare", () => {
+  async function trackingWindow(skipDay?: number) {
+    for (let i = 1; i <= 7; i++) await row(date(i), i * 10, i >= 3 && i <= 5 ? 1 : undefined);
+    await env.DB.prepare("DELETE FROM event").run();
+    for (let i = 3; i <= 7; i++) if (i !== skipDay) await log(date(i), i === 3 ? "cigarettes" : "mood_bien");
+  }
+
+  it("treats days up to the first logged bday as unknown, not 0", async () => {
+    await trackingWindow();
+    const seen = observed();
+    const out = await compare(seen.db, base);
+    expect(out.n).toBe(4);
+    expect(out.groups[0]).toMatchObject({ n: 2, mean: 65 });
+    expect(seen.executions()).toBe(2);
+    expect(seen.reads[0].bindings).toEqual(["cigarettes", base.start, base.end]);
+    expect(seen.reads[0].sql.match(/EXISTS/g)).toHaveLength(1);
+  });
+
+  it.each([["cigarettes", "cigarettes"], ["alcohol_g", "alcohol"], ["caffeine_mg", "caffeine"]])(
+    "preserves known zero and nonzero %s totals without daily summaries in one SELECT", async (behavior, tracker) => {
+      await log(date(1), tracker);
+      await log(date(3), "mood_bien");
+      await log(date(4), tracker);
+      await env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES (?, ?, 7, 1, 0)")
+        .bind(date(4), tracker).run();
+      const seen = observed();
+      const out = await analysisSeries(seen.db, date(1), date(4), 0, [behavior, "rhr"]);
+      expect(out.series).toEqual([[null, null, 0, 7], [null, null, null, null]]);
+      expect(seen.executions()).toBe(1);
+      expect(seen.reads[0].sql.match(/EXISTS/g)).toHaveLength(1);
+    },
+  );
+
+  it("keeps lagged pairs when the behaviour day has logging but no daily summary", async () => {
+    await log(date(1));
+    await log(date(3), "mood_bien");
+    await env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, computed_at) VALUES (?, 40, 1)").bind(date(4)).run();
+    const out = await compare(env.DB, { ...base, end: date(3), lag_days: 1 });
+    expect(out.n).toBe(1);
+    expect(out.groups[0]).toMatchObject({ n: 1, mean: 40 });
+  });
+
+  it("uses a deleted first event to fix the start", async () => {
+    await trackingWindow();
+    await env.DB.prepare("DELETE FROM event WHERE tracker_id = 'cigarettes'").run();
+    await log(date(2), "cigarettes", "2026-01-02T10:00:00Z", 0, 1);
+    await log(date(5));
+    await log(date(3), "mood_bien");
+    await env.DB.prepare("DELETE FROM tracker_daily WHERE local_date = '2026-01-03'").run();
+    expect((await compare(env.DB, base)).groups[0]).toMatchObject({ n: 3, mean: 53.333 });
+    await env.DB.prepare("UPDATE event SET deleted_at = 1 WHERE local_date = '2026-01-03'").run();
+    expect((await compare(env.DB, base)).n).toBe(4);
+  });
+
+  it("a day with no logging at all is unknown", async () => {
+    await trackingWindow(6);
+    await log(date(6), "mood_bien", "2026-01-06T10:00:00Z", 0, 1);
+    expect((await compare(env.DB, base)).n).toBe(3);
+  });
+
+  it("first event at 01:30 local belongs to the previous bday", async () => {
+    await trackingWindow();
+    await env.DB.prepare("DELETE FROM event WHERE tracker_id = 'cigarettes'").run();
+    await log(date(3), "cigarettes", "2026-01-03T00:30:00Z", 60);
+    expect((await compare(env.DB, base)).n).toBe(5);
+  });
+
+  it("uses civil dates for active logging even when a tap belongs to the preceding bday", async () => {
+    await row(date(3), 30);
+    await row(date(4), 40);
+    await env.DB.prepare("DELETE FROM event").run();
+    await log(date(1));
+    await log(date(4), "mood_bien", "2026-01-04T00:30:00Z", 60);
+    const out = await compare(env.DB, base);
+    expect(out.n).toBe(1);
+    expect(out.groups[0]).toMatchObject({ n: 1, mean: 40 });
+  });
+
+  it("gates each behaviour by its own earliest event in one SELECT", async () => {
+    await trackingWindow();
+    await log(date(5), "alcohol");
+    const seen = observed();
+    const out = await analysisSeries(seen.db, base.start, base.end, 0, ["cigarettes", "alcohol_g", "caffeine_mg"]);
+    expect(out.series).toEqual([
+      [null, null, null, 1, 1, 0, 0],
+      [null, null, null, null, null, 0, 0],
+      [null, null, null, null, null, null, null],
+    ]);
+    expect(seen.executions()).toBe(1);
+    expect(seen.reads[0].bindings).toEqual(["cigarettes", "alcohol", "caffeine", base.start, base.end]);
+    expect(seen.reads[0].sql.match(/EXISTS/g)).toHaveLength(1);
+  });
+
+  it("no events leave behaviour all null with empty groups and the no-data note", async () => {
+    for (let i = 1; i <= 7; i++) await row(date(i), i, 1);
+    await env.DB.prepare("DELETE FROM event").run();
+    const out = await compare(env.DB, base);
+    expect(out.n).toBe(0);
+    expect(out.groups.every(({ n }) => n === 0)).toBe(true);
+    expect(out.notes).toContain(comparisonRequirement);
+    expect((await analysisSeries(env.DB, base.start, base.end, 0, ["cigarettes"])).series[0]).toEqual(Array(7).fill(null));
+  });
+
   it.each([["cigarettes", ["0", ">0–5", ">5–10", ">10"]], ["alcohol_g", ["0", ">0–20", ">20–40", ">40"]],
     ["caffeine_mg", ["0", ">0–200", ">200–400", ">400"]]] as const)("uses default bins for %s, lag 1, and exact empty shape", async (behavior, labels) => {
     const args = { behavior, outcome: "sleep_min", start: base.start, end: base.end };
     const out = await compare(env.DB, args);
     expect(out).toEqual({ ...args, lag_days: 1, n: 0,
       groups: labels.map((label) => ({ label, n: 0, mean: null, sd: null })), comparisons: [],
-      notes: [`${behavior} solo tiene valores distintos de 0 en 0 de 0 días; los días sin registro cuentan como 0.`,
+      notes: [`${behavior} solo tiene valores distintos de 0 en 0 de 0 días; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0.`,
         loggingNote(0, null, null, behavior), comparisonRequirement], caveats: caveats(0),
       behavior_logging: { logged_days: 0, first_logged_date: null, last_logged_date: null }, min_days_per_group: 2 });
     expect(Object.keys(out)).toEqual(["behavior", "outcome", "lag_days", "start", "end", "n", "groups", "comparisons", "notes", "caveats", "behavior_logging", "min_days_per_group"]);
@@ -108,15 +216,16 @@ describe("T17 AC1/AC3 health_compare", () => {
     await row("2026-01-01", 999, 5);
     await row("2026-01-03", 30, 11);
     await row("2026-01-04", 40, 6);
-    // Jan 2 has no v_daily row: its missing behaviour is still zero and pairs with Jan 3.
+    await env.DB.prepare("INSERT INTO daily_summary (local_date, rhr, computed_at) VALUES (?, NULL, 1)").bind(date(2)).run();
+    // Jan 2 has a summary but no logging and cannot pair with Jan 3.
     const out = await compare(env.DB, { ...base, end: "2026-01-03", lag_days: 1 });
-    expect(out.n).toBe(2);
-    expect(out.groups).toEqual([{ label: "0", n: 1, mean: 30, sd: null }, { label: ">0–5", n: 0, mean: null, sd: null },
+    expect(out.n).toBe(1);
+    expect(out.groups).toEqual([{ label: "0", n: 0, mean: null, sd: null }, { label: ">0–5", n: 0, mean: null, sd: null },
       { label: ">5–10", n: 0, mean: null, sd: null }, { label: ">10", n: 1, mean: 40, sd: null }]);
     expect(out.comparisons).toEqual([]);
-    expect(out.notes).toEqual(["cigarettes solo tiene valores distintos de 0 en 1 de 2 días; los días sin registro cuentan como 0.",
+    expect(out.notes).toEqual(["cigarettes solo tiene valores distintos de 0 en 1 de 1 días; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0.",
       loggingNote(2, date(1), date(3)), comparisonRequirement]);
-    expect(out.caveats).toBe(caveats(2));
+    expect(out.caveats).toBe(caveats(1));
     expect(await compare(env.DB, { behavior: base.behavior, outcome: base.outcome, start: base.start, end: "2026-01-03" })).toEqual(out);
   });
 
@@ -157,7 +266,7 @@ describe("T17 AC1/AC3 health_compare", () => {
     expect(out.n).toBe(4);
     expect(out.groups[0]).toEqual({ label: "0", n: 4, mean: 25, sd: 12.91 });
     expect(out.groups.slice(1).every((group) => group.n === 0)).toBe(true);
-    expect(out.notes).toEqual(["cigarettes solo tiene valores distintos de 0 en 0 de 4 días; los días sin registro cuentan como 0.",
+    expect(out.notes).toEqual(["cigarettes solo tiene valores distintos de 0 en 0 de 4 días; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0.",
       loggingNote(6, date(1), date(7)), comparisonRequirement]);
   });
 
@@ -179,7 +288,7 @@ describe("T28 AC3 compare notes", () => {
       behavior_logging: { logged_days: 1, first_logged_date: date(7), last_logged_date: date(7) },
       min_days_per_group: 2,
     });
-    expect(out.notes).toContain("cigarettes tiene registros en 1 día(s) del rango solicitado; primer registro: 2026-01-07; último registro: 2026-01-07. Se usa todo el rango solicitado; los días sin registro cuentan como 0.");
+    expect(out.notes).toContain("cigarettes tiene registros en 1 día(s) del rango solicitado; primer registro: 2026-01-07; último registro: 2026-01-07. Se usa todo el rango solicitado; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0.");
     expect(out.notes).toContain("Se necesitan al menos 2 días con resultado disponible en cada uno de al menos 2 grupos para una comparación.");
   });
 
@@ -203,7 +312,7 @@ describe("T28 AC3 compare notes", () => {
     const out = await compare(env.DB, base);
     expect(out.n).toBe(5);
     expect(out.notes).toEqual([
-      ...(k < 3 ? [`cigarettes solo tiene valores distintos de 0 en ${String(k)} de 5 días; los días sin registro cuentan como 0.`] : []),
+      ...(k < 3 ? [`cigarettes solo tiene valores distintos de 0 en ${String(k)} de 5 días; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0.`] : []),
       loggingNote(k + 1, k === 0 ? date(6) : date(1), date(6)),
       ...(k < 2 ? [comparisonRequirement] : []),
     ]);
@@ -214,7 +323,7 @@ describe("T28 AC3 compare notes", () => {
     for (const [i, total] of [-0.5, 0.25, 0, undefined].entries()) await row(date(i + 1), i, total);
     const out = await compare(env.DB, base);
     expect(out.groups.map(({ n }) => n)).toEqual([3, 1, 0, 0]);
-    expect(out.notes).toEqual(["cigarettes solo tiene valores distintos de 0 en 2 de 4 días; los días sin registro cuentan como 0.",
+    expect(out.notes).toEqual(["cigarettes solo tiene valores distintos de 0 en 2 de 4 días; los días hasta el primer día de registro y los días sin ningún registro no cuentan; los demás días sin registro de este hábito cuentan como 0.",
       loggingNote(3, date(1), date(3)), comparisonRequirement]);
   });
 
@@ -262,9 +371,9 @@ describe("T17 compare validation and AC5 bounded SELECT", () => {
     const out = await compare(seen.db, { ...base, start, end, lag_days, bins: [1, 2, 3, 4, 5] });
     expect(seen.reads).toHaveLength(2);
     expect(seen.executions()).toBe(2);
-    expect(seen.reads[0].sql).toMatch(/^\s*SELECT\b[\s\S]*\bFROM\s+v_daily\b[\s\S]*\bWHERE\s+local_date\s+BETWEEN\s+\?\s+AND\s+\?/i);
+    expect(seen.reads[0].sql).toMatch(/WITH RECURSIVE dates\(local_date\)[\s\S]*LEFT JOIN v_daily USING \(local_date\)/);
     expect(seen.reads[0].sql).not.toContain(start);
-    expect(seen.reads[0].bindings).toEqual([start, widened]);
+    expect(seen.reads[0].bindings).toEqual(["cigarettes", start, widened]);
     expect(seen.reads[1].sql).toMatch(/FROM tracker_daily WHERE tracker_id = \? AND local_date BETWEEN \? AND \?/);
     expect(seen.reads[1].bindings).toEqual(["cigarettes", start, end]);
     expect(out.groups.map(({ label }) => label)).toEqual(["0", ">0–1", ">1–2", ">2–3", ">3–4", ">4–5", ">5"]);
