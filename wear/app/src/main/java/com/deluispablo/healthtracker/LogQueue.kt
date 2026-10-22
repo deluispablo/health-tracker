@@ -10,15 +10,23 @@ import androidx.work.WorkManager
 import java.io.File
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
  * A log waiting for the Worker: [id] is its idempotency key, [at] the tap time in epoch seconds.
- * An [undo] tap asks the Worker to delete the already-sent log with the same id. [acked] is when the
- * Worker took it (epoch ms); it stays queued until a dial shows the outcome.
+ * An [undo] tap asks the Worker to delete the already-sent log with the same id. [acked] is the
+ * [ticket] taken when the Worker accepted it; it stays queued until a dial shows the outcome.
  */
 data class Tap(val id: String, val tracker: String, val at: Long, val undo: Boolean = false, val acked: Long? = null)
+
+/** This process; tickets from an earlier one cannot be compared, so their acks are forgotten. */
+val RUN: String = UUID.randomUUID().toString()
+private val tickets = AtomicLong()
+
+/** A strictly increasing number for this process, independent of the wall clock. */
+fun ticket(): Long = tickets.incrementAndGet()
 
 fun kindOf(tracker: String): String = when {
     tracker == "caffeine" -> "cafe"
@@ -28,43 +36,45 @@ fun kindOf(tracker: String): String = when {
     else -> "other"
 }
 
-fun parseTaps(json: String): List<Tap> = JSONArray(json).let { a ->
+/** Acks from another [run] are dropped: the tap is simply sent again, which the idempotency key makes safe. */
+fun parseTaps(json: String, run: String = RUN): List<Tap> = JSONArray(json).let { a ->
     List(a.length()) { i ->
         runCatching {
             a.getJSONObject(i).run {
-                Tap(getString("id"), getString("tracker"), getLong("at"), optBoolean("undo"), (opt("acked") as? Number)?.toLong())
+                Tap(getString("id"), getString("tracker"), getLong("at"), optBoolean("undo"),
+                    (opt("acked") as? Number)?.toLong()?.takeIf { optString("run") == run })
             }
         }.getOrNull()
     }.filterNotNull()
 }
 
-fun tapsJson(taps: List<Tap>): String =
+fun tapsJson(taps: List<Tap>, run: String = RUN): String =
     JSONArray(taps.map {
-        JSONObject().put("id", it.id).put("tracker", it.tracker).put("at", it.at).put("undo", it.undo).putOpt("acked", it.acked)
+        JSONObject().put("id", it.id).put("tracker", it.tracker).put("at", it.at).put("undo", it.undo).putOpt("acked", it.acked).putOpt("run", it.acked?.let { run })
     }).toString()
 
 /** Marks exactly [tap] as taken by the Worker; an undo queued for it meanwhile is a different entry and stays. */
-fun ackTap(taps: List<Tap>, tap: Tap, nowMs: Long): List<Tap> = taps.map { if (it == tap) it.copy(acked = nowMs) else it }
+fun ackTap(taps: List<Tap>, tap: Tap, ticket: Long): List<Tap> = taps.map { if (it == tap) it.copy(acked = ticket) else it }
 
 /**
- * Drops the taps [data], fetched from [fetchStartMs], already settles: a log once its key is on the dial;
- * an undo once the Worker took it and the key is gone. Any tap acked before the fetch started goes too,
+ * Drops the taps [data], requested with [fetchTicket], already settles: a log once its key is on the dial;
+ * an undo once the Worker took it and the key is gone. Any tap acked before that request goes too,
  * since that dial reflects it even when the key is missing (deleted elsewhere, another day, archived).
  * An undo is never dropped before it is sent, in case its log is still in flight.
  */
-fun confirmedBy(taps: List<Tap>, data: DialData, fetchStartMs: Long): List<Tap> {
+fun confirmedBy(taps: List<Tap>, data: DialData, fetchTicket: Long): List<Tap> {
     val shown = data.events.mapNotNull { it.i }.toSet()
     return taps.filterNot {
         val acked = it.acked
-        (acked != null && acked <= fetchStartMs) || if (it.undo) acked != null && it.id !in shown else it.id in shown
+        (acked != null && acked < fetchTicket) || if (it.undo) acked != null && it.id !in shown else it.id in shown
     }
 }
 
 /** Remembers the newest dial request applied, so a slower, older response cannot overwrite it. */
 class FetchOrder {
-    private var newestMs = Long.MIN_VALUE
+    private var newest = Long.MIN_VALUE
 
-    @Synchronized fun accept(startMs: Long): Boolean = (startMs >= newestMs).also { if (it) newestMs = startMs }
+    @Synchronized fun accept(ticket: Long): Boolean = (ticket > newest).also { if (it) newest = ticket }
 }
 
 /** Applies the day's unsent taps to the dial, so a log or an undo shows before the Worker confirms it. */

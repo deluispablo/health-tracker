@@ -42,7 +42,7 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
  * already shows them. Returns the HTTP status, or -1 when the network failed.
  */
 fun fetchToday(ctx: Context): Int {
-    val start = System.currentTimeMillis()
+    val start = ticket()
     val conn = URL("${BuildConfig.WATCH_BASE_URL}/watch/today").openConnection() as HttpURLConnection
     try {
         conn.connectTimeout = 20_000
@@ -71,12 +71,12 @@ class RedrawWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 }
 
 /** Renders before saving a valid new body, then pokes the complication. */
-fun refreshCache(ctx: Context, body: String?, fetchStartMs: Long = 0) = synchronized(cacheLock) {
+fun refreshCache(ctx: Context, body: String?, fetchTicket: Long = 0) = synchronized(cacheLock) {
     val dir = ctx.filesDir
     val jsonFile = File(dir, "dial.json")
-    val newData = chooseCached(body, null)?.takeIf { fetchOrder.accept(fetchStartMs) }
+    val newData = chooseCached(body, null)?.takeIf { fetchOrder.accept(fetchTicket) }
     val data = newData ?: chooseCached(null, jsonFile.takeIf { it.exists() }?.readText()) ?: return
-    if (newData != null) readTaps(ctx).let { taps -> confirmedBy(taps, newData, fetchStartMs).takeIf { it != taps }?.let { writeTaps(ctx, it) } }
+    if (newData != null) readTaps(ctx).let { taps -> confirmedBy(taps, newData, fetchTicket).takeIf { it != taps }?.let { writeTaps(ctx, it) } }
     val now = ZonedDateTime.now(MADRID)
     val today = withTaps(dataForToday(data, now), readTaps(ctx))
     val minutes = minutesSince(today.date, now)
