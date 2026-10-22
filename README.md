@@ -76,7 +76,7 @@ flowchart LR
 | `/authorize`, `/oauth/google/callback` | Connector consent and Google sign-in (allowlisted email only) |
 | `/google/connect`, `/google/callback` | One-time Google Health consent; stores the encrypted refresh token |
 | `GET /watch/today` | Today's sleep, workouts, logs and 15-minute heart rate for the watch face, behind the `WATCH_TOKEN` bearer |
-| `POST /watch/log` | One log from the watch (coffee, cigarettes, alcohol or one of the eight moods) with an idempotency key, behind the same bearer |
+| `POST /watch/log` | One log from the watch (coffee, cigarettes, alcohol or one of the eight moods) with an idempotency key, behind the same bearer; `DELETE` with the same key undoes it |
 | `/`, `/privacy`, `/terms`, `/favicon.ico` | Static home, privacy and terms pages (the Google OAuth consent screen links to them) and the brand icon, which MCP clients show next to the connector |
 
 Freshness depends first on how often the watch syncs to the Google Health app (minutes, sometimes hours), then on the 5-minute cron and the queue backlog. Details: [docs/architecture.md](docs/architecture.md).

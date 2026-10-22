@@ -166,3 +166,34 @@ describe("POST /watch/log", () => {
     expect((await env.DB.prepare("SELECT count(*) AS n FROM event").first<{ n: number }>())?.n).toBe(0);
   });
 });
+
+describe("DELETE /watch/log", () => {
+  const del = (body: unknown, authorization = `Bearer ${TOKEN}`) => route(
+    new Request("https://example.com/watch/log", { method: "DELETE", headers: { authorization }, body: JSON.stringify(body) }),
+    appEnv(), { fetch, now: () => NOW, sleep: () => Promise.resolve() },
+  );
+
+  it("undoes a watch log and is safe to retry", async () => {
+    await post({ tracker_id: "cigarettes", at: "2026-10-21T19:50:00Z", idempotency_key: "undo-0001-abcd" });
+    const res = await del({ idempotency_key: "undo-0001-abcd" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ deleted: true, day_total: 0 });
+    expect(await (await del({ idempotency_key: "undo-0001-abcd" })).json()).toMatchObject({ deleted: false });
+    const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: unknown[] }>();
+    expect(body.events).toEqual([]);
+  });
+
+  it("refuses unknown keys, other trackers, bad bodies and bad tokens", async () => {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO tracker (id, name, unit, value_type, default_value, min_value, max_value, created_at)
+        VALUES ('water', 'Agua', 'ml', 'amount', 250, 0, 2000, 1) ON CONFLICT(id) DO NOTHING`),
+      env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at)
+        VALUES ('k_water-key-0001', 'water', ?, 120, '2026-10-21', 250, 'mcp', 1)`).bind(NOW - 60),
+    ]);
+    expect((await del({ idempotency_key: "water-key-0001" })).status).toBe(404);
+    expect((await env.DB.prepare("SELECT deleted_at FROM event WHERE id = 'k_water-key-0001'").first())?.deleted_at).toBeNull();
+    expect((await del({ idempotency_key: "missing-key-0001" })).status).toBe(404);
+    expect((await del({ idempotency_key: "short" })).status).toBe(400);
+    expect((await del({ idempotency_key: "undo-0001-abcd" }, `Bearer ${TOKEN.slice(0, -1)}x`)).status).toBe(401);
+  });
+});

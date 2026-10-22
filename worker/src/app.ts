@@ -134,7 +134,7 @@ export async function route(request: Request, env: AppEnv, deps: AppDeps): Promi
       if (request.method !== "GET") return new Response(null, { status: 405 });
       return handleWatchToday(request, env, deps.now());
     case "/watch/log":
-      if (request.method !== "POST") return new Response(null, { status: 405 });
+      if (request.method !== "POST" && request.method !== "DELETE") return new Response(null, { status: 405 });
       return handleWatchLog(request, env, deps.now());
     default:
       return new Response(null, { status: 404 });

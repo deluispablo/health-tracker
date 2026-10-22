@@ -1,7 +1,7 @@
 import type { AppEnv } from "./app";
 import { dateTimeFormat } from "./lib/time";
 import { healthSleep } from "./mcp/tools/sleep";
-import { logEvent } from "./mcp/tools/trackers";
+import { deleteEvent, logEvent } from "./mcp/tools/trackers";
 import { healthWorkouts } from "./mcp/tools/workouts";
 
 const encoder = new TextEncoder();
@@ -18,9 +18,20 @@ async function authorized(request: Request, env: AppEnv): Promise<boolean> {
     && crypto.subtle.timingSafeEqual(actual, expected);
 }
 
-/** Logs one tap from the watch; the idempotency key makes queue retries safe. */
+/** Logs one tap from the watch (POST) or undoes one (DELETE); the idempotency key makes retries safe. */
 export async function handleWatchLog(request: Request, env: AppEnv, now: number): Promise<Response> {
   if (!await authorized(request, env)) return new Response(null, { status: 401 });
+  if (request.method === "DELETE") {
+    const body = await request.json().catch(() => null) as { idempotency_key?: unknown } | null;
+    const key = body?.idempotency_key;
+    if (typeof key !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(key)) {
+      return Response.json({ error: "idempotency_key is required" }, { status: 400 });
+    }
+    // Only the watch knows its random keys, and only the watch's trackers can be undone this way.
+    const row = await env.DB.prepare("SELECT tracker_id FROM event WHERE id = ?").bind(`k_${key}`).first<{ tracker_id: string }>();
+    if (!row || !LOGGABLE.has(row.tracker_id)) return new Response(null, { status: 404 });
+    return Response.json(await deleteEvent(env.DB, { event_id: `k_${key}` }, { now }));
+  }
   const body = await request.json().catch(() => null) as { tracker_id?: unknown; at?: unknown; idempotency_key?: unknown } | null;
   if (!body || typeof body.tracker_id !== "string" || !LOGGABLE.has(body.tracker_id)
     || typeof body.at !== "string" || typeof body.idempotency_key !== "string") {
