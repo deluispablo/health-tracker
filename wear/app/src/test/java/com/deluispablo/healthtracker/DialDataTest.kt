@@ -10,7 +10,7 @@ internal fun sampleJson(hrSize: Int = 96): String {
         {"date":"2026-10-22","generatedAt":1792652400,
          "sleep":[{"start":-30,"end":430,"nap":false},{"start":900,"end":940,"nap":true}],
          "workouts":[{"start":1080,"end":1140}],
-         "events":[{"t":460,"k":"cafe"},{"t":675,"k":"cigarro"},{"t":1170,"k":"alcohol"}],
+         "events":[{"t":460,"k":"cafe"},{"t":675,"k":"cigarro"},{"t":1170,"k":"alcohol"},{"t":1200,"k":"animo","m":"cansado"}],
          "hr":[$hr]}
     """.trimIndent()
 }
@@ -24,7 +24,8 @@ class DialDataTest {
         assertEquals(Span(-30, 430, false), d.sleep[0])
         assertEquals(Span(900, 940, true), d.sleep[1])
         assertEquals(listOf(Span(1080, 1140)), d.workouts)
-        assertEquals(listOf("cafe", "cigarro", "alcohol"), d.events.map { it.k })
+        assertEquals(listOf("cafe", "cigarro", "alcohol", "animo"), d.events.map { it.k })
+        assertEquals(listOf(null, null, null, "cansado"), d.events.map { it.m })
         assertEquals(60, d.hr[0])
         assertEquals(120, d.hr[72])
         assertNull(d.hr[1])

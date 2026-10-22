@@ -28,7 +28,7 @@ private class Choice(val tracker: String, val label: Int, val icon: Int, val fil
 private val TRACKERS = listOf(
     Choice("caffeine", R.string.log_coffee, R.drawable.ic_cafe, 0xfff2c46b.toInt(), 0xff2a1a00.toInt()),
     Choice("cigarettes", R.string.log_cigarette, R.drawable.ic_cigarro, 0xffdfe3ea.toInt(), 0xff16191f.toInt()),
-    Choice("alcohol", R.string.log_drink, R.drawable.ic_alcohol, 0xffd3b6f7.toInt(), 0xff22103a.toInt()),
+    Choice("alcohol", R.string.log_drink, R.drawable.ic_alcohol, 0xffb48ae8.toInt(), 0xff1c0b33.toInt()),
 )
 
 private const val MOOD_FILL = 0xffb6c2ff.toInt()

@@ -42,7 +42,7 @@ fun tapsJson(taps: List<Tap>): String =
 fun withTaps(data: DialData, taps: List<Tap>): DialData {
     val today = taps.mapNotNull { tap ->
         val local = Instant.ofEpochSecond(tap.at).atZone(MADRID)
-        if (local.toLocalDate().toString() == data.date) tap to Mark(minutesSince(data.date, local), kindOf(tap.tracker)) else null
+        if (local.toLocalDate().toString() == data.date) tap to Mark(minutesSince(data.date, local), kindOf(tap.tracker), tap.tracker.removePrefix("mood_").takeIf { tap.tracker.startsWith("mood_") }) else null
     }
     if (today.isEmpty()) return data
     val events = (data.events + today.filter { !it.first.undo }.map { it.second }).toMutableList()

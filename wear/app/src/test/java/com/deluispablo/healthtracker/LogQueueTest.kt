@@ -22,7 +22,7 @@ class LogQueueTest {
             Tap("2", "mood_triste", at("2026-10-22T11:00:00")),
             Tap("3", "caffeine", at("2026-10-21T23:50:00")),
         )
-        assertEquals(listOf(Mark(570, "cigarro"), Mark(600, "cafe"), Mark(660, "animo")), withTaps(day, taps).events)
+        assertEquals(listOf(Mark(570, "cigarro"), Mark(600, "cafe"), Mark(660, "animo", "triste")), withTaps(day, taps).events)
         assertEquals(day, withTaps(day, emptyList()))
     }
 
@@ -49,5 +49,14 @@ class UndoTest {
     @Test
     fun anUndoHidesTheSentMarkUntilTheNextRefresh() {
         assertEquals(emptyList<Mark>(), withTaps(day, listOf(Tap("x-1", "cigarettes", at, undo = true))).events)
+    }
+}
+
+class SendOutcomeTest {
+    @Test
+    fun aMissingEndpointNeverDropsALog() {
+        assertEquals(false, settled(404, undo = false))
+        assertEquals(true, settled(404, undo = true))
+        assertEquals(listOf(true, true, true, false, false, false), listOf(200, 201, 400, 401, 500, -1).map { settled(it, false) })
     }
 }

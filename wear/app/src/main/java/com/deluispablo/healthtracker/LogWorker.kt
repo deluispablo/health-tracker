@@ -14,6 +14,12 @@ import org.json.JSONObject
 
 private const val TAG = "LogWorker"
 
+/**
+ * Whether the Worker's answer ends a tap: accepted, or refused for good (a bad log, an undo with
+ * nothing left). A 404 on a log means the endpoint is missing, so the log waits instead of vanishing.
+ */
+internal fun settled(code: Int, undo: Boolean) = code == 200 || code == 201 || code == 400 || (code == 404 && undo)
+
 /** Sends every queued tap, then refreshes the dial; retries keep the same idempotency keys. */
 class LogWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -22,12 +28,10 @@ class LogWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, p
         val sent = mutableSetOf<String>()
         var retry = false
         for (tap in taps) {
-            when (val code = send(tap)) {
-                200, 201 -> sent += tap.id
-                // The Worker refused this tap for good (unknown tracker, older than a week, nothing to undo).
-                400, 404 -> { Log.w(TAG, "dropping tap ${tap.id}"); sent += tap.id }
-                else -> { Log.w(TAG, "/watch/log -> $code"); retry = true; break }
-            }
+            val code = send(tap)
+            if (!settled(code, tap.undo)) { Log.w(TAG, "/watch/log -> $code"); retry = true; break }
+            if (code >= 300) Log.w(TAG, "dropping tap ${tap.id} after $code")
+            sent += tap.id
         }
         if (sent.isNotEmpty() && fetchToday(ctx, sent) != 200) retry = true
         if (retry) Result.retry() else Result.success()
