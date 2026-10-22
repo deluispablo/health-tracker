@@ -33,10 +33,10 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
     ) ORDER BY metric
   `).all<{ metric: string }>();
   const [sleepResult, dailyResult, watchResult, queueResult, googleResult, coverageResult,
-    freshResult, mainSleepResult, ...metricResults] = await db.batch([
+    freshResult, ...metricResults] = await db.batch([
     db.prepare(`
       SELECT end_ts AS ts, tz_offset_min FROM sleep_session
-      WHERE source = 'gh' ORDER BY end_ts DESC LIMIT 1
+      WHERE source = 'gh' AND is_nap = 0 ORDER BY end_ts DESC LIMIT 1
     `),
     db.prepare(`
       SELECT local_date, computed_at FROM daily_summary ORDER BY local_date DESC LIMIT 1
@@ -59,10 +59,6 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
       SELECT 1 AS present FROM metric_minute
       WHERE metric = 'hr' AND source = 'gh' AND ts BETWEEN ? AND ? LIMIT 1
     `).bind(now - 172800, now),
-    db.prepare(`
-      SELECT 1 AS present FROM sleep_session
-      WHERE source = 'gh' AND is_nap = 0 AND end_ts >= ? LIMIT 1
-    `).bind(now - 172800),
     ...names.map(({ metric }) => db.prepare(`
       SELECT metric, ts, tz_offset_min FROM metric_minute
       WHERE metric = ? AND source = 'gh' ORDER BY ts DESC LIMIT 1
@@ -75,7 +71,6 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
   const google = googleResult.results[0] as { updated_at: number } | undefined;
   const coverage = coverageResult.results as { date: string; hr_minutes: number | null }[];
   const fresh = freshResult.results[0];
-  const mainSleep = mainSleepResult.results[0];
   const metrics = metricResults.flatMap(({ results }) => results) as (StreamRow & { metric: string })[];
 
   const stream = (name: string, ts: number | null, offset?: number) => ({
@@ -87,8 +82,9 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
   const alerts: { code: string; message: string }[] = [];
   if (!google) alerts.push({ code: "google_disconnected", message: "Google no está conectado." });
   if (!fresh) alerts.push({ code: "no_data_48h", message: "Sin datos de frecuencia cardíaca en las últimas 48 horas." });
-  if (google && !mainSleep) {
-    alerts.push({ code: "no_sleep_48h", message: "Sin sesiones de sueño principal en las últimas 48 horas." });
+  if (google && (!sleep || sleep.ts < now - 172800)) {
+    alerts.push({ code: "no_sleep_48h", message: "Sin sesiones de sueño principal en las últimas 48 horas."
+      + (sleep ? ` Último sueño principal: ${localTime(sleep.ts)}.` : "") });
   }
   if (queue && queue.stuck > 0) alerts.push({ code: "queue_stuck", message: "Hay elementos de la cola con cinco o más intentos." });
   if (!daily || daily.local_date < yesterday) alerts.push({ code: "daily_stale", message: "El resumen diario no está actualizado." });
@@ -96,6 +92,19 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
     alerts.push({ code: "watch_not_syncing", message: "El reloj no se ha sincronizado en las últimas 24 h." });
   }
   const minutesByDate = new Map(coverage.map((row) => [row.date, row.hr_minutes]));
+  let gap: string[] = [];
+  for (const date of dates) {
+    const minutes = minutesByDate.get(date);
+    if (date < today && minutes != null && minutes <= 1) {
+      gap.push(date);
+    } else if (gap.length >= 3) {
+      alerts.push({ code: "hr_coverage_gap",
+        message: `Cobertura de frecuencia cardíaca casi nula (≤1 min/día) desde ${gap[0]} hasta ${gap.at(-1)}.` });
+      break;
+    } else {
+      gap = [];
+    }
+  }
   return {
     now_local,
     streams: [

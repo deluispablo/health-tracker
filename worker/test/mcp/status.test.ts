@@ -149,7 +149,7 @@ describe("T10d AC1 health_status", () => {
       { stream: "metric:daily", latest_local: "2026-10-21T08:00", age_hours: 1 },
       { stream: "metric:hr", latest_local: "2026-10-21T01:45", age_hours: 1.3 },
       { stream: "metric:sleep", latest_local: "2026-10-21T09:00", age_hours: 0 },
-      { stream: "sleep", latest_local: "2026-10-21T01:45", age_hours: 1.3 },
+      { stream: "sleep", latest_local: "2026-10-21T11:30", age_hours: 2 },
       { stream: "daily", latest_local: "2026-10-21T08:45", age_hours: 1.3 },
       { stream: "watch", latest_local: null, age_hours: null },
     ]);
@@ -335,6 +335,45 @@ describe("T27 AC2 batched reads", () => {
   });
 });
 
+describe("QA1-F4 prolonged stream gaps", () => {
+  it("reports missing main sleep and a past HR coverage gap despite fresh steps and HR", async () => {
+    const now = at("2026-10-22T08:00:00Z");
+    await token();
+    await watch(now);
+    await sleep(at("2026-10-07T06:00:00Z"));
+    await sleep(at("2026-10-21T15:00:00Z"), 1);
+    await minute(now - 60, 120, "steps");
+    await minute(now - 60);
+    for (let day = 9; day <= 22; day++) {
+      await daily(`2026-10-${String(day).padStart(2, "0")}`, now, day <= 19 ? 0 : 600);
+    }
+    const out = await readStatus(env.DB, { ...options, now });
+    expect(out.alerts).toEqual([
+      { code: "no_sleep_48h", message: expect.stringContaining("2026-10-07T08:00") as unknown },
+      { code: "hr_coverage_gap", message: expect.stringMatching(/2026-10-09.*2026-10-19/) as unknown },
+    ]);
+    expect(out.streams.find((row) => row.stream === "sleep"))
+      .toEqual({ stream: "sleep", latest_local: "2026-10-07T08:00", age_hours: 362 });
+  });
+
+  it.each([
+    ["three near-zero days", [0, 0.4, 1], true],
+    ["two days", [600, 0, 0], false],
+    ["coverage breaks the run", [0, 2, 0], false],
+    ["null coverage breaks the run", [0, null, 0], false],
+    ["missing summary breaks the run", [0, undefined, 0], false],
+  ] as const)("checks consecutive completed days: %s", async (_label, minutes, alert) => {
+    for (let i = 0; i < minutes.length; i++) {
+      if (minutes[i] !== undefined) await daily(`2026-10-${String(18 + i)}`, NOW, minutes[i]);
+    }
+    await daily("2026-10-21", NOW, 0);
+    const out = await readStatus(env.DB, options);
+    expect(codes(out).includes("hr_coverage_gap")).toBe(alert);
+    if (alert) expect(out.alerts.find((row) => row.code === "hr_coverage_gap")?.message)
+      .toMatch(/2026-10-18.*2026-10-20/);
+  });
+});
+
 describe("T27 AC3 sleep gap and AC4 sleep stream", () => {
   it.each([
     ["absent", undefined, 0, "gh", true, true],
@@ -353,17 +392,18 @@ describe("T27 AC3 sleep gap and AC4 sleep stream", () => {
     const out = await readStatus(env.DB, options);
     expect(codes(out).includes("no_sleep_48h")).toBe(alert);
     if (alert) expect(out.alerts.find((row) => row.code === "no_sleep_48h"))
-      .toEqual({ code: "no_sleep_48h", message: "Sin sesiones de sueño principal en las últimas 48 horas." });
+      .toEqual({ code: "no_sleep_48h", message: "Sin sesiones de sueño principal en las últimas 48 horas."
+        + (end !== undefined && isNap === 0 && source === "gh" ? " Último sueño principal: 2026-10-19T09:59." : "") });
   });
 
-  it.each([NOW - 172801, NOW - 172800])("keeps the latest nap as the sleep stream with main sleep ending at %i", async (mainEnd) => {
+  it.each([NOW - 172801, NOW - 172800])("uses main sleep freshness despite a newer nap with main sleep ending at %i", async (mainEnd) => {
     await token();
     await sleep(mainEnd);
     await sleep(NOW - 60, 1);
     await sleep(NOW, 0, "other");
     const out = await readStatus(env.DB, options);
     expect(out.streams.find((row) => row.stream === "sleep"))
-      .toEqual({ stream: "sleep", latest_local: "2026-10-21T09:59", age_hours: 0 });
+      .toEqual({ stream: "sleep", latest_local: mainEnd < NOW - 172800 ? "2026-10-19T09:59" : "2026-10-19T10:00", age_hours: 48 });
     expect(codes(out).includes("no_sleep_48h")).toBe(mainEnd < NOW - 172800);
   });
 });
