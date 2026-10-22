@@ -72,7 +72,7 @@
 </style>
 <main class="trackers" lang="es">
   <header class="top">
-    <div><p class="eyebrow">Pixel Health / Registro diario</p><h1>Trackers</h1><p class="subtle">Un gesto, un registro.</p></div>
+    <div><p class="eyebrow">Health Tracker / Registro diario</p><h1>Trackers</h1><p class="subtle">Un gesto, un registro.</p></div>
     <nav class="navigation" aria-label="Elegir fecha">
       <button id="previous" type="button" aria-label="Día anterior">←</button>
       <label class="date-label">Fecha local · Madrid<input id="date" type="date" min="2000-01-01"></label>
@@ -84,7 +84,7 @@
     <div class="section-head"><h2 id="trackers-title">Registro de hoy</h2><span id="trackers-updated" class="updated">Sin actualizar</span></div>
     <p id="read-only" class="subtle" hidden>Fecha pasada · solo lectura</p>
     <div id="trackers-notice" class="notice" role="status"></div>
-    <p id="trackers-empty" class="empty">Conectando con Pixel Health…</p>
+    <p id="trackers-empty" class="empty">Conectando con Health Tracker…</p>
     <div id="cards" class="cards"></div>
   </section>
   <section class="detail" aria-labelledby="events-title">
@@ -170,26 +170,26 @@
   const denials = new Set(['needs_reauth', 'server_not_connected', 'blocked_by_policy', 'approval_required', 'not_in_manifest',
     'consent_required', 'not_granted', 'capability_disabled', 'capability_removed', 'user_changed']);
   const errorCopy = {
-    needs_reauth: 'Vuelve a conectar Pixel Health en claude.ai Settings → Connectors.',
-    server_not_connected: 'Añade Pixel Health en claude.ai Settings → Connectors.',
-    selection_required: 'Elige una conexión de Pixel Health en el selector de conectores y vuelve a cargar.',
-    server_not_found: 'La conexión de Pixel Health ya no existe. Revísala en Settings → Connectors.',
-    not_in_manifest: 'Pixel Health no está permitido para esta vista. Revisa los permisos del artefacto.',
+    needs_reauth: 'Vuelve a conectar Health Tracker en claude.ai Settings → Connectors.',
+    server_not_connected: 'Añade Health Tracker en claude.ai Settings → Connectors.',
+    selection_required: 'Elige una conexión de Health Tracker en el selector de conectores y vuelve a cargar.',
+    server_not_found: 'La conexión de Health Tracker ya no existe. Revísala en Settings → Connectors.',
+    not_in_manifest: 'Health Tracker no está permitido para esta vista. Revisa los permisos del artefacto.',
     blocked_by_policy: 'La política de tu organización bloquea esta sección. Consulta al administrador.',
     approval_required: 'Esta lectura necesita tu aprobación en esta vista.',
     consent_required: 'Revisa el aviso de permisos y permite esta conexión.',
-    server_unavailable: 'Pixel Health no responde temporalmente. Puedes volver a cargar.',
+    server_unavailable: 'Health Tracker no responde temporalmente. Puedes volver a cargar.',
     rate_limited: 'Se ha alcanzado el límite de consultas. Espera antes de volver a cargar.',
-    tool_error: 'Pixel Health no pudo completar la operación.',
+    tool_error: 'Health Tracker no pudo completar la operación.',
     bad_request: 'No se puede iniciar esta consulta. Vuelve a abrir el artefacto.',
     transform_error: 'No se pudo preparar la consulta. Vuelve a abrir el artefacto.',
     self_only: 'Esta operación no está permitida para este artefacto.',
     cancelled: 'Operación cancelada; su resultado puede no estar confirmado.',
-    not_granted: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Pixel Health.',
-    capability_disabled: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Pixel Health.',
+    not_granted: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Health Tracker.',
+    capability_disabled: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Health Tracker.',
     capability_removed: 'El conector no está disponible en esta vista. Vuelve a abrir el artefacto.',
     user_changed: 'La cuenta ha cambiado. Vuelve a abrir el artefacto para continuar.',
-    upstream_error: 'No se pudo contactar con Pixel Health. Puedes volver a cargar.'
+    upstream_error: 'No se pudo contactar con Health Tracker. Puedes volver a cargar.'
   };
   const message = error => (errorCopy[error.code] || errorCopy.upstream_error) +
     (error.code === 'tool_error' && error.message ? ' ' + error.message : '');
@@ -200,7 +200,7 @@
   }
   function watch(s) {
     if (!connector) { s.error = { code: 'capability_disabled' }; return; }
-    s.unsubscribe = connector.watchTool('Pixel Health', s.tool, s.input, event => {
+    s.unsubscribe = connector.watchTool('Health Tracker', s.tool, s.input, event => {
       if (event.type === 'data') receive(s, event.result);
       else fail(s, event.error, true);
     }, { cache: { staleTime: 300000, gcTime: 86400000 }, refetchInterval: 300000 });
@@ -243,7 +243,7 @@
     if (!current(s) || s.busy) return;
     clearTimeout(s.timer); s.timer = null; s.busy = true; render();
     try {
-      const result = await connector.callTool('Pixel Health', s.tool, s.input, { cache: { refresh: true, gcTime: 86400000 } });
+      const result = await connector.callTool('Health Tracker', s.tool, s.input, { cache: { refresh: true, gcTime: 86400000 } });
       receive(s, result);
     } catch (error) { fail(s, error, false); }
     finally { s.busy = false; if (current(s)) render(); }
@@ -373,13 +373,13 @@
       const card = cards.get(t.id) ?? createCard(t); card.tracker = t; card.node.hidden = false; renderCard(card);
     }
     $('trackers-empty').hidden = !!active?.length;
-    $('trackers-empty').textContent = data ? 'No hay trackers activos.' : trackers?.error ? 'Registro no disponible.' : 'Esperando los datos de Pixel Health…';
+    $('trackers-empty').textContent = data ? 'No hay trackers activos.' : trackers?.error ? 'Registro no disponible.' : 'Esperando los datos de Health Tracker…';
     renderEvents(data); renderHistory(active);
   }
   async function freshToday() {
     const date = today(), section = trackers;
     try {
-      const result = await connector.callTool('Pixel Health', 'health_trackers', { date }, { cache: { refresh: true, gcTime: 86400000 } });
+      const result = await connector.callTool('Health Tracker', 'health_trackers', { date }, { cache: { refresh: true, gcTime: 86400000 } });
       if (current(section) && section.input.date === date) receive(section, result);
       return true;
     } catch (error) {
@@ -417,7 +417,7 @@
     if (stopped || suspended || selected !== today()) { attempt.busy = false; attempt.error = { code: 'cancelled' }; render(); return; }
     let result;
     try {
-      result = await connector.callTool('Pixel Health', 'health_log_event', attempt.args);
+      result = await connector.callTool('Health Tracker', 'health_log_event', attempt.args);
     } catch (error) {
       if (stopped) return;
       attempt.busy = false; attempt.error = error;

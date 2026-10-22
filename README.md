@@ -1,6 +1,6 @@
 <div align="center">
 
-# Pixel Health
+# Health Tracker
 
 **Your Pixel Watch data in your own Cloudflare D1 database, queryable from any MCP client, with a live dashboard and one-tap logging, designed for the Cloudflare Free plan.**
 
@@ -11,7 +11,7 @@
 
 </div>
 
-Pixel Health is a single-user health pipeline. One Cloudflare Worker receives Google Health API change notifications, syncs your Pixel Watch metrics into D1 (SQLite), precomputes daily summaries and serves everything as a remote MCP server behind OAuth 2.1. Connect it to an MCP client such as claude.ai and ask about your sleep, heart rate, HRV and activity, log coffee, cigarettes, alcohol or mood, and run n-of-1 analyses over your own history. It is designed to fit the Cloudflare Workers Free plan.
+Health Tracker is a single-user health pipeline. One Cloudflare Worker receives Google Health API change notifications, syncs your Pixel Watch metrics into D1 (SQLite), precomputes daily summaries and serves everything as a remote MCP server behind OAuth 2.1. Connect it to an MCP client such as claude.ai and ask about your sleep, heart rate, HRV and activity, log coffee, cigarettes, alcohol or mood, and run n-of-1 analyses over your own history. It is designed to fit the Cloudflare Workers Free plan.
 
 ## Table of contents
 
@@ -112,7 +112,7 @@ Notes:
 
 ## Dashboards
 
-The dashboards are self-contained HTML pages that read live data through the MCP connector of the client that hosts them (they are built for claude.ai artifacts and look for a connector named `Pixel Health`).
+The dashboards are self-contained HTML pages that read live data through the MCP connector of the client that hosts them (they are built for claude.ai artifacts and look for a connector named `Health Tracker`).
 
 | File | Content |
 |---|---|
@@ -148,26 +148,24 @@ The Health consent requests four read-only scopes: `googlehealth.activity_and_fi
 ```sh
 cd worker
 npm install
-npx wrangler d1 create pixel-health-production
+npx wrangler d1 create health-tracker
 npx wrangler kv namespace create OAUTH_KV
 ```
 
-In `worker/wrangler.jsonc`, under `env.production`, set the D1 `database_id`, the KV `id`, the custom-domain route and these `vars`:
+Copy `worker/wrangler.production.example.jsonc` to `worker/wrangler.production.jsonc` (git-ignored, so your domain and resource ids stay out of the repo) and set the D1 `database_id`, the KV `id`, the custom-domain route and these `vars`:
 
 | Var | Value |
 |---|---|
 | `USER_TZ` | Your IANA time zone, e.g. `Europe/Madrid`; local dates and tracker days use it |
-| `ALLOWED_EMAIL` | The only Google account allowed to sign in |
 | `PUBLIC_ORIGIN` | `https://<your-domain>` |
-
-Keep the database name `pixel-health-production`; the export script uses it.
 
 ### 2. Secrets
 
-Set each with `npx wrangler secret put <NAME> --env production`. Never commit values.
+Set each with `npx wrangler secret put <NAME> --config wrangler.production.jsonc`. Never commit values.
 
 | Name | Purpose |
 |---|---|
+| `ALLOWED_EMAIL` | The only Google account allowed to sign in; also shown as the contact on `/privacy` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client (connector sign-in and Health consent) |
 | `TOKEN_ENC_KEY` | Base64 of exactly 32 random bytes; AES-256-GCM key for the stored refresh token |
 | `WEBHOOK_SECRET` | Webhook authorization value, including the `Bearer ` prefix (at least 16 characters) |
@@ -176,22 +174,22 @@ Set each with `npx wrangler secret put <NAME> --env production`. Never commit va
 ### 3. Migrate and deploy
 
 ```sh
-npx wrangler d1 migrations apply DB --env production --remote
-npx wrangler deploy --env production
+npx wrangler d1 migrations apply DB --config wrangler.production.jsonc --remote
+npx wrangler deploy --config wrangler.production.jsonc
 ```
 
 ### 4. Google consent and webhook subscriber
 
 1. Add both redirect URIs to the Google OAuth client: `https://<your-domain>/google/callback` and `https://<your-domain>/oauth/google/callback`.
 2. Open `https://<your-domain>/google/connect` and grant consent with the allowlisted account.
-3. Create a Google Health API webhook subscriber (see the [Google Health API docs](https://developers.google.com/health)) with endpoint `https://<your-domain>/webhooks/google` and endpoint authorization equal to `WEBHOOK_SECRET`. Subscribe to the metric and sleep types; workouts arrive through the daily reconcile. The rotation commands below assume the subscriber ID `pixel-health-production`.
+3. Create a Google Health API webhook subscriber (see the [Google Health API docs](https://developers.google.com/health)) with endpoint `https://<your-domain>/webhooks/google` and endpoint authorization equal to `WEBHOOK_SECRET`. Subscribe to the metric and sleep types; workouts arrive through the daily reconcile. Note the subscriber ID you choose; the rotation commands below read it from `SUBSCRIBER`.
 4. Call `health_status` once connected: it shows the Google connection, queue and watch sync.
 
 ### 5. Connect an MCP client
 
 | Client | How |
 |---|---|
-| claude.ai (web, desktop, Android) | Add a custom connector with `https://<your-domain>/mcp` and sign in with the allowlisted Google account. Add it from web or desktop, then use it on Android. Name it `Pixel Health` so the dashboards find it |
+| claude.ai (web, desktop, Android) | Add a custom connector with `https://<your-domain>/mcp` and sign in with the allowlisted Google account. Add it from web or desktop, then use it on Android. Name it `Health Tracker` so the dashboards find it |
 | Other MCP clients | Clients supporting remote Streamable HTTP and OAuth 2.1 with PKCE |
 
 An unauthenticated request to `/mcp` returns `401` with a `WWW-Authenticate` header pointing at the protected-resource metadata, which clients use for discovery.
@@ -199,7 +197,7 @@ An unauthenticated request to `/mcp` returns `401` with a `WWW-Authenticate` hea
 ### 6. Dashboards and backups
 
 - Publish a file from `dashboards/` as an artifact in the client where the connector is enabled.
-- Backup (run it manually, e.g. weekly; nothing schedules it): `uv run --directory py python src/pixel_health/export.py` from the repo root. It uses your logged-in `wrangler`.
+- Backup (run it manually, e.g. weekly; nothing schedules it): `uv run --directory py python src/health_tracker/export.py` from the repo root. It uses your logged-in `wrangler`.
 
 ### Development
 
@@ -241,12 +239,12 @@ Read-only views for `health_sql`: `v_daily`, `v_events` (live events only), `v_s
 | SQL tool | Lexical and parser guards allow one `SELECT` over the four views and declared CTEs; profile tables are denied |
 | Untrusted text | Tracker tools mark event notes as untrusted; `health_sql` sets `notes_untrusted` only when a returned column is named `note` |
 | Audit | Executed tool calls and connector sign-in grants/refusals are audited on a best-effort basis; profile audits keep field names only; rows older than 90 days are deleted |
-| Backups | D1 Time Travel keeps 7 days on the Free plan at the time of writing ([Cloudflare docs](https://developers.cloudflare.com/d1/reference/time-travel/)). The manual export writes to `~/pixel-health-backups`, verifies a local restore and keeps eight backup pairs. Protect these files as health data |
+| Backups | D1 Time Travel keeps 7 days on the Free plan at the time of writing ([Cloudflare docs](https://developers.cloudflare.com/d1/reference/time-travel/)). The manual export writes to `~/health-tracker-backups`, verifies a local restore and keeps eight backup pairs. Protect these files as health data |
 | Data sent to clients | Tool results go to whichever MCP client you query. Review its retention and training settings, and keep unrelated connectors out of health chats |
 
 This is a personal project, not a medical device, and not medical or legal advice.
 
-**Revoking access.** Remove the app at [Google account permissions](https://myaccount.google.com/permissions); ingestion stops at the next token refresh. Disconnect the connector in each MCP client and delete its grant records from `OAUTH_KV` (`npx wrangler kv key delete --binding OAUTH_KV --remote --env production <key>`). Already-issued connector access tokens remain valid until they expire. Revocation does not delete stored data or backups.
+**Revoking access.** Remove the app at [Google account permissions](https://myaccount.google.com/permissions); ingestion stops at the next token refresh. Disconnect the connector in each MCP client and delete its grant records from `OAUTH_KV` (`npx wrangler kv key delete --binding OAUTH_KV --remote --config wrangler.production.jsonc <key>`). Already-issued connector access tokens remain valid until they expire. Revocation does not delete stored data or backups.
 
 ### Rotating the webhook secret
 
@@ -261,21 +259,21 @@ While `WEBHOOK_SECRET_PREV` is set, both values are accepted. Keep the current v
 2. Upload the **current** value as the previous one:
 
    ```sh
-   npx wrangler secret put WEBHOOK_SECRET_PREV --env production
+   npx wrangler secret put WEBHOOK_SECRET_PREV --config wrangler.production.jsonc
    ```
 
 3. Upload the **pending** value:
 
    ```sh
-   npx wrangler secret put WEBHOOK_SECRET --env production
+   npx wrangler secret put WEBHOOK_SECRET --config wrangler.production.jsonc
    ```
 
-4. Set `NUM` to your Google Cloud project number and PATCH the subscriber with the pending value (prompted without echo, sent through stdin). On **HTTP 2xx**, make the pending value current in the password manager.
+4. Set `NUM` to your Google Cloud project number, `SUBSCRIBER` to your subscriber ID, and PATCH the subscriber with the pending value (prompted without echo, sent through stdin). On **HTTP 2xx**, make the pending value current in the password manager.
 
    ```sh
    python3 -c 'import getpass, json; print(json.dumps({"endpointAuthorization": {"secret": getpass.getpass("Pending webhook secret: ")}}))' |
      curl --fail-with-body --request PATCH \
-       "https://health.googleapis.com/v4/projects/${NUM}/subscribers/pixel-health-production?updateMask=endpointAuthorization" \
+       "https://health.googleapis.com/v4/projects/${NUM}/subscribers/${SUBSCRIBER}?updateMask=endpointAuthorization" \
        --header "Authorization: Bearer $(gcloud auth print-access-token)" \
        --header "x-goog-user-project: ${NUM}" \
        --header 'Content-Type: application/json' \
@@ -285,7 +283,7 @@ While `WEBHOOK_SECRET_PREV` is set, both values are accepted. Keep the current v
 5. **24 hours after step 4 succeeded**, remove the previous value:
 
    ```sh
-   npx wrangler secret delete WEBHOOK_SECRET_PREV --env production
+   npx wrangler secret delete WEBHOOK_SECRET_PREV --config wrangler.production.jsonc
    ```
 
 On any failed or uncertain step, stop and retry that same step with the same saved values. Never repeat step 2 after step 3. Never run step 5 before step 4 has succeeded and 24 hours have passed.

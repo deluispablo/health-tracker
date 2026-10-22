@@ -1,7 +1,7 @@
 [project]
-name = "pixel-health"
+name = "health-tracker"
 version = "0.1.0"
-description = "Offline tooling for Pixel Health: backfill, export and analysis."
+description = "Offline tooling for Health Tracker: backfill, export and analysis."
 requires-python = ">=3.12"
 dependencies = []
 

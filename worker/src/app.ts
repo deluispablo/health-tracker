@@ -110,7 +110,7 @@ export async function route(request: Request, env: AppEnv, deps: AppDeps): Promi
     case "/":
       return pageResponse(request, homepage);
     case "/privacy":
-      return pageResponse(request, privacy);
+      return pageResponse(request, privacy(env.ALLOWED_EMAIL));
     case "/webhooks/google":
       if (request.method !== "POST") return new Response(null, { status: 405 });
       return handleGoogleWebhook(request, env, {

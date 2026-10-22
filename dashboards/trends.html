@@ -60,7 +60,7 @@
 </style>
 <main class="trends" lang="es">
   <header class="top">
-    <div><p class="eyebrow">Pixel Health / Perspectiva diaria</p><h1>Tendencias</h1><p class="subtle">90 días para ver tu ritmo.</p></div>
+    <div><p class="eyebrow">Health Tracker / Perspectiva diaria</p><h1>Tendencias</h1><p class="subtle">90 días para ver tu ritmo.</p></div>
     <p id="range" class="subtle"></p>
   </header>
   <p id="updated" class="updated" role="status">Sin actualizar</p>
@@ -147,26 +147,26 @@
   const denials = new Set(['needs_reauth', 'server_not_connected', 'blocked_by_policy', 'approval_required', 'not_in_manifest',
     'consent_required', 'not_granted', 'capability_disabled', 'capability_removed', 'user_changed']);
   const errorCopy = {
-    needs_reauth: 'Vuelve a conectar Pixel Health en claude.ai Settings → Connectors.',
-    server_not_connected: 'Añade Pixel Health en claude.ai Settings → Connectors.',
-    selection_required: 'Elige una conexión de Pixel Health en el selector de conectores y vuelve a cargar.',
-    server_not_found: 'La conexión de Pixel Health ya no existe. Revísala en Settings → Connectors.',
-    not_in_manifest: 'Pixel Health no está permitido para esta vista. Revisa los permisos del artefacto.',
+    needs_reauth: 'Vuelve a conectar Health Tracker en claude.ai Settings → Connectors.',
+    server_not_connected: 'Añade Health Tracker en claude.ai Settings → Connectors.',
+    selection_required: 'Elige una conexión de Health Tracker en el selector de conectores y vuelve a cargar.',
+    server_not_found: 'La conexión de Health Tracker ya no existe. Revísala en Settings → Connectors.',
+    not_in_manifest: 'Health Tracker no está permitido para esta vista. Revisa los permisos del artefacto.',
     blocked_by_policy: 'La política de tu organización bloquea esta sección. Consulta al administrador.',
     approval_required: 'Esta lectura necesita tu aprobación en esta vista.',
     consent_required: 'Revisa el aviso de permisos y permite esta conexión.',
-    server_unavailable: 'Pixel Health no responde temporalmente. Puedes volver a cargar.',
+    server_unavailable: 'Health Tracker no responde temporalmente. Puedes volver a cargar.',
     rate_limited: 'Se ha alcanzado el límite de consultas. Espera antes de volver a cargar.',
-    tool_error: 'Pixel Health no pudo completar esta consulta.',
+    tool_error: 'Health Tracker no pudo completar esta consulta.',
     bad_request: 'No se pueden iniciar las actualizaciones. Vuelve a abrir el artefacto.',
     transform_error: 'No se pudo preparar la consulta. Vuelve a abrir el artefacto.',
     self_only: 'Esta consulta no está permitida para este artefacto.',
     cancelled: 'Consulta cancelada. Puedes volver a cargar.',
-    not_granted: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Pixel Health.',
-    capability_disabled: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Pixel Health.',
+    not_granted: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Health Tracker.',
+    capability_disabled: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Health Tracker.',
     capability_removed: 'El conector no está disponible en esta vista. Vuelve a abrir el artefacto.',
     user_changed: 'La cuenta ha cambiado. Vuelve a abrir el artefacto para continuar.',
-    upstream_error: 'No se pudo contactar con Pixel Health. Puedes volver a cargar.'
+    upstream_error: 'No se pudo contactar con Health Tracker. Puedes volver a cargar.'
   };
   function el(tag, className = '', text) {
     const node = document.createElement(tag); node.className = className;
@@ -190,7 +190,7 @@
     ].map(s => ({ ...s, data: null, at: null, error: null, busy: false, timer: null, unsubscribe: null }));
     for (const s of states) {
       if (!connector) { s.error = { code: 'capability_disabled' }; continue; }
-      s.unsubscribe = connector.watchTool('Pixel Health', 'health_daily', s.input, event => {
+      s.unsubscribe = connector.watchTool('Health Tracker', 'health_daily', s.input, event => {
         if (event.type === 'data') receive(s, event.result);
         else fail(s, event.error, true);
       }, { cache: { staleTime: 300000, gcTime: 86400000 }, refetchInterval: 300000 });
@@ -222,7 +222,7 @@
     if (!current(s) || s.busy) return;
     clearTimeout(s.timer); s.timer = null; s.busy = true; render();
     if (!current(s)) { s.busy = false; return; }
-    try { receive(s, await connector.callTool('Pixel Health', 'health_daily', s.input, { cache: { refresh: true, gcTime: 86400000 } })); }
+    try { receive(s, await connector.callTool('Health Tracker', 'health_daily', s.input, { cache: { refresh: true, gcTime: 86400000 } })); }
     catch (error) { fail(s, error, false); }
     finally { s.busy = false; if (current(s)) render(); }
   }
@@ -294,7 +294,7 @@
         const cell = el('div'); cell.append(el('dt', '', name), el('dd', '', value(n, unit, signed))); summary.append(cell);
       }
       node.append(summary);
-      if (!daily?.data) { node.append(el('p', 'empty', daily?.error ? 'Sin datos disponibles para estos 90 días.' : 'Esperando los datos de Pixel Health…')); continue; }
+      if (!daily?.data) { node.append(el('p', 'empty', daily?.error ? 'Sin datos disponibles para estos 90 días.' : 'Esperando los datos de Health Tracker…')); continue; }
       const history = L.column(rows, historyDates, id === 'hrv' ? 'ln_rmssd' : key);
       const bands = dates.map((_, i) => L.band(id, history, i + 28, baseline?.data ? 0 : 28)).map(b => b && Number.isFinite(b.lo) && Number.isFinite(b.hi) ? b : null);
       drawMetric(node, values, bands, width, x, label + ' · ' + unit + ' · ' + dates[0] + ' a ' + end);

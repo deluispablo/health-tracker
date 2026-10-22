@@ -1,17 +1,17 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "pixel-health",
+  "name": "health-tracker",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-22",
   "compatibility_flags": ["global_fetch_strictly_public"],
   "triggers": { "crons": ["*/5 * * * *", "30 4 * * *"] },
   "observability": { "enabled": true },
-  "vars": { "USER_TZ": "Europe/Madrid", "ALLOWED_EMAIL": "deluispablo@gmail.com", "PUBLIC_ORIGIN": "https://pixel.test" },
-  // Top-level ids are placeholders for local tests; deploy with `--env production`.
+  "vars": { "USER_TZ": "Europe/Madrid", "PUBLIC_ORIGIN": "https://health.test" },
+  // Local tests only; deploy with `--config wrangler.production.jsonc` (copy wrangler.production.example.jsonc).
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "pixel-health",
+      "database_name": "health-tracker",
       "database_id": "REPLACE_WITH_D1_DATABASE_ID",
     },
   ],
@@ -21,24 +21,4 @@
       "id": "REPLACE_WITH_KV_NAMESPACE_ID",
     },
   ],
-  "env": {
-    "production": {
-      "routes": [{ "pattern": "pixel.deluispablo.com", "custom_domain": true }],
-      "triggers": { "crons": ["*/5 * * * *", "30 4 * * *"] },
-      "vars": { "USER_TZ": "Europe/Madrid", "ALLOWED_EMAIL": "deluispablo@gmail.com", "PUBLIC_ORIGIN": "https://pixel.deluispablo.com" },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "pixel-health-production",
-          "database_id": "02f9a8d5-eea1-4ba5-ad4e-91ea3099e8aa",
-        },
-      ],
-      "kv_namespaces": [
-        {
-          "binding": "OAUTH_KV",
-          "id": "b865db2e28f8409e9d1b9b9e347ba681",
-        },
-      ],
-    },
-  },
 }

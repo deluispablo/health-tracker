@@ -10,20 +10,20 @@ from pathlib import Path
 
 import pytest
 
-from pixel_health import export
+from health_tracker import export
 
 NOW = datetime(2026, 10, 21, tzinfo=UTC)
 SQL = "\n".join(f'CREATE TABLE "{name}" (id INTEGER);' for name in export.REQUIRED_TABLES)
 SQL += '\nCREATE TABLE "extra" (value TEXT); INSERT INTO extra VALUES (\'hello\');'
-BASE = "pixel-health-2026-10-21"
+BASE = "health-tracker-2026-10-21"
 WRANGLER_URL = "https://example.r2.cloudflarestorage.com/db.sql?X-Amz-Signature=abc"
 
 
 def runner(contents=SQL, *, failure=False):
     def run(command, *, cwd, check, capture_output=False, text=False):
         assert command[:9] == [
-            "npx", "wrangler", "d1", "export", "pixel-health-production", "--env",
-            "production", "--remote", "--output",
+            "npx", "wrangler", "d1", "export", "DB", "--config",
+            "wrangler.production.jsonc", "--remote", "--output",
         ]
         assert cwd == Path(__file__).resolve().parents[2] / "worker"
         assert check is True
@@ -42,7 +42,7 @@ def invoke(directory, **kwargs):
 def seed_pairs(directory, count=10):
     for number in range(1, count + 1):
         for suffix in ("sql", "json"):
-            (directory / f"pixel-health-2026-09-{number:02}.{suffix}").write_text("old")
+            (directory / f"health-tracker-2026-09-{number:02}.{suffix}").write_text("old")
 
 
 def test_wrangler_captures_text_and_checks_exit_status(tmp_path):
@@ -158,7 +158,7 @@ def test_write_or_publication_failure_never_prunes(tmp_path, monkeypatch, capsys
         monkeypatch.setattr(export.json, "dump", fail_dump)
     assert invoke(tmp_path, run=runner()) == 1
     assert "refused" in capsys.readouterr().err
-    assert len(list(tmp_path.glob("pixel-health-2026-09-*"))) == 20
+    assert len(list(tmp_path.glob("health-tracker-2026-09-*"))) == 20
     expected = 21 if stage == ".json" else 20
     assert len(list(tmp_path.iterdir())) == expected
     if stage == ".json":
@@ -167,7 +167,7 @@ def test_write_or_publication_failure_never_prunes(tmp_path, monkeypatch, capsys
 
 def test_retention_keeps_eight_pairs_and_leaves_orphans(tmp_path, monkeypatch):
     seed_pairs(tmp_path)
-    orphans = ["pixel-health-2020-01-01.sql", "pixel-health-2020-01-02.json", "notes.txt"]
+    orphans = ["health-tracker-2020-01-01.sql", "health-tracker-2020-01-02.json", "notes.txt"]
     for name in orphans:
         (tmp_path / name).write_text("untouched")
     deletions = []
@@ -181,15 +181,15 @@ def test_retention_keeps_eight_pairs_and_leaves_orphans(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "unlink", record)
     assert invoke(tmp_path, run=runner()) == 0
     assert deletions == [
-        f"pixel-health-2026-09-{number:02}.{suffix}"
+        f"health-tracker-2026-09-{number:02}.{suffix}"
         for number in range(1, 4) for suffix in ("json", "sql")
     ]
     assert len(list(tmp_path.iterdir())) == 19
     for name in orphans:
         assert (tmp_path / name).read_text() == "untouched"
     for number in range(4, 11):
-        assert (tmp_path / f"pixel-health-2026-09-{number:02}.sql").exists()
-        assert (tmp_path / f"pixel-health-2026-09-{number:02}.json").exists()
+        assert (tmp_path / f"health-tracker-2026-09-{number:02}.sql").exists()
+        assert (tmp_path / f"health-tracker-2026-09-{number:02}.json").exists()
 
 
 def test_deletion_failure_continues_other_deletions(tmp_path, monkeypatch, capsys):
@@ -197,18 +197,18 @@ def test_deletion_failure_continues_other_deletions(tmp_path, monkeypatch, capsy
     unlink = Path.unlink
 
     def fail_second_pair(path, *args, **kwargs):
-        if path.name == "pixel-health-2026-09-02.sql":
+        if path.name == "health-tracker-2026-09-02.sql":
             raise OSError("delete refused")
         return unlink(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "unlink", fail_second_pair)
     assert invoke(tmp_path, run=runner()) == 1
     assert "delete refused" in capsys.readouterr().err
-    assert not (tmp_path / "pixel-health-2026-09-01.sql").exists()
-    assert not (tmp_path / "pixel-health-2026-09-02.json").exists()
-    assert not (tmp_path / "pixel-health-2026-09-03.sql").exists()
-    assert not (tmp_path / "pixel-health-2026-09-03.json").exists()
-    assert (tmp_path / "pixel-health-2026-09-02.sql").exists()
+    assert not (tmp_path / "health-tracker-2026-09-01.sql").exists()
+    assert not (tmp_path / "health-tracker-2026-09-02.json").exists()
+    assert not (tmp_path / "health-tracker-2026-09-03.sql").exists()
+    assert not (tmp_path / "health-tracker-2026-09-03.json").exists()
+    assert (tmp_path / "health-tracker-2026-09-02.sql").exists()
     assert (tmp_path / f"{BASE}.sql").exists()
     assert (tmp_path / f"{BASE}.json").exists()
 
@@ -216,14 +216,14 @@ def test_deletion_failure_continues_other_deletions(tmp_path, monkeypatch, capsy
 def test_default_directory(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     assert export.main([], run=runner(), now=NOW) == 0
-    assert (tmp_path / "pixel-health-backups" / f"{BASE}.json").exists()
+    assert (tmp_path / "health-tracker-backups" / f"{BASE}.json").exists()
 
 
 def test_standalone_startup_without_pythonpath():
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
     result = subprocess.run(
-        [sys.executable, "src/pixel_health/export.py", "--help"],
+        [sys.executable, "src/health_tracker/export.py", "--help"],
         cwd=Path(__file__).resolve().parents[1], env=environment, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr

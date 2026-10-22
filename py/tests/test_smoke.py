@@ -1,8 +1,8 @@
-"""Smoke test for the pixel_health package."""
+"""Smoke test for the health_tracker package."""
 
-import pixel_health
+import health_tracker
 
 
 def test_package_imports() -> None:
     """The package imports and carries its module docstring."""
-    assert pixel_health.__doc__ == "Offline tooling for Pixel Health."
+    assert health_tracker.__doc__ == "Offline tooling for Health Tracker."

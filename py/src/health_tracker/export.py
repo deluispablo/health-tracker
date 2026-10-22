@@ -13,7 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 REQUIRED_TABLES = {
-    "metric_minute", "daily_summary", "sleep_session", "event", "tracker", "audit_log", "profile", "weight_log"
+    "metric_minute", "daily_summary", "sleep_session", "event",
+    "tracker", "audit_log", "profile", "weight_log",
 }
 WORKER = Path(__file__).resolve().parents[3] / "worker"
 
@@ -30,7 +31,7 @@ def main(argv=None, *, run=subprocess.run, now=None):
         Zero on success, otherwise one.
     """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=Path("~/pixel-health-backups"))
+    parser.add_argument("--out", type=Path, default=Path("~/health-tracker-backups"))
     directory = parser.parse_args(argv).out.expanduser()
     temporary = []
     status = 0
@@ -41,8 +42,8 @@ def main(argv=None, *, run=subprocess.run, now=None):
             sql = Path(file.name)
             temporary.append(sql)
         run(
-            ["npx", "wrangler", "d1", "export", "pixel-health-production", "--env",
-             "production", "--remote", "--output", str(sql.resolve())],
+            ["npx", "wrangler", "d1", "export", "DB", "--config",
+             "wrangler.production.jsonc", "--remote", "--output", str(sql.resolve())],
             cwd=WORKER,
             check=True,
             capture_output=True,
@@ -74,8 +75,8 @@ def main(argv=None, *, run=subprocess.run, now=None):
             temporary.append(Path(file.name))
             json.dump(manifest, file)
             file.write("\n")
-        os.replace(sql, directory / f"pixel-health-{day}.sql")
-        os.replace(temporary[1], directory / f"pixel-health-{day}.json")
+        os.replace(sql, directory / f"health-tracker-{day}.sql")
+        os.replace(temporary[1], directory / f"health-tracker-{day}.json")
     except Exception as error:
         message = str(error)
         if isinstance(error, subprocess.CalledProcessError):
@@ -98,8 +99,8 @@ def main(argv=None, *, run=subprocess.run, now=None):
 
     try:
         pairs = sorted(
-            path for path in directory.glob("pixel-health-*.sql")
-            if re.fullmatch(r"pixel-health-\d{4}-\d{2}-\d{2}\.sql", path.name)
+            path for path in directory.glob("health-tracker-*.sql")
+            if re.fullmatch(r"health-tracker-\d{4}-\d{2}-\d{2}\.sql", path.name)
             and path.is_file() and path.with_suffix(".json").is_file()
         )
     except OSError as error:

@@ -363,14 +363,14 @@ describe("AC3 routes", () => {
 
 describe("T20 public pages", () => {
   const getPage = (path: string, method = "GET") => route(
-    new Request(`https://pixel.deluispablo.com${path}`, { method }), appEnv(), deps(google().fetch),
+    new Request(`https://health.example.com${path}`, { method }), appEnv(), deps(google().fetch),
   );
 
   it("AC1 serves the Spanish private single-user homepage with a privacy link", async () => {
     const res = await getPage("/");
     expect(res.status).toBe(200);
     const html = await res.text();
-    for (const text of ['lang="es"', "Pixel Health", "privado", "datos de salud personales", "único usuario", 'href="/privacy"']) {
+    for (const text of ['lang="es"', "Health Tracker", "privado", "datos de salud personales", "único usuario", 'href="/privacy"']) {
       expect(html).toContain(text);
     }
   });
@@ -384,7 +384,7 @@ describe("T20 public pages", () => {
       "cuenta de Cloudflare del propio propietario", "eventos que registra el propietario: café, alcohol y tabaco",
       "solo salen hacia el asistente que conectes y autorices", "cuando tú, como propietario, lo solicites",
       "nunca se venden, se comparten ni se utilizan para publicidad", "revocar el acceso",
-      'href="https://myaccount.google.com/permissions"', "deluispablo@gmail.com",
+      'href="https://myaccount.google.com/permissions"', "owner@example.com",
     ]) expect(html).toContain(text);
   });
 

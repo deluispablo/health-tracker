@@ -1,0 +1,25 @@
+// Copy to wrangler.production.jsonc (git-ignored) and fill in your values.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "health-tracker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["global_fetch_strictly_public"],
+  "triggers": { "crons": ["*/5 * * * *", "30 4 * * *"] },
+  "observability": { "enabled": true },
+  "routes": [{ "pattern": "<your-domain>", "custom_domain": true }],
+  "vars": { "USER_TZ": "<your IANA time zone>", "PUBLIC_ORIGIN": "https://<your-domain>" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "health-tracker",
+      "database_id": "<d1-database-id>",
+    },
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "<kv-namespace-id>",
+    },
+  ],
+}

@@ -87,7 +87,7 @@
 </style>
 <main class="hoy" lang="es">
   <header class="top">
-    <div><p class="eyebrow">Pixel Health / Registro diario</p><h1>Hoy</h1><p class="subtle">Tu día, de un vistazo.</p></div>
+    <div><p class="eyebrow">Health Tracker / Registro diario</p><h1>Hoy</h1><p class="subtle">Tu día, de un vistazo.</p></div>
     <nav class="navigation" aria-label="Elegir fecha">
       <button id="previous" type="button" aria-label="Día anterior">←</button>
       <label class="date-label">Fecha local · Madrid<input id="date" type="date" min="2000-01-01"></label>
@@ -178,26 +178,26 @@
   const denials = new Set(['needs_reauth', 'server_not_connected', 'blocked_by_policy', 'approval_required',
     'not_in_manifest', 'consent_required', 'not_granted', 'capability_disabled', 'capability_removed', 'user_changed']);
   const errorCopy = {
-    needs_reauth: 'Vuelve a conectar Pixel Health en claude.ai Settings → Connectors.',
-    server_not_connected: 'Añade Pixel Health en claude.ai Settings → Connectors.',
-    selection_required: 'Elige una conexión de Pixel Health en el selector de conectores y vuelve a cargar.',
-    server_not_found: 'La conexión de Pixel Health ya no existe. Revísala en Settings → Connectors.',
-    not_in_manifest: 'Pixel Health no está permitido para esta vista. Revisa los permisos del artefacto.',
+    needs_reauth: 'Vuelve a conectar Health Tracker en claude.ai Settings → Connectors.',
+    server_not_connected: 'Añade Health Tracker en claude.ai Settings → Connectors.',
+    selection_required: 'Elige una conexión de Health Tracker en el selector de conectores y vuelve a cargar.',
+    server_not_found: 'La conexión de Health Tracker ya no existe. Revísala en Settings → Connectors.',
+    not_in_manifest: 'Health Tracker no está permitido para esta vista. Revisa los permisos del artefacto.',
     blocked_by_policy: 'La política de tu organización bloquea esta sección. Consulta al administrador.',
     approval_required: 'Esta sección necesita tu aprobación para leer los datos.',
     consent_required: 'Revisa el aviso de permisos y permite esta conexión para consultar la sección.',
-    server_unavailable: 'Pixel Health no responde temporalmente. Puedes volver a cargar la sección.',
+    server_unavailable: 'Health Tracker no responde temporalmente. Puedes volver a cargar la sección.',
     rate_limited: 'Se ha alcanzado el límite de consultas. Espera antes de volver a cargar.',
-    tool_error: 'Pixel Health no pudo completar esta consulta.',
+    tool_error: 'Health Tracker no pudo completar esta consulta.',
     bad_request: 'No se pueden iniciar las actualizaciones de esta sección. Vuelve a abrir el artefacto.',
     transform_error: 'No se pudo preparar esta consulta. Vuelve a abrir el artefacto.',
     self_only: 'Esta consulta no está permitida para este artefacto.',
     cancelled: 'Consulta cancelada. Puedes volver a cargar la sección.',
-    not_granted: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Pixel Health.',
-    capability_disabled: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Pixel Health.',
+    not_granted: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Health Tracker.',
+    capability_disabled: 'El conector no está disponible en esta vista. Abre el artefacto con acceso a Health Tracker.',
     capability_removed: 'El conector no está disponible en esta vista. Vuelve a abrir el artefacto.',
     user_changed: 'La cuenta ha cambiado. Vuelve a abrir el artefacto para continuar.',
-    upstream_error: 'No se pudo contactar con Pixel Health. Puedes volver a cargar esta sección.'
+    upstream_error: 'No se pudo contactar con Health Tracker. Puedes volver a cargar esta sección.'
   };
   function message(error) {
     return (errorCopy[error.code] || errorCopy.upstream_error) +
@@ -280,7 +280,7 @@
     for (const s of states) {
       for (const id of s.ids) {
         const content = $(id + '-content');
-        if (s.data == null) content.innerHTML = empty(s.error ? 'Sin datos disponibles en esta sección.' : 'Esperando los datos de Pixel Health…');
+        if (s.data == null) content.innerHTML = empty(s.error ? 'Sin datos disponibles en esta sección.' : 'Esperando los datos de Health Tracker…');
         const updated = $(id + '-updated');
         updated.textContent = s.at == null ? 'Sin actualizar' : `${s.error ? 'Datos anteriores · ' : s.revalidating ? 'Actualizando · ' : ''}Actualizado ${new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'short', timeStyle: 'medium' }).format(s.at)}`;
         const notice = $(id + '-notice'); notice.replaceChildren();
@@ -328,7 +328,7 @@
   async function readOnce(s, token) {
     if (token !== generation || stopped || s.busy) return;
     clearTimeout(s.timer); s.timer = null; s.busy = true; render();
-    try { receive(s, await connector.callTool('Pixel Health', s.tool, s.input, { cache: { staleTime: 300000, gcTime: 86400000, refresh: true } }), token); }
+    try { receive(s, await connector.callTool('Health Tracker', s.tool, s.input, { cache: { staleTime: 300000, gcTime: 86400000, refresh: true } }), token); }
     catch (error) { fail(s, error, token, false); }
     finally { s.busy = false; if (token === generation && !stopped) render(); }
   }
@@ -346,7 +346,7 @@
       states.forEach(s => { s.error = { code: 'capability_disabled' }; }); render(); return;
     }
     for (const s of states) {
-      subscriptions.push(connector.watchTool('Pixel Health', s.tool, s.input, event => {
+      subscriptions.push(connector.watchTool('Health Tracker', s.tool, s.input, event => {
         if (event.type === 'data') receive(s, event.result, token);
         else fail(s, event.error, token, true);
       }, { cache: { staleTime: 300000, gcTime: 86400000 }, refetchInterval: 300000 }));
@@ -361,7 +361,7 @@
   $('date').onchange = event => changeDate(event.target.value);
   window.addEventListener('pagehide', () => { ++generation; dispose(); });
   window.addEventListener('pageshow', event => { if (event.persisted) load(); });
-  setDateControls(); sections.forEach(id => { $(id + '-content').innerHTML = empty('Conectando con Pixel Health…'); });
+  setDateControls(); sections.forEach(id => { $(id + '-content').innerHTML = empty('Conectando con Health Tracker…'); });
   try {
     if (window.claude) {
       const claude = window.claude;

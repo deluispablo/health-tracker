@@ -9,7 +9,7 @@ import { healthSleep } from "../../src/mcp/tools/sleep";
 // @ts-expect-error Vite loads this Markdown as text; there is no raw-module declaration.
 import architectureSource from "../../../docs/architecture.md?raw";
 
-const ORIGIN = "https://pixel.test";
+const ORIGIN = "https://health.test";
 const REDIRECT = "https://client.example/callback";
 const CLIENT_NAME = "Health <script>alert(1)</script> & reader";
 const CLIENT = "connector.apps.googleusercontent.com";
