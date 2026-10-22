@@ -1,6 +1,12 @@
 <title>Health Tracker</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <script type="application/json" id="mcp-manifest">{"servers":[{"server":"Health Tracker","tools":["health_status","health_daily","health_sleep","health_workouts","health_trackers","health_profile","health_log_event","health_delete_event","health_intraday","health_sql"]}]}</script>
+<script>
+try {
+  const theme = localStorage.getItem('ht.theme');
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+} catch (e) { /* storage unavailable: follow system preference */ }
+</script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Red+Hat+Mono:wght@400;500&display=swap');
   /* Tokens: Health Tracker design system (tokens.css). Light by default; dark by preference or data-theme. */
@@ -61,21 +67,18 @@
 
   /* ---- shell ----
      Under 600: one-row header, bottom tab bar, quick log docked above it.
-     600-1199: 80 px rail, quick log sticky at the top of the content, the timeline after the content (Today only).
-     1200 and up: sidebar · content · right pane (quick log, undo, timeline) on every tab. One markup; only CSS moves it. */
+     600-1199: 80 px rail, quick log sticky at the top of the content.
+     1200 and up: sidebar and content. One markup; only CSS moves it. */
   html { -webkit-text-size-adjust: 100%; scroll-padding: calc(var(--qtop, 0px) + 16px) 0 calc(var(--dock-h, 176px) + 16px); }
-  .app { display: flex; flex-direction: column; gap: 12px; min-height: 100vh;
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; align-items: center; gap: 12px; min-height: 100vh;
     padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(var(--dock-h, 176px) + 24px) max(16px, env(safe-area-inset-left, 0px)); }
-  .top { order: 0; display: flex; align-items: center; gap: 12px; min-height: 64px; }
+  .top { display: contents; }
   .side { display: contents; }
-  .ht-wordmark { order: 0; display: inline-flex; align-items: center; gap: 10px; color: var(--ink); }
+  .ht-wordmark { order: 0; min-height: 64px; display: inline-flex; align-items: center; gap: 10px; color: var(--ink); }
   .ht-wordmark-t { font-size: 18px; line-height: 24px; font-weight: var(--w-strong); letter-spacing: .01em; white-space: nowrap; }
-  .top-r { order: 2; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
-  main { order: 2; min-width: 0; container: main / inline-size; }
-  .pane { display: contents; }
-  .qw { order: 1; }
-  .log { order: 3; display: grid; gap: 4px; align-content: start; }
-  .app:not([data-tab="today"]) .log { display: none; }
+  .top-r { order: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
+  main { order: 2; grid-column: 1 / -1; min-width: 0; container: main / inline-size; }
+  .qw { order: 1; grid-column: 1 / -1; }
   .page-h { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin: 0 0 12px; min-height: 48px; }
   .page-t { font-size: 22px; line-height: 28px; font-weight: var(--w-title); letter-spacing: -.01em; }
   .page-d { font: 400 13px/18px var(--font-sans); color: var(--muted); }
@@ -93,13 +96,13 @@
     .ht-sync.is-done .sync-p { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   }
 
-  /* ---- Today: the dial beside one surface of metrics ---- */
+  /* ---- Today: dial, metrics, totals and timeline ---- */
   .today { display: grid; align-items: start; gap: 16px; }
+  .today > section { min-width: 0; background: var(--surface); border-radius: var(--radius-md); padding: 20px; }
   .dialcol { min-width: 0; }
+  .timeline { order: 5; }
+  .sum { order: 4; align-self: start; }
   .dialcol .ht-card-h { margin-bottom: 0; }
-  .mets { background: var(--surface); border-radius: var(--radius-md); padding: 2px 16px; min-width: 0; align-self: start; }
-  .met { padding: 14px 0; }
-  .met + .met { border-top: 1px solid var(--line); }
   .met-h { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; min-height: 24px; }
   .met-l { font-size: 14px; line-height: 20px; font-weight: var(--w-strong); color: var(--muted); }
   .met-v { font: 500 28px/34px var(--font-sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; margin-top: 2px; }
@@ -109,9 +112,20 @@
   .met .ht-word { margin-top: 2px; }
   .met-drv { font-size: 13px; line-height: 18px; color: var(--muted); margin-top: 2px; }
   .met-drv b { color: var(--ink); font-weight: var(--w-strong); }
-  @container main (min-width: 600px) {
-    .today { grid-template-columns: minmax(260px, 1.35fr) minmax(280px, 1fr); align-items: start; gap: 24px; }
-    .dialcol { position: sticky; top: calc(var(--qtop, 0px) + 16px); }
+  @container main (min-width: 700px) {
+    .today { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dialcol { grid-column: 1; grid-row: 1 / 4; align-self: stretch; }
+    .met { grid-column: 2; }
+    .timeline, .sum { grid-column: 1 / -1; }
+    .timeline { order: 0; }
+    .sum { order: 0; }
+  }
+  @container main (min-width: 1000px) {
+    .today { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+    .dialcol { grid-column: 1 / 7; }
+    .met { grid-column: 7 / -1; }
+    .timeline { grid-column: 1 / 9; }
+    .sum { grid-column: 9 / -1; }
   }
   /* range strip: your usual band (p25-p75) with its median, and the day's value as a dot */
   .ht-strip { position: relative; height: 16px; margin-top: 10px; min-width: 64px; }
@@ -127,7 +141,9 @@
   .vit-none { color: var(--muted); font-size: 13px; }
   .vit-u { font-size: 12px; line-height: 16px; color: var(--muted); text-align: right; white-space: nowrap; }
   .vit-r .ht-strip { margin: 0; width: min(100%, 140px); }   /* one strip width for every vital, whatever the range text */
-  .vit-r.is-drv .vit-n { font-weight: var(--w-strong); }
+  .vit-r.is-drv .vit-n, .vit-r.is-out .vit-n { font-weight: 600; }
+  .vit-r.is-out .vit-u { color: var(--attention); }
+  .vit-r.is-out .ht-strip-v { background: var(--attention); }
   .vit-note { font-size: 12px; line-height: 16px; color: var(--muted); padding-bottom: 4px; }
 
   /* ---- card ---- */
@@ -165,9 +181,7 @@
   .ht-key-dia { width: 8px; height: 8px; transform: rotate(45deg); background: var(--m-cig); }
   .ht-key-tri { width: 10px; height: 10px; background: var(--m-alcohol); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
   .ht-key-ring { width: 10px; height: 10px; border-radius: var(--radius-full); box-shadow: inset 0 0 0 2px var(--m-mood); }
-  .ht-key-arc { width: 14px; height: 5px; border-radius: var(--radius-full); background: var(--m-steps); }
-  .ht-key-sleep, .ht-key-nap { width: 16px; height: 9px; border-top: 5px solid var(--m-deep); border-radius: 50%; box-sizing: border-box; }
-  .ht-key-nap { border-top-color: var(--m-light); filter: drop-shadow(0 -1px var(--m-deep)); }
+  .ht-key-arc, .ht-key-sleep, .ht-key-nap { width: 16px; height: 10px; }
   .ht-key-night { width: 14px; height: 9px; background: var(--band); border-radius: 2px; }
   .ht-key-pulse { width: 15px; height: 10px; background: repeating-linear-gradient(90deg, var(--m-hr) 0 2px, transparent 2px 5px); opacity: .7; }
   .ht-dial-legend[hidden] { display: none; }
@@ -195,18 +209,17 @@
   .ht-bar-cap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; line-height: 18px; color: var(--muted); }
 
   /* ---- tracker summary ---- */
-  .ht-trk { display: grid; align-items: start; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .ht-trk li { background: var(--surface-2); border-radius: var(--radius-md); padding: 12px; min-height: 64px; min-width: 0; }
-  .ht-trk-h { display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; font-weight: var(--w-strong); }
-  .ht-trk-v { font-size: 15px; line-height: 22px; font-weight: var(--w-strong); margin-top: 4px; overflow-wrap: anywhere; }
-  .ht-trk-v .num { font-weight: 500; }
-  .ht-trk-v small { font-size: 12px; font-weight: 400; color: var(--muted); }
-  .ht-trk-s { font-size: 12px; line-height: 16px; color: var(--muted); }
+  .ht-trk { display: grid; }
+  .ht-trk li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 12px 0; min-width: 0; }
+  .ht-trk li + li { border-top: 1px solid var(--line); }
+  .ht-trk-h { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; }
+  .ht-trk-v { grid-column: 2; grid-row: 1 / 3; align-self: center; text-align: right; font-size: 20px; line-height: 26px; font-weight: 500; overflow-wrap: anywhere; }
+  .ht-trk-s { font-size: 12px; line-height: 16px; color: var(--muted); padding-left: 28px; }
 
   /* ---- day timeline: sleep, naps, workouts and logs in order, linked to the dial ---- */
   .tl { display: grid; }
   .tl-i + .tl-i { box-shadow: inset 0 1px 0 var(--line); }
-  .tl-r { display: grid; grid-template-columns: 16px 52px minmax(0, 1fr) auto; gap: 2px 10px; align-items: start; width: calc(100% + 16px); min-height: 48px; padding: 10px 8px; margin: 0 -8px;
+  .tl-r { display: grid; grid-template-columns: 16px 68px minmax(0, 1fr) auto; gap: 2px 10px; align-items: start; width: calc(100% + 16px); min-height: 48px; padding: 10px 8px; margin: 0 -8px;
     border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-sm); outline-offset: -2px; transition: background var(--dur-fast) var(--ease-standard); }
   .tl-r:hover, .tl-r.is-hot { background: var(--surface-2); }
   .tl-r.is-hot { box-shadow: inset 3px 0 0 var(--primary); }
@@ -219,23 +232,21 @@
   .tl-m.sq { width: 9px; height: 9px; box-shadow: inset 0 0 0 2px var(--ink); margin-top: 6px; }
   .tl-m.dia { width: 8px; height: 8px; transform: rotate(45deg); background: var(--m-cig); margin-top: 7px; }
   .tl-m.tri { width: 10px; height: 10px; background: var(--m-alcohol); clip-path: polygon(50% 0, 100% 100%, 0 100%); margin-top: 6px; }
-  .tl-m.wedge { width: 11px; height: 11px; border-radius: 11px 0 0 0; background: var(--k); margin-top: 5px; }
-  .tl-m.arc { width: 14px; height: 5px; border-radius: var(--radius-full); background: var(--m-steps); margin-top: 9px; }
+  .tl-m.arc { width: 16px; height: 10px; margin-top: 5px; }
+  @media (max-width: 599px) { .tl-r { grid-template-columns: 10px 62px minmax(0, 1fr) auto; column-gap: 6px; } }
   .tl-r time, .tl-t { font: 500 13px/22px var(--font-mono); }
   .tl-t.unk { font: 400 12px/22px var(--font-sans); color: var(--muted); }
   .tl-e { display: block; font: 500 12px/16px var(--font-mono); color: var(--muted); }
   .tl-n { display: flex; align-items: center; gap: 6px; min-width: 0; line-height: 22px; overflow-wrap: anywhere; }
+  .tl-n.is-group { flex-wrap: wrap; gap: 4px 12px; }
+  .tl-item { display: inline-flex; align-items: center; gap: 4px; }
+  .tl-icon { color: var(--k); display: inline-flex; }
   .tl-s { display: block; font-size: 13px; line-height: 18px; color: var(--muted); }
   .tl-note { display: block; font-size: 13px; line-height: 18px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
   .tl-v { font-size: 13px; line-height: 22px; color: var(--muted); text-align: right; white-space: nowrap; }
   .sbar { display: flex; gap: 1px; height: 6px; margin: 6px 0 2px; max-width: 220px; }
   .sbar i { display: block; height: 100%; border-radius: 2px; background: var(--k); }
   .ev-cap { margin-top: 12px; font-size: 12px; line-height: 16px; color: var(--muted); }
-  .sum { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 12px; }
-  .log { background: var(--surface); border-radius: var(--radius-md); padding: 16px; }
-  .log .ht-trk { gap: 8px 12px; }
-  .log .ht-trk li { background: none; padding: 0; min-height: 0; }
-
   /* ---- dial marks: hover, tap and keyboard detail ---- */
   .hit { fill: transparent; stroke: transparent; cursor: pointer; pointer-events: all; outline: none; -webkit-tap-highlight-color: transparent; }
   .fring { display: none; fill: none; stroke: var(--focus); stroke-width: 2; }
@@ -354,18 +365,16 @@
 
   /* 600-719: the chips drop their icon so "Cigarette" and "Alcohol" never break mid-word */
   @media (min-width: 600px) and (max-width: 719px) { .ht-chip .ht-ico-sm { display: none; } }
-  /* 900-1199: timeline and totals side by side so a row's value stays near its name */
-  @media (min-width: 900px) and (max-width: 1199px) {
-    .log { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); column-gap: 32px; }
-    .log .sum { border-top: 0; margin-top: 0; padding-top: 0; }
-  }
-
-  /* ---- 1200 and up: sidebar, content, right pane ---- */
+  /* ---- 1200 and up: sidebar and content ---- */
+  .quick-title { display: none; }
+  .ht-settings { display: flex; align-items: center; gap: 8px; }
+  .ht-theme { display: flex; }
+  .ht-theme button { display: grid; place-items: center; width: 36px; min-height: 48px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; cursor: pointer; color: var(--muted); }
+  .ht-theme button[aria-pressed="true"] { background: var(--container); color: var(--on-container); }
   @media (min-width: 1200px) {
-    .app { display: grid; grid-template-columns: 184px minmax(0, 1fr) 300px; grid-template-areas: "side main pane"; column-gap: 24px; max-width: 1520px; margin: 0 auto;
-      padding: 0 max(24px, env(safe-area-inset-right, 0px)) 0 max(24px, env(safe-area-inset-left, 0px)); }
-    .top { display: contents; }
-    .side { grid-area: side; display: flex; flex-direction: column; gap: 24px; position: sticky; top: 0; align-self: start; height: 100vh; padding: 20px 0 24px; }
+    .app { grid-template-columns: 264px minmax(0, 1fr); grid-template-areas: "side main"; align-items: start; column-gap: 24px; padding: 0 max(24px, env(safe-area-inset-right, 0px)) 0 max(24px, env(safe-area-inset-left, 0px)); }
+    .side { grid-area: side; display: flex; flex-direction: column; gap: 24px; position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; padding: 20px 0 24px; }
+    .ht-wordmark { min-height: 36px; }
     main { grid-area: main; padding: 20px 0 48px; }
     .page-t { font-size: 28px; line-height: 36px; }
     .ht-tabbar { position: static; width: auto; padding: 0; border: 0; background: none; }
@@ -373,25 +382,16 @@
     .ht-tab { flex-direction: row; justify-content: flex-start; gap: 4px; min-height: 48px; padding: 0 12px 0 0; border-radius: var(--radius-full); font-size: 15px; line-height: 20px; }
     .ht-tab-i { width: 44px; height: 32px; background: none !important; }
     .ht-tab:hover { background: var(--surface-2); }
-    .ht-tab[aria-selected="true"] { background: var(--container); color: var(--on-container); }
+    .ht-tab[aria-selected="true"] { background: var(--container); color: var(--on-container); font-weight: 600; }
     .ht-tab:focus-visible { outline-offset: 2px; border-radius: var(--radius-full); }
-    .top-r { flex-direction: column; align-items: flex-start; margin: auto 0 0; gap: 12px; }
-    /* the pane is one screen tall: chips and the undo row stay put, the timeline scrolls inside, totals stay at the bottom */
-    .pane { grid-area: pane; display: flex; flex-direction: column; gap: 12px; position: sticky; top: 0; align-self: start; height: 100vh; padding: 20px 4px 24px; margin: 0 -4px; }
-    .undo-slot { min-height: 56px; }
-    .log { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-    .log > section:first-child { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-    #ev-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -8px; padding: 0 8px; overscroll-behavior: contain; }
-    .log .sum { flex: none; }
+    .top-r { order: 2; flex-direction: column; align-items: flex-start; margin: auto 0 0; gap: 12px; }
+    .ht-settings { flex-wrap: wrap; }
     .qw { position: static; background: none; padding: 0; }
+    .quick-title { display: block; font-size: 14px; font-weight: 600; margin-bottom: 12px; }
     .ht-quick { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .ht-chip { justify-content: flex-start; padding: 6px 12px 6px 14px; background: var(--surface); }
+    .ht-chip { flex-direction: column; gap: 4px; padding: 12px 24px; background: var(--surface); }
     .ht-chip.is-off { background: transparent; }
-    .ht-chip-n { margin-left: auto; background: var(--surface-2); }
-    .app:not([data-tab="today"]) .log { display: flex; }
-  }
-  @media (min-width: 1440px) {
-    .app { grid-template-columns: 232px minmax(0, 1fr) 344px; column-gap: 40px; padding: 0 32px; }
+    .ht-chip-n { position: absolute; left: auto; right: 6px; top: 6px; background: var(--surface-2); }
   }
 
   /* ---- mood sheet ---- */
@@ -524,17 +524,16 @@
 
   /* Short windows (landscape phones, 400 % zoom): nothing stays fixed, so the content can scroll. */
   @media (max-height: 500px) {
-    .top { flex-wrap: wrap; }
+    .ht-tabbar { grid-column: 1 / -1; }
     .ht-tabbar, .qw { position: static !important; }
     .ht-tabbar { order: 5; width: 100%; height: auto; border: 0; padding: 0; }
     .ht-tabs { grid-template-columns: repeat(4, 1fr); grid-template-rows: none; grid-auto-rows: auto; }
     .app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-bottom: 24px; }
-    .pane { position: static !important; height: auto !important; }
     .side { position: static !important; height: auto !important; }
     #ev-body { overflow: visible !important; }
   }
   @media (forced-colors: active) {
-    .ht-key, .ht-key-dia, .ht-key-tri, .ht-key-wedge, .ht-key-arc, .ht-key-ring, .ht-key-other, .ht-key-grp, .ht-strip, .ht-strip *, .ht-bar, .ht-bar *, .sl-sw, .sbar i, .tl-m, .act-k, .det .k { forced-color-adjust: none; }
+    .ht-key, .ht-key-dia, .ht-key-tri, .ht-key-sleep, .ht-key-nap, .ht-key-arc, .ht-key-ring, .ht-key-other, .ht-key-grp, .ht-strip, .ht-strip *, .ht-bar, .ht-bar *, .sl-sw, .sbar i, .tl-m, .act-k, .det .k { forced-color-adjust: none; }
     [aria-selected="true"], [aria-pressed="true"] { outline: 2px solid CanvasText; outline-offset: -2px; }
   }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -550,11 +549,26 @@
         <button type="button" class="ht-tab" role="tab" id="tab-health" data-tab="health" aria-selected="false" aria-controls="p-health" tabindex="-1"></button>
         <button type="button" class="ht-tab" role="tab" id="tab-activity" data-tab="activity" aria-selected="false" aria-controls="p-activity" tabindex="-1"></button>
       </div></nav>
+    <div class="qw" id="qw">
+      <h2 class="quick-title" data-t="quick.title"></h2>
+      <p id="undo-live" class="ht-sr" role="status" aria-live="polite"></p>
+      <div id="quick" class="ht-quick" role="group" data-t-aria="quick.group">
+        <button type="button" class="ht-chip" data-chip="cafe"></button>
+        <button type="button" class="ht-chip" data-chip="cigarro"></button>
+        <button type="button" class="ht-chip" data-chip="alcohol"></button>
+        <button type="button" class="ht-chip" data-chip="animo" aria-haspopup="dialog" aria-controls="mood-sheet"></button>
+        <p id="quick-note" class="ht-quick-note" hidden></p>
+      </div>
+      <div class="undo-slot"><div id="undo"></div></div>
+    </div>
       <div class="top-r">
         <span id="sync" class="ht-sync" hidden></span>
+        <div class="ht-settings">
+          <div class="ht-theme" role="group" data-t-aria="theme.label"><button type="button" data-theme="auto" aria-pressed="true"></button><button type="button" data-theme="light" aria-pressed="false"></button><button type="button" data-theme="dark" aria-pressed="false"></button></div>
         <div id="lang" class="ht-lang" role="group" data-t-aria="lang.label">
           <button type="button" lang="en" data-lang="en" aria-pressed="true" aria-label="English"></button>
           <button type="button" lang="es" data-lang="es" aria-pressed="false" aria-label="Español"></button>
+        </div>
         </div>
       </div>
     </div>
@@ -570,11 +584,11 @@
           <div id="dial-body" data-fb="#h-dial"></div>
           <div id="dial-detail" class="dd is-idle"></div>
         </section>
-        <div class="mets">
-          <section class="met" aria-labelledby="h-sleep"><div class="met-h"><h2 class="met-l" id="h-sleep" tabindex="-1"></h2></div><div id="sleep-body" data-fb="#h-sleep"></div></section>
-          <section class="met" aria-labelledby="h-steps"><div class="met-h"><h2 class="met-l" id="h-steps" tabindex="-1" data-t="steps.title"></h2></div><div id="steps-body" data-fb="#h-steps"></div></section>
-          <section class="met" aria-labelledby="h-rec"><div class="met-h"><h2 class="met-l" id="h-rec" tabindex="-1" data-t="contrib.title"></h2></div><div id="rec-body" data-fb="#h-rec"></div></section>
-        </div>
+        <section class="met" aria-labelledby="h-sleep"><div class="met-h"><h2 class="met-l" id="h-sleep" tabindex="-1"></h2></div><div id="sleep-body" data-fb="#h-sleep"></div></section>
+        <section class="met" aria-labelledby="h-steps"><div class="met-h"><h2 class="met-l" id="h-steps" tabindex="-1" data-t="steps.title"></h2></div><div id="steps-body" data-fb="#h-steps"></div></section>
+        <section class="met" aria-labelledby="h-rec"><div class="met-h"><h2 class="met-l" id="h-rec" tabindex="-1" data-t="contrib.title"></h2></div><div id="rec-body" data-fb="#h-rec"></div></section>
+        <section class="timeline" aria-labelledby="h-ev"><div class="ht-card-h"><h2 class="ht-card-t" id="h-ev" tabindex="-1" data-t="ev.title"></h2><span class="ht-card-s" id="ev-date"></span></div><div id="ev-body" data-fb="#h-ev"></div><div id="workouts-note" data-fb="#h-ev"></div></section>
+        <section class="sum" aria-labelledby="h-sum"><h2 class="ht-card-t" id="h-sum" tabindex="-1" data-t="sum.title"></h2><div id="sum-body" data-fb="#h-sum"></div></section>
       </div>
     </section>
     <!-- ==== Sleep tab ==== -->
@@ -624,23 +638,6 @@
       <!-- ==== end Activity tab ==== -->
     </section>
   </main>
-  <aside class="pane" id="pane" data-t-aria="pane.label">
-    <div class="qw" id="qw">
-      <p id="undo-live" class="ht-sr" role="status" aria-live="polite"></p>
-      <div id="quick" class="ht-quick" role="group" data-t-aria="quick.group">
-        <button type="button" class="ht-chip" data-chip="cafe"></button>
-        <button type="button" class="ht-chip" data-chip="cigarro"></button>
-        <button type="button" class="ht-chip" data-chip="alcohol"></button>
-        <button type="button" class="ht-chip" data-chip="animo" aria-haspopup="dialog" aria-controls="mood-sheet"></button>
-        <p id="quick-note" class="ht-quick-note" hidden></p>
-      </div>
-      <div class="undo-slot"><div id="undo"></div></div>
-    </div>
-    <div class="log" id="log">
-      <section aria-labelledby="h-ev"><div class="ht-card-h"><h2 class="ht-card-t" id="h-ev" tabindex="-1" data-t="ev.title"></h2><span class="ht-card-s" id="ev-date"></span></div><div id="ev-body" data-fb="#h-ev"></div><div id="workouts-note" data-fb="#h-ev"></div></section>
-      <section class="sum" aria-labelledby="h-sum"><h2 class="ht-sr" id="h-sum" tabindex="-1" data-t="sum.title"></h2><div id="sum-body" data-fb="#h-sum"></div></section>
-    </div>
-  </aside>
 </div>
 
 <div class="ht sheet-wrap" id="mood" hidden>
@@ -659,6 +656,25 @@
   /* Dictionary: one entry per string, [en, es]; {x} placeholders. Base entries from the design system, then this page's own. */
   const COPY = {
     'app.name': ['Health Tracker', 'Health Tracker'],
+    'theme.label': ['Theme', 'Tema'],
+    'theme.auto': ['Auto', 'Auto'],
+    'theme.light': ['Light', 'Claro'],
+    'theme.dark': ['Dark', 'Oscuro'],
+    'quick.title': ['Log', 'Registrar'],
+    'pill.below': ['Below usual', 'Por debajo de lo habitual'],
+    'pill.above': ['Above usual', 'Por encima de lo habitual'],
+    'sleep.usual': ['Usual {x}', 'Habitual {x}'],
+    'rec.fromHrv': ['Mostly from HRV', 'Sobre todo por la VFC'],
+    'rec.seeHealth': ['See in Health', 'Ver en Salud'],
+    'ev.to': ['to {t}', 'a {t}'],
+    'ev.group': ['{n} logs in {d} min', '{n} registros en {d} min'],
+    'ev.atOnce': ['{n} logs at once', '{n} registros a la vez'],
+    'ev.atOnce1': ['{n} log at once', '{n} registro a la vez'],
+    'sum.count': ['{n} logs, {last}', '{n} registros, {last}'],
+    'sum.count1': ['{n} log, {last}', '{n} registro, {last}'],
+    'sum.cups': ['{n} cups, {last}', '{n} tazas, {last}'],
+    'sum.cups1': ['{n} cup, {last}', '{n} taza, {last}'],
+    'sum.recent': ['last {d}', 'último {d}'],
     'lang.label': ['Language', 'Idioma'],
     'tab.list': ['Sections', 'Secciones'],
     'tab.nav': ['Main', 'Principal'],
@@ -829,7 +845,7 @@
     'dd.hint': ['Point at the dial or a timeline row for details.', 'Señala la esfera o una fila de la cronología para ver el detalle.'],
     'det.seeNight': ['See night →', 'Ver la noche →'],
     'dial.legendOther': ['Other', 'Otro'],
-    'sleep.times': ['{bed} → {wake}', '{bed} → {wake}'],
+    'sleep.times': ['{bed} to {wake}', '{bed} a {wake}'],
     'rec.above': ['Above typical', 'Por encima de lo habitual'],
     'rec.below': ['Below typical', 'Por debajo de lo habitual'],
     'rec.learning': ['Learning your range', 'Aprendiendo tu rango'],
@@ -1145,6 +1161,22 @@
     for (const e of events ?? []) { const m = localMinutes(e.local_time); out.push({ id: e.id, kind: 'event', start: m ?? Infinity, end: m ?? Infinity, e }); }
     return out.filter((x) => x.start != null).sort((a, b) => (a.start - b.start) || 0);
   }
+  function timelineItems(sessions, workouts, snap, date) {
+    const items = dayItems(sessions, workouts, snap?.events, date).filter((it) => it.kind !== 'event' || !Number.isFinite(it.start));
+    for (const g of clusterEvents(dialEvents(snap), GROUP_MIN)) items.push(g.n > 1
+      ? { id: g.id, kind: 'cluster', start: g.min, end: g.last, g }
+      : { id: g.id, kind: 'event', start: g.min, end: g.min, e: g.members[0] });
+    return items.sort((a, b) => a.start - b.start);
+  }
+  function clusterFacts(g) {
+    const groups = new Map();
+    for (const e of g.members) {
+      const item = groups.get(e.tracker_id);
+      if (item) item.n++; else groups.set(e.tracker_id, { e, n: 1 });
+    }
+    const unit = g.members[0].unit, same = g.members.every((e) => e.unit === unit && finite(e.value) && e.k !== 'animo');
+    return { items: [...groups.values()], unit, total: same ? g.members.reduce((n, e) => n + e.value, 0) : null };
+  }
   /* Stage minutes of a session; when the summary fields are missing they are summed from the stage list. */
   function stageMinutes(s) {
     const o = { DEEP: s?.deep_min, REM: s?.rem_min, LIGHT: s?.light_min, AWAKE: s?.awake_min };
@@ -1240,7 +1272,7 @@
   window.HTLogic = {
     COPY, t, tn, pickLang, fmt: { num, signed, dur, ago, day, vital, range }, VITALS, shiftDate, dayValue, typicalRange, rangeStatus, rangeFlag, outliers,
     recovery, stepGoal, expectedSteps, sunTimes, pulseBuckets, dialAngle, localMinutes, sleepWedge, clipWorkout, mainSession, CHIPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
-    available, summary, dialEvents, dayItems, stageMinutes, gapRuns, GROUP_MIN, clusterEvents, writeQueue, doubleTap, NIGHT_END, dayFor, bridgeEvents,
+    available, summary, dialEvents, dayItems, timelineItems, clusterFacts, stageMinutes, gapRuns, GROUP_MIN, clusterEvents, writeQueue, doubleTap, NIGHT_END, dayFor, bridgeEvents,
     applyLog, applyUndo, acceptSnapshot, syncLabel, errorKind
   };
 
@@ -1267,7 +1299,7 @@
     'sl.trendT': ['Recent nights', 'Últimas noches'],
     'sl.spanR': ['Nights shown', 'Noches mostradas'],
     'sl.span': ['{n} nights', '{n} noches'],
-    'sl.pDur': ['Asleep', 'Dormido'],
+    'sl.pDur': ['Hours asleep and bed-to-wake times', 'Horas dormido y horario de acostarte a levantarte'],
     'sl.pTime': ['Bed → wake', 'Acostarse → despertar'],
     'sl.trendAria': ['Sleep for {n} nights ending {d}. {k} of {m} nights in your usual range.', 'Sueño de {n} noches hasta el {d}. {k} de {m} noches en tu rango habitual.'],
     'sl.trendSum': ['Average {a}; {k} of {m} nights in your usual range.', 'Media {a}; {k} de {m} noches en tu rango habitual.'],
@@ -1482,6 +1514,9 @@
 
   /* ---- icons and faces (design-system set: 24 px grid, 1.75 stroke, round caps) ---- */
   const IC = {
+    auto: '<circle cx="12" cy="12" r="8.25"/><path d="M12 3.75a8.25 8.25 0 0 0 0 16.5Z" fill="currentColor" stroke="none"/>',
+    light: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    dark: '<path d="M20 14a8.25 8.25 0 1 1-10-10 6.5 6.5 0 0 0 10 10Z"/>',
     hoy: '<circle cx="12" cy="12" r="8.25"/><path d="M12 12 10.71 7.17A5 5 0 0 1 16.83 13.29Z" fill="currentColor" stroke="none"/><path d="M12 2v3.5"/>',
     sueno: '<path d="M19 14.6A7.6 7.6 0 1 1 9.4 5a6 6 0 0 0 9.6 9.6z"/>',
     salud: '<path d="M12 20s-7.5-4.6-7.5-10.2A4.1 4.1 0 0 1 12 7.3a4.1 4.1 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/>',
@@ -1732,11 +1767,11 @@
     if (!s.data || !s.error || L.errorKind(s.error.code) !== 'transient') return null;
     return h('p', { class: 'stale' }, h('span', { text: t('st.stale') + ' ' + t('st.errX', { x }) + '.' }), see ? null : retryBtn(name, 'stale-' + name, x));
   }
-  /* "Outside your range" is the only pill on every tab (HTLogic.rangeFlag: beyond p10-p90). */
-  function pill(flag, short) {
+  /* Pills appear only outside the usual range (HTLogic.rangeFlag: beyond p10-p90). */
+  function pill(flag, short, directional) {
     if (!flag) return null;
     return short ? h('span', { class: 'ht-pill ht-pill-out', html: icon('alert') }, h('span', { 'aria-hidden': 'true', text: t('pill.outShort') }), h('span', { class: 'ht-sr', text: t('pill.out') }))
-      : h('span', { class: 'ht-pill ht-pill-out', html: icon('alert') }, t('pill.out'));
+      : h('span', { class: 'ht-pill ht-pill-out', html: icon('alert') }, t(directional ? 'pill.' + flag : 'pill.out'));
   }
   function rangeLine(r, show) {
     if (!r) return null;
@@ -1763,11 +1798,17 @@
 
   /* ---- what each dial mark and timeline row is about (shared by the detail panel, rows and accessible names) ---- */
   const evTitle = (e) => e.k === 'animo' ? t('mood.button', { m: t('mood.' + e.mood) }) : e.k !== 'other' ? t('trk.' + e.k) : e.name;
+  const eventColor = (e) => L.CHIPS.find((c) => c.key === e.k)?.k ?? 'ink';
+  const coloredIcon = (html, color) => h('span', { class: 'tl-icon', style: '--k:var(--' + color + ')', html });
   const evIcon = (e) => e.k === 'animo' ? face(e.mood, 20) : e.k !== 'other' ? icon(e.k, 'ht-ico-sm') : icon('dot', 'ht-ico-sm');
   const evValue = (e) => e.k === 'animo' || !finiteNum(e.value) || (e.unit === 'u' && e.value === 1) ? null : fmt.num(e.value, lang, e.value % 1 ? 1 : 0) + unitText(e.unit);
   /* One shape per tracker, so identity never rests on colour alone: coffee tick, cigarette diamond, alcohol triangle, mood ring, other square. */
   const SHAPE = { cafe: 'tick', cigarro: 'dia', alcohol: 'tri', animo: 'ring', other: 'sq' };
   const shapeMark = (k) => h('i', { class: 'tl-m ' + SHAPE[k], style: k === 'cafe' ? '--k:var(--m-caffeine)' : null, 'aria-hidden': 'true' });
+  const arcMark = (kind, cls = 'tl-m arc') => {
+    const path = (color, width) => '<path d="M2 8a6 6 0 0 1 12 0" fill="none" stroke="var(--' + color + ')" stroke-width="' + width + '" stroke-linecap="round"/>';
+    return h('i', { class: cls, 'aria-hidden': 'true', html: '<svg width="16" height="10" viewBox="0 0 16 10" focusable="false">' + path(kind === 'workout' ? 'm-steps' : 'm-deep', kind === 'workout' ? 3.5 : 4) + (kind === 'nap' ? path('m-light', 1.6) : '') + '</svg>' });
+  };
   const span2 = (a, b) => a + ' → ' + b;
   function sessionFacts(s, nap) {
     const st = L.stageMinutes(s), has = Array.isArray(s.stages) && s.stages.length > 0;
@@ -1993,9 +2034,9 @@
     // legend: only what is on the dial, in a fixed order, each with its own shape
     const has = new Set(events.map((e) => e.k)), key = (cls, txt, style) => h('span', {}, h('i', { class: cls, style, 'aria-hidden': 'true' }), txt);
     const legend = h('div', { id: 'dial-legend', class: 'ht-dial-legend', role: 'region', 'aria-label': t('dial.legendToggle'), hidden: !dialLegendOpen },
-      wedge && key('ht-key-sleep', t('dial.legendSleep')), naps.length > 0 && key('ht-key-nap', t('tip.nap')),
+      wedge && h('span', {}, arcMark('sleep', 'ht-key-sleep'), t('dial.legendSleep')), naps.length > 0 && h('span', {}, arcMark('nap', 'ht-key-nap'), t('tip.nap')),
       has.has('cafe') && key('ht-key', t('trk.cafe'), '--k:var(--m-caffeine)'), has.has('cigarro') && key('ht-key-dia', t('trk.cigarro')), has.has('alcohol') && key('ht-key-tri', t('trk.alcohol')),
-      has.has('animo') && key('ht-key-ring', t('trk.animo')), works.length > 0 && key('ht-key-arc', t('trk.workout')),
+      has.has('animo') && key('ht-key-ring', t('trk.animo')), works.length > 0 && h('span', {}, arcMark('workout', 'ht-key-arc'), t('trk.workout')),
       has.has('other') && key('ht-key-other', t('dial.legendOther')), sun && key('ht-key-night', t('dial.legendNight')), pulse.length > 0 && key('ht-key-pulse', t('dial.legendPulse')));
     const toggle = h('button', { type: 'button', class: 'ht-dial-legend-toggle', 'data-fk': 'dial-legend-toggle', 'aria-expanded': String(dialLegendOpen), 'aria-controls': 'dial-legend', onclick: () => {
       dialLegendOpen = !dialLegendOpen; legend.hidden = !dialLegendOpen; toggle.setAttribute('aria-expanded', String(dialLegendOpen));
@@ -2014,9 +2055,9 @@
     if (!s) return swap(box, stateBox(t(past ? 'sl.emptyOldT' : 'st.emptyT'), t(past ? 'sl.emptyOldB' : 'st.emptyB')), staleNote('sleep', 'sleep'));
     const d = S.daily.data, r = d ? L.typicalRange(d, 'sleep_min', dayDate) : null, wide = d ? L.typicalRange(d, 'sleep_min', dayDate, true) : null, v = s.minutes_asleep;
     const show = (x) => fmt.dur(x, lang), showR = (x) => fmt.dur(x.low, lang) + '–' + fmt.dur(x.high, lang);
-    swap(box, h('div', { class: 'met-vr' }, v == null ? h('span', { class: 'met-v is-text', text: t('sl.noData') }) : h('span', { class: 'met-v', text: fmt.dur(v, lang) }), pill(L.rangeFlag(v, wide))),
+    swap(box, h('div', { class: 'met-vr' }, v == null ? h('span', { class: 'met-v is-text', text: t('sl.noData') }) : h('span', { class: 'met-v', text: fmt.dur(v, lang) }), pill(L.rangeFlag(v, wide), false, true)),
       strip(v, r, show, showR),
-      h('div', { class: 'met-d' }, h('span', { class: 'ht-mono', text: t('sleep.times', { bed: s.start_local.slice(11, 16), wake: s.end_local.slice(11, 16) }) }), rangeLine(r, showR)),
+      h('div', { class: 'met-d' }, h('span', { class: 'ht-mono', text: t('sleep.times', { bed: s.start_local.slice(11, 16), wake: s.end_local.slice(11, 16) }) }), r ? h('span', { text: r.learning != null ? t('range.learning', { n: r.learning }) : t('sleep.usual', { x: showR(r) }) }) : null),
       staleNote('sleep', 'sleep'));
   }
   function renderWorkoutsNote() {
@@ -2036,16 +2077,16 @@
       head = h('div', { class: 'ht-state' }, h('p', { class: 'ht-word', text: t('rec.learning') }),
         h('div', { class: 'ht-progress', 'aria-hidden': 'true' }, Array.from({ length: 7 }, (_, i) => h('i', { class: i < k ? 'on' : null }))),
         h('p', { class: 'ht-state-b', text: r.learning != null ? t('st.fewT', { n: r.learning }) + '. ' + t('st.fewB', { k: r.n }) : t('rec.learnB') }));
-    } else head = [h('p', { class: 'ht-word', text: t('rec.' + rec.word) }), h('p', { class: 'met-drv' }, t('rec.driver') + ' ', h('b', { text: t(rec.driver === 'rhr' ? 'm.rhr' : 'm.hrv') }))];
+    } else head = [h('p', { class: 'ht-word', text: t('rec.' + rec.word) }), h('p', { class: 'met-drv' }, rec.driver === 'rhr' ? [t('rec.driver') + ' ', h('b', { text: t('m.rhr') })] : t('rec.fromHrv'))];
     /* Each vital: value, a pill only when it is unusual (p10-p90), the strip and the usual range (p25-p75). */
     const rows = VIT_ORDER.map((m) => {
       const v = L.dayValue(d, m, dayDate), r = L.typicalRange(d, m, dayDate), out = outs.find((o) => o.metric === m);
-      return h('li', { class: 'vit-r' + (m === rec.driver ? ' is-drv' : '') }, h('span', { class: 'vit-n', text: t(m === 'hrv_rmssd' ? 'm.hrv' : L.VMETA[m][0]) }),
+      return h('li', { class: 'vit-r' + (m === rec.driver ? ' is-drv' : '') + (out ? ' is-out' : '') }, h('span', { class: 'vit-n', text: t(m === 'hrv_rmssd' ? 'm.hrv' : L.VMETA[m][0]) }),
         h('span', { class: 'vit-v' }, out ? pill(out.status, true) : null, v == null ? h('span', { class: 'vit-none', text: none ? '—' : t('sl.noData') }) : h('span', { class: 'num', text: fmt.vital(m, v, lang) })),
         strip(v, r, (x) => fmt.vital(m, x, lang), (x) => fmt.range(m, x, lang)) ?? h('span'),
         h('span', { class: 'vit-u', text: r.learning != null ? t('range.learning', { n: r.learning }) : t('base.normal', { x: fmt.range(m, r, lang) }) }));
     });
-    swap(box, head, h('ul', { class: 'vit', 'aria-label': t('vit.list') }, rows), staleNote('daily', 'rec'));
+    swap(box, head, h('ul', { class: 'vit', 'aria-label': t('vit.list') }, rows), h('button', { type: 'button', class: 'det-go', 'data-fk': 'see-health', onclick: () => go('health', true) }, t('rec.seeHealth')), staleNote('daily', 'rec'));
   }
   function renderSteps(n) {
     const box = $('steps-body'), st = sourceState('daily', 'steps', 1, 'rec'), past = isPast();
@@ -2066,9 +2107,10 @@
     swap(box, h('ul', { class: 'ht-trk' }, L.CHIPS.map((c) => {
       const s = L.summary(snap, c.key, past ? 1440 : n.min);
       const value = s.n === 0 ? '—' : c.key === 'animo' ? (s.mood ? t('mood.' + s.mood) : fmt.num(s.n, lang)) : amount(s.total, s.unit);
-      const sub = s.n === 0 ? t(c.key === 'animo' ? 'sum.moodNone' : 'sum.none') : s.since == null ? t('sum.unknown') : past ? t('sum.last', { t: s.last }) : fmt.ago(s.since, lang);
-      return h('li', {}, h('div', { class: 'ht-trk-h', html: c.key === 'animo' && s.mood ? face(s.mood, 20) : icon(c.key, 'ht-ico-sm') }, t('trk.' + c.key)),
-        h('div', { class: 'ht-trk-v' }, value, c.key === 'animo' && s.mood ? h('small', { text: ' (' + tn('tip.logs', s.n) + ')' }) : null),
+      const last = s.n === 0 ? t(c.key === 'animo' ? 'sum.moodNone' : 'sum.none') : s.since == null ? t('sum.unknown') : past ? t('sum.last', { t: s.last }) : fmt.ago(s.since, lang);
+      const sub = s.n === 0 ? last : tn(c.key === 'cafe' ? 'sum.cups' : 'sum.count', s.n, { n: fmt.num(s.n, lang), last: !past && s.since != null ? t('sum.recent', { d: last }) : last });
+      return h('li', {}, h('div', { class: 'ht-trk-h' }, h('span', { class: 'tl-icon', style: '--k:var(--' + c.k + ')', html: c.key === 'animo' && s.mood ? face(s.mood, 20) : icon(c.key, 'ht-ico-sm') }), t('trk.' + c.key)),
+        h('div', { class: 'ht-trk-v' }, value),
         h('div', { class: 'ht-trk-s' }, s.last && s.since != null ? h('time', { datetime: dayDate + 'T' + s.last, text: sub }) : sub));
     })), staleNote('trackers', 'sum'));
   }
@@ -2082,7 +2124,7 @@
     const snap = st ? null : S.trackers.data, past = isPast(), ref = markIds(snap), byId = new Map(L.dialEvents(snap).map((e) => [e.id, e]));
     const lateSnap = S.trackersNow.data, late = L.bridgeEvents(lateSnap, dayDate, viewDate, now().min), lateById = new Map(L.dialEvents(lateSnap).map((e) => [e.id, e]));
     const until = past ? Infinity : now().min;   // a nap or workout that starts later today is not on the timeline yet
-    const items = !snap ? [] : L.dayItems(S.sleep.data?.sessions, S.workouts.data?.workouts, snap.events, dayDate).filter((it) => it.kind === 'event' || it.start <= until);
+    const items = !snap ? [] : L.timelineItems(S.sleep.data?.sessions, S.workouts.data?.workouts, snap, dayDate).filter((it) => it.kind === 'event' || it.kind === 'cluster' || it.start <= until);
     const bridging = dayDate !== viewDate && L.dayFor(viewDate, now().min) === dayDate;   // the "since midnight" group has its own source and states
     const lateSt = !bridging ? [] : lateSnap ? [staleNote('trackersNow', 'since'), lateSnap.events_truncated ? h('p', { class: 'ev-cap', text: t('ev.truncated') }) : null].filter(Boolean)
       : [sourceState('trackersNow', 'since', 1)];
@@ -2092,33 +2134,41 @@
       lateSt.length ? h('ol', { class: 'tl', 'aria-label': t('ev.listR') }, lateHead(), lateBox()) : null, staleNote('trackers', 'ev', 'sum'));
     const row = (it, i, isLate) => {
       let m, mark, name, sub = null, value = null, note = null, refId = it.id, end = null;
-      if (it.kind === 'event') {
+      if (it.kind === 'cluster') {
+        const g = it.g, facts = L.clusterFacts(g);
+        m = { kind: 'cluster', members: g.members, min: g.min, last: g.last };
+        mark = shapeMark(g.k);
+        name = h('span', { class: 'tl-n is-group' }, facts.items.map(({ e, n }) => h('span', { class: 'tl-item' }, coloredIcon(evIcon(e), eventColor(e)), (e.k === 'other' ? e.name : t('trk.' + e.k)) + (n > 1 ? ' ×' + n : ''))));
+        value = facts.total == null ? null : amount(facts.total, facts.unit);
+        sub = h('span', { class: 'tl-s', text: tn(g.last === g.min ? 'ev.atOnce' : 'ev.group', g.n, { d: g.last - g.min }) });
+        end = g.last === g.min ? null : clockOf(g.last); refId = (isLate ? 'x:' : 'm:') + g.id;
+      } else if (it.kind === 'event') {
         const tr = (isLate ? lateSnap : snap).trackers?.find((x) => x.id === it.e.tracker_id), k = L.trackerKey(it.e.tracker_id) ?? 'other';
         const e = (isLate ? lateById : byId).get(it.e.id) ?? { id: it.e.id, k, mood: k === 'animo' ? it.e.tracker_id.slice(5) : null, name: String(tr?.name ?? it.e.tracker_id), value: it.e.value,
           unit: tr?.unit ?? null, tracker_id: it.e.tracker_id, local_time: it.e.local_time ?? null, note_untrusted: it.e.note_untrusted ?? null };
         m = { kind: 'event', e }; mark = shapeMark(e.k);
-        name = h('span', { class: 'tl-n', html: evIcon(e) }); name.append(evTitle(e));
+        name = h('span', { class: 'tl-n' }, coloredIcon(evIcon(e), eventColor(e)), evTitle(e));
         value = e.k === 'animo' || !finiteNum(it.e.value) ? null : amount(it.e.value, e.unit);
         if (it.e.note_untrusted != null) { note = h('span', { class: 'tl-note' }); note.textContent = it.e.note_untrusted; }
         refId = isLate ? 'x:' + it.e.id : ref.get(it.e.id) ?? 'm:' + it.e.id;
       } else {
         m = { kind: it.kind, s: it.s, w: it.w };
         const f = it.kind === 'workout' ? workoutFacts(it.w) : sessionFacts(it.s, it.kind === 'nap');
-        mark = h('i', { class: 'tl-m ' + (it.kind === 'workout' ? 'arc' : 'wedge'), style: it.kind === 'workout' ? null : '--k:var(--' + (it.kind === 'nap' ? 'm-light' : 'm-deep') + ')', 'aria-hidden': 'true' });
-        name = h('span', { class: 'tl-n', html: f.icon }); name.append(f.title);
+        mark = arcMark(it.kind);
+        name = h('span', { class: 'tl-n' }, coloredIcon(f.icon, it.kind === 'workout' ? 'm-steps' : it.kind === 'nap' ? 'm-light' : 'm-deep'), f.title);
         sub = h('span', { class: 'tl-s', text: it.kind === 'workout' ? [f.big, ...f.lines.slice(0, 1).map((x) => x[1])].filter(Boolean).join('; ') : f.big });
         end = clockOf(it.end);
       }
       const known = Number.isFinite(it.start), when = known ? clockOf(it.start) : null, open = tlOpen.has(it.id), did = 'tld-' + (isLate ? 'l' : '') + i;
       const b = h('button', { type: 'button', class: 'tl-r', 'data-ref': refId, 'data-fk': 'tl-' + it.id, 'aria-expanded': String(open), 'aria-controls': open ? did : null, tabindex: '-1' }, mark,
-        h('span', {}, known ? h('time', { class: 'tl-t', datetime: (it.kind === 'event' ? (isLate ? viewDate : dayDate) + 'T' + when : String(it.s?.start_local ?? it.w?.start_local)), text: when }) : h('span', { class: 'tl-t', text: '—' }),
-          end ? h('span', { class: 'tl-e', text: '→ ' + end }) : null),
+        h('span', {}, known ? h('time', { class: 'tl-t', datetime: (it.kind === 'event' || it.kind === 'cluster' ? (isLate ? viewDate : dayDate) + 'T' + when : String(it.s?.start_local ?? it.w?.start_local)), text: when }) : h('span', { class: 'tl-t', text: '—' }),
+          end ? h('span', { class: 'tl-e', text: t('ev.to', { t: end }) }) : null),
         h('span', {}, name, sub, known ? null : h('span', { class: 'tl-s', text: t('ev.unknown') }), it.kind === 'sleep' && it.s.stages?.length ? stageBar(it.s.stages) : null, note), h('span', { class: 'tl-v' }, value));
       b.addEventListener('click', () => { if (tlOpen.has(it.id)) tlOpen.delete(it.id); else tlOpen.add(it.id); renderTimeline(); });
       return h('li', { class: 'tl-i' }, b, open ? h('div', { class: 'tl-d det', id: did }, detailBody(m), it.kind === 'sleep' ? seeNight(dayDate) : null) : null);
     };
     const lis = items.map((it, i) => row(it, i, false));
-    if (late.length || lateSt.length) lis.push(lateHead(), ...late.map((e, i) => row({ id: 'x:' + e.id, kind: 'event', start: L.localMinutes(e.local_time), end: L.localMinutes(e.local_time), e }, i, true)), lateBox());
+    if (late.length || lateSt.length) lis.push(lateHead(), ...L.timelineItems([], [], { ...lateSnap, events: late }, viewDate).map((it, i) => row({ ...it, id: 'x:' + it.id }, i, true)), lateBox());
     const ol = h('ol', { class: 'tl', 'aria-label': t('ev.listR') }, lis);
     swap(box, st, ol, snap?.events_truncated ? h('p', { class: 'ev-cap', text: t('ev.truncated') }) : null, staleNote('trackers', 'ev', 'sum'));
     const all = [...ol.querySelectorAll('.tl-r')], cur = all.find((r) => r === document.activeElement) ?? all[0];
@@ -2131,9 +2181,9 @@
     });
     if (hot) setHot(hot);
   }
-  /* After a log, its row scrolls into view inside the pane (never the page); run after the undo row has taken its height. */
+  /* After a log, reveal its row in a scrolling list without moving the page. */
   function revealRow() {
-    const box = $('ev-body'), rv = reveal && [...box.querySelectorAll('.tl-r')].find((r) => r.dataset.fk === 'tl-' + reveal || r.dataset.fk === 'tl-x:' + reveal);
+    const box = $('ev-body'), rv = reveal && [...box.querySelectorAll('.tl-r')].find((r) => r.dataset.ref === markIds(S.trackers.data).get(reveal) || r.dataset.fk === 'tl-' + reveal || r.dataset.fk === 'tl-x:' + reveal);
     if (!rv) return;
     reveal = null;
     const below = rv.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom;
@@ -2448,7 +2498,7 @@
     const w = L.act.weeks(S.actDaily.data, 'azm', dayDate, ACT_WEEKS), cur = w[ACT_WEEKS - 1], full = w.slice(0, -1).filter((x) => x.sum != null);
     if (w.every((x) => x.sum == null)) return swap(box, stateBox(t('act.azmEmptyT'), t('act.azmEmptyB')), staleNote('actDaily', 'azm', 'steps'));
     const n0 = (x) => fmt.num(x, lang), now0 = cur.sum ?? 0;
-    swap(box, h('p', { class: 'act-big' }, n0(now0), h('small', { text: t('u.min') + ': ' + t('act.azmNow') })),
+    swap(box, h('p', { class: 'act-big' }, n0(now0), h('small', { text: t('u.min') + ' ' + t('act.azmNow') })),
       actBars({ values: w.map((x) => x.sum), partial: ACT_WEEKS - 1, dim: (q) => q < AZM_REF[0],
         refs: [{ v: AZM_REF[0], label: n0(AZM_REF[0]) }, { v: AZM_REF[1], label: n0(AZM_REF[1]) }],
         ticks: [0, 3].map((i) => [i, fmt.day(w[i].start, lang)]).concat([[ACT_WEEKS - 1, t('act.thisWeek')]]),
@@ -2664,9 +2714,16 @@
     document.querySelectorAll('[data-t]').forEach((n) => { n.textContent = t(n.getAttribute('data-t')); });
     document.querySelectorAll('[data-t-aria]').forEach((n) => { n.setAttribute('aria-label', t(n.getAttribute('data-t-aria'))); });
     document.querySelectorAll('[data-lang]').forEach((b) => { b.textContent = t('lang.' + b.dataset.lang); b.setAttribute('aria-pressed', String(b.dataset.lang === lang)); });
+    document.querySelectorAll('.ht-theme [data-theme]').forEach((b) => { b.innerHTML = icon(b.dataset.theme); b.setAttribute('aria-label', t('theme.' + b.dataset.theme)); b.title = t('theme.' + b.dataset.theme); b.setAttribute('aria-pressed', String(b.dataset.theme === (document.documentElement.dataset.theme || 'auto'))); });
     TABS.forEach((n) => { $('tab-' + n).innerHTML = '<span class="ht-tab-i">' + icon(TAB_ICON[n]) + '</span>'; $('tab-' + n).append(h('span', { text: t('tab.' + n) })); });
     const wm = $('wordmark'); wm.innerHTML = mark(36); wm.append(h('span', { class: 'ht-wordmark-t', 'aria-hidden': 'true', text: t('app.name') }));
   }
+  document.querySelectorAll('.ht-theme [data-theme]').forEach((b) => b.addEventListener('click', () => {
+    const theme = b.dataset.theme;
+    if (theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = theme;
+    try { if (theme === 'auto') localStorage.removeItem('ht.theme'); else localStorage.setItem('ht.theme', theme); } catch (e) { /* storage unavailable: keep for this view */ }
+    applyStatic();
+  }));
   document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => {
     lang = L.pickLang(b.dataset.lang);
     try { localStorage.setItem('ht.lang', lang); } catch (e) { /* storage unavailable: keep for this view */ }
@@ -2857,7 +2914,7 @@
     const key = (style, label) => h('span', { style: 'display:inline-flex;align-items:center;gap:6px' }, h('i', { style: style, 'aria-hidden': 'true' }), label);
     const lateState = !pageLevel() && S.sllate.error && !S.sllate.data ? sourceState('sllate', 'sllate') : staleNote('sllate', 'sllate');
     swap(box,
-      h('div', { class: 'sl-cap' }, h('span', { text: t('sl.pDur') + '; ' + t('sl.pTime') })),
+      h('div', { class: 'sl-cap' }, h('span', { text: t('sl.pDur') })),
       fig,
       h('div', { class: 'sl-cap', 'aria-hidden': 'true' }, key('width:8px;height:8px;border-radius:50%;background:var(--m-deep)', t('sl.keyNight')),
         key('width:14px;height:8px;background:var(--band);box-shadow:inset 0 0 0 1px var(--line)', t('sl.keyBand')),
@@ -2882,7 +2939,7 @@
 
   function render() {
     const n = now();
-    $('today-grid').hidden = $('log').hidden = pageLevel();   // one page-level notice instead of a copy per section
+    $('today-grid').hidden = pageLevel();   // one page-level notice instead of a copy per section
     if (pageLevel()) Q.clear();
     renderHeader(); renderPageNotice(); renderDial(n); renderSleep(); renderRecovery(); renderSteps(n); renderSummary(n); renderTimeline(); renderWorkoutsNote(); renderQuick(); renderUndo(); revealRow();
     renderSleepTab();
