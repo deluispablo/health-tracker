@@ -1,4 +1,4 @@
-import { dateTimeFormat } from "../../../lib/time";
+import { dateTimeFormat, isCalendarDate } from "../../../lib/time";
 import { BEFORE_BED_HOURS, METRICS, MOODS, RANGE } from "./catalog";
 import type { BeforeBedId, BehaviorId, MetricId, MoodId, RangeArgs } from "./types";
 
@@ -11,7 +11,7 @@ export function lastCompletedBday(nowSec: number, tz: string): string {
   return addDays(part("year") + "-" + part("month") + "-" + part("day"), Number(part("hour")) >= 5 ? -1 : -2);
 }
 function validateDate(date: string): void {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date + "T00:00:00Z")) || new Date(date + "T00:00:00Z").toISOString().slice(0,10) !== date)
+  if (!isCalendarDate(date))
     throw new RangeError("Dates must be real calendar dates in YYYY-MM-DD format.");
 }
 export function resolveRange(args: { start?: string; end?: string }, nowSec: number, tz: string): ResolvedRange {

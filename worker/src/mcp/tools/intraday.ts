@@ -1,3 +1,5 @@
+import { isCalendarDate } from "../../lib/time";
+
 interface BucketRow {
   bucket_start: number;
   avg: number;
@@ -15,9 +17,7 @@ export async function healthIntraday(db: D1Database, { metric, date, resolution,
   const midnight = Date.parse(`${date}T00:00:00Z`);
   if (metric !== "hr" && metric !== "steps") throw new RangeError("metric must be hr or steps");
   if (metric === "steps" && resolution !== "1h") throw new RangeError("steps supports only 1h resolution");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(midnight)
-    || new Date(midnight).toISOString().slice(0, 10) !== date
-    || date < "2000-01-01" || date > "2099-12-31") {
+  if (!isCalendarDate(date) || date < "2000-01-01" || date > "2099-12-31") {
     throw new RangeError("date must be a real YYYY-MM-DD date between 2000-01-01 and 2099-12-31");
   }
   if (!["1m", "5m", "1h"].includes(resolution)) {

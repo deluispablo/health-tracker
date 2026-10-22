@@ -1,4 +1,4 @@
-import { dateTimeFormat } from "../../lib/time";
+import { dateTimeFormat, isCalendarDate } from "../../lib/time";
 
 interface ProfileValues {
   birth_year: number;
@@ -39,12 +39,6 @@ function profileValue(field: string, value: unknown, year: number): ProfileValue
       throw new RangeError("smoker must be a boolean");
     default: throw new RangeError(`${field} is not an allowed profile field`);
   }
-}
-
-function calendarDate(date: unknown): date is string {
-  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
-  const ms = Date.parse(`${date}T00:00:00Z`);
-  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === date;
 }
 
 export async function healthProfile(db: D1Database, options: Options) {
@@ -96,7 +90,7 @@ export async function healthSetProfile(db: D1Database, args: Record<string, unkn
     throw new RangeError("date requires weight_kg");
   }
   const date = Object.hasOwn(args, "date") ? args.date : today;
-  if (!calendarDate(date) || date < "2000-01-01" || date > today) {
+  if (!isCalendarDate(date) || date < "2000-01-01" || date > today) {
     throw new RangeError(`date must be a real YYYY-MM-DD date between 2000-01-01 and ${today}`);
   }
   const statements = values.map(([field, value]) => field === "weight_kg"
