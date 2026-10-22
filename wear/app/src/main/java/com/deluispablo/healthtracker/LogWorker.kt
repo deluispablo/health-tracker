@@ -25,15 +25,17 @@ class LogWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, p
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val ctx = applicationContext
         val taps = synchronized(cacheLock) { readTaps(ctx) }
-        val sent = mutableSetOf<String>()
         var retry = false
-        for (tap in taps) {
+        for (tap in taps.filter { it.acked == null }) {
             val code = send(tap)
             if (!settled(code, tap.undo)) { Log.w(TAG, "/watch/log -> $code"); retry = true; break }
-            if (code >= 300) Log.w(TAG, "dropping tap ${tap.id} after $code")
-            sent += tap.id
+            synchronized(cacheLock) {
+                val queue = readTaps(ctx)
+                if (code >= 300) Log.w(TAG, "dropping tap ${tap.id} after $code")
+                writeTaps(ctx, if (code >= 300) queue - tap else ackTap(queue, tap, System.currentTimeMillis()))
+            }
         }
-        if (sent.isNotEmpty() && fetchToday(ctx, sent) != 200) retry = true
+        if (taps.isNotEmpty() && fetchToday(ctx) != 200) retry = true
         if (retry) Result.retry() else Result.success()
     }
 

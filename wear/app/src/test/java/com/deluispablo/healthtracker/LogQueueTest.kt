@@ -47,6 +47,23 @@ class UndoTest {
     }
 
     @Test
+    fun anUndoTappedWhileItsLogIsInFlightSurvivesTheAck() {
+        val log = Tap("x-1", "cigarettes", at)
+        val undone = undoTaps(listOf(log), log)
+        assertEquals(undone, ackTap(undone, log, 1_000))
+        assertEquals(undone, confirmedBy(ackTap(undone, log, 1_000), 2_000))
+    }
+
+    @Test
+    fun onlyADialFetchedAfterTheAckConfirmsATap() {
+        val acked = Tap("x-1", "cigarettes", at, acked = 1_000)
+        val pending = Tap("y-2", "caffeine", at)
+        assertEquals(listOf(acked, pending), confirmedBy(listOf(acked, pending), 999))
+        assertEquals(listOf(pending), confirmedBy(listOf(acked, pending), 1_000))
+        assertEquals(listOf(acked), parseTaps(tapsJson(listOf(acked))))
+    }
+
+    @Test
     fun anUndoHidesTheSentMarkUntilTheNextRefresh() {
         assertEquals(emptyList<Mark>(), withTaps(day, listOf(Tap("x-1", "cigarettes", at, undo = true))).events)
     }
