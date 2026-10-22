@@ -187,7 +187,7 @@ export async function drainSyncPending(
           const inBed = readNumber(summary.minutesInSleepPeriod);
           const startHour = new Date((startTs + tz * 60) * 1000).getUTCHours();
           const isNap = object(sleep.metadata).mainSleep !== true
-            || (inBed !== null && inBed < 180 && startHour >= 9 && startHour < 20);
+            || ((inBed ?? (endTs - startTs) / 60) < 180 && startHour >= 9 && startHour < 20);
           const stageMinutes = new Map<string, number>();
           for (const entry of Array.isArray(summary.stagesSummary) ? summary.stagesSummary : []) {
             const s = object(entry);
