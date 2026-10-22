@@ -26,6 +26,8 @@ export function evaluateMetricPair(t: DayTable, bl: Partial<Record<MetricId, Bas
   };
   for (let i = t.start; i <= t.end; i++) {
     const j = i + offset;
+    // Explicit filters own exposure exclusions; only selected pairs enter the model.
+    if (opts.groups && !opts.groups.a(i) && !opts.groups.b(i)) continue;
     const exposure = raw(t.metric[pair.exposure], i);
     const z = raw(bl[pair.exposure]?.z, i);
     if (exposure === null || (!opts.groups && z === null)) { excluded.incomplete_pair++; continue; }
