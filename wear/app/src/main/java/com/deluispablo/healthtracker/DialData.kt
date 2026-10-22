@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 data class Span(val start: Int, val end: Int, val nap: Boolean = false)
 
-/** A log at minute [t] of kind [k]; moods also name which one in [m], watch logs their key in [i]. */
+/** A log at minute [t] of kind [k]; moods and supplements name which one in [m], watch logs their key in [i]. */
 data class Mark(val t: Int, val k: String, val m: String? = null, val i: String? = null)
 
 /** Today's water against the profile goal, in ml. */
@@ -40,7 +40,7 @@ fun parseDialData(json: String): DialData {
         // A malformed item is skipped so one bad row cannot blank the whole day.
         sleep = o.getJSONArray("sleep").items { it.span(it.getBoolean("nap")) },
         workouts = o.getJSONArray("workouts").items { it.span() },
-        events = o.getJSONArray("events").items { Mark(it.minute("t"), it.getString("k"), it.optString("m").ifEmpty { null }, it.optString("i").ifEmpty { null }) },
+        events = o.getJSONArray("events").items { Mark(it.minute("t"), it.getString("k"), it.optString("m").ifEmpty { it.optString("id") }.ifEmpty { null }, it.optString("i").ifEmpty { null }) },
         hr = List(96) { i -> if (hr.isNull(i)) null else hr.getInt(i) },
         water = o.optJSONObject("water")?.let { w ->
             runCatching { Water(w.getInt("ml"), w.getInt("goal_ml")).takeIf { it.ml >= 0 && it.goalMl > 0 } }.getOrNull()

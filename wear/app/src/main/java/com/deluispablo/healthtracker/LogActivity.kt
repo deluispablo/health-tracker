@@ -2,7 +2,6 @@ package com.deluispablo.healthtracker
 
 import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -17,7 +16,6 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -43,23 +41,14 @@ private val MOODS = listOf(
     Triple("enfadado", R.drawable.ic_mood_enfadado, 0xffee5f5f.toInt()),
 )
 
-/** Which screen the menu opens on; the Tile opens the ring or the list directly. */
-const val EXTRA_SCREEN = "screen"
-const val SCREEN_RING = "ring"
-const val SCREEN_MORE = "more"
-
-fun logIntent(ctx: Context, screen: String? = null): Intent =
-    Intent(ctx, LogActivity::class.java).apply { screen?.let { putExtra(EXTRA_SCREEN, it) } }
-
 /**
- * Opened by tapping the centre of the face: syncs now and shows the face's trackers and mood in a ring
- * around an undo button for the last watch log. One tap logs and closes; mood swaps the ring for the 8
- * moods around a back button, and shows the chosen mood's name before closing. The Tile also opens the
- * mood ring and the full list of trackers here.
+ * Opened by tapping the centre of the face: syncs now and shows the face's trackers, mood and
+ * supplements in a ring around an undo button for the last watch log. One tap logs and closes; mood
+ * and supplements swap the ring for their own ring around a back button, and show the chosen name
+ * before closing.
  */
 class LogActivity : Activity() {
     private lateinit var screen: FrameLayout
-    private var direct = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,29 +62,33 @@ class LogActivity : Activity() {
         )
         screen = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         setContentView(screen)
-        when (intent.getStringExtra(EXTRA_SCREEN)) {
-            SCREEN_RING -> { direct = true; showRing() }
-            SCREEN_MORE -> { direct = true; showList(menuNow(this).let { tileGrid(it).more }) }
-            else -> showGrid()
-        }
+        showGrid()
     }
 
     private fun showGrid() {
         screen.removeAllViews()
         val menu = menuNow(this)
+        val extra = listOfNotNull(
+            Triple(MOOD_STYLE, getString(R.string.log_mood)) { showRing() },
+            menu.supplements.takeIf { it.isNotEmpty() }?.let {
+                Triple(SUPPLEMENTS_STYLE, getString(R.string.log_supplements)) { showSupplements(it) }
+            },
+        )
         // Four buttons keep the 2x2 grid; more go round the undo button.
-        val n = menu.face.size + 1
-        val size = if (n <= 4) 68 else 60
+        val n = menu.face.size + extra.size
+        val size = when { n <= 4 -> 68; n == 5 -> 60; else -> 56 }
         val spot = { i: Int ->
             if (n <= 4) (if (i % 2 == 0) -46f else 46f) to (if (i < 2) -46f else 46f)
-            else (i * 2 * Math.PI / n).let { a -> (66 * sin(a)).toFloat() to (-66 * cos(a)).toFloat() }
+            else (i * 2 * Math.PI / n).let { a -> (68 * sin(a)).toFloat() to (-68 * cos(a)).toFloat() }
         }
         menu.face.forEachIndexed { i, item ->
             val (x, y) = spot(i)
             place(itemButton(item, styleOf(item.id), size) { log(item.id) }, size, x, y)
         }
-        val (mx, my) = spot(menu.face.size)
-        place(iconButton(MOOD_STYLE, 32 * size / 68, getString(R.string.log_mood)) { showRing() }, size, mx, my)
+        extra.forEachIndexed { j, (style, label, open) ->
+            val (x, y) = spot(menu.face.size + j)
+            place(iconButton(style, 30 * size / 68, label) { open() }, size, x, y)
+        }
         if (lastTap(this) != null) place(centreButton(R.drawable.ic_undo, R.string.log_undo) {
             screen.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
             val ctx = applicationContext
@@ -108,57 +101,38 @@ class LogActivity : Activity() {
         screen.removeAllViews()
         MOODS.forEachIndexed { i, (mood, icon, fill) ->
             val a = i * Math.PI / 4
-            place(iconButton(TrackerStyle(icon, fill, FACE_INK), 32, "Ánimo: $mood") { pickMood(mood, fill) }, 44,
-                (76 * sin(a)).toFloat(), (-76 * cos(a)).toFloat())
+            place(iconButton(TrackerStyle(icon, fill, FACE_INK), 32, "Ánimo: $mood") {
+                pick("mood_$mood", mood.replaceFirstChar { it.uppercase() }, fill)
+            }, 44, (76 * sin(a)).toFloat(), (-76 * cos(a)).toFloat())
         }
-        place(centreButton(R.drawable.ic_back, R.string.log_back) { if (direct) finish() else showGrid() }, 48, 0f, 0f)
+        place(centreButton(R.drawable.ic_back, R.string.log_back) { showGrid() }, 48, 0f, 0f)
     }
 
-    /** Every tracker the Tile has no room for, one row each; the crown scrolls. */
-    private fun showList(items: List<LogItem>) {
+    /** Like the mood ring: every supplement in the catalog with today's dose, around a back button. */
+    private fun showSupplements(items: List<LogItem>) {
         screen.removeAllViews()
-        val rows = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(30), dp(40), dp(34), dp(48))
-        }
-        for (item in items) {
+        val size = if (items.size <= 4) 60 else 44
+        val r = if (items.size <= 4) 66.0 else 76.0
+        items.forEachIndexed { i, item ->
+            val a = i * 2 * Math.PI / items.size
             val style = styleOf(item.id)
-            rows.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                contentDescription = "Registrar ${item.name}"
-                addView(glyphCircle(style, item.name, 40, 22), LinearLayout.LayoutParams(dp(40), dp(40)))
-                addView(TextView(context).apply {
-                    text = item.name
-                    setTextColor(0xffe7e9f0.toInt())
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                    setPadding(dp(10), 0, dp(6), 0)
-                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                addView(TextView(context).apply {
-                    text = item.today
-                    setTextColor(0xffa2a8b8.toInt())
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                })
-                setOnClickListener { log(item.id) }
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(52)))
+            place(itemButton(item, style, size) { pick(item.id, item.name, style.fill) }, size,
+                (r * sin(a)).toFloat(), (-r * cos(a)).toFloat())
         }
-        val scroll = ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(rows) }
-        screen.addView(scroll, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        scroll.requestFocus()
+        place(centreButton(R.drawable.ic_back, R.string.log_back) { showGrid() }, 48, 0f, 0f)
     }
 
-    /** Logs at once, then shows the name in the centre so the faces are learnt, and closes. */
-    private fun pickMood(mood: String, color: Int) {
+    /** Logs at once, then shows the name in the centre so the symbols are learnt, and closes. */
+    private fun pick(tracker: String, name: String, color: Int) {
         screen.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
         val ctx = applicationContext
-        thread { logTap(ctx, "mood_$mood") }
+        thread { logTap(ctx, tracker) }
         for (i in 0 until screen.childCount) screen.getChildAt(i).isEnabled = false
         screen.removeViewAt(screen.childCount - 1)
         place(TextView(this).apply {
-            text = mood.replaceFirstChar { it.uppercase() }
+            text = name
             setTextColor(color)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (name.length > 10) 11f else 14f)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = oval(0xff14171e.toInt())
@@ -184,22 +158,9 @@ class LogActivity : Activity() {
         setColorFilter(ink)
     }
 
-    /** The tracker's glyph on its circle, or its initial while it has no glyph. */
-    private fun glyphCircle(style: TrackerStyle, name: String, sizeDp: Int, iconDp: Int): View = FrameLayout(this).apply {
-        background = oval(style.fill)
-        if (style.icon != null) addView(image(style.icon, style.ink), FrameLayout.LayoutParams(dp(iconDp), dp(iconDp), Gravity.CENTER))
-        else addView(TextView(context).apply {
-            text = name.take(1).uppercase()
-            setTextColor(style.ink)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeDp * 0.4f)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            gravity = Gravity.CENTER
-        }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-    }
-
     /**
      * A filled circle with the tracker's bold icon and today's count side by side, or stacked when the
-     * value is long (water in ml or litres), with the goal as a ring inside the edge.
+     * value is long (water in litres, doses), with a goal as a ring around a slightly smaller disc.
      */
     private fun itemButton(item: LogItem, style: TrackerStyle, sizeDp: Int, onClick: () -> Unit): View {
         val long = item.today.length > 2
@@ -207,6 +168,12 @@ class LogActivity : Activity() {
             orientation = if (long) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             if (style.icon != null) addView(image(style.icon, style.ink), LinearLayout.LayoutParams(dp(if (long) 18 else 22), dp(if (long) 18 else 22)))
+            else addView(TextView(context).apply {
+                text = item.name.take(1).uppercase()
+                setTextColor(style.ink)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            })
             addView(TextView(context).apply {
                 text = item.today
                 setTextColor(style.ink)
@@ -215,11 +182,14 @@ class LogActivity : Activity() {
                 setPadding(if (long) 0 else dp(3), 0, 0, 0)
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
+        val inset = if (item.progress != null) dp(6) else 0
         return FrameLayout(this).apply {
-            background = oval(style.fill)
             contentDescription = "Registrar ${item.name}"
-            addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-            item.progress?.let { addView(GoalRing(context, it, style.ink)) }
+            item.progress?.let { addView(GoalRing(context, it, style.fill)) }
+            addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply {
+                setMargins(inset, inset, inset, inset)
+            })
+            content.background = oval(style.fill)
             setOnClickListener { onClick() }
         }
     }
@@ -250,14 +220,14 @@ class LogActivity : Activity() {
     private fun dp(v: Float) = (v * resources.displayMetrics.density).toInt()
 }
 
-/** Progress towards a daily goal, drawn just inside the button's edge from the top, clockwise. */
-private class GoalRing(ctx: Context, private val progress: Float, ink: Int) : View(ctx) {
-    private val w = 2.5f * ctx.resources.displayMetrics.density
-    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = w; color = ink; alpha = 50 }
-    private val done = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = w; color = ink; strokeCap = Paint.Cap.ROUND }
+/** Progress towards a daily goal around the disc, from 12 o'clock clockwise, as on the dashboard. */
+private class GoalRing(ctx: Context, private val progress: Float, color: Int) : View(ctx) {
+    private val w = 3f * ctx.resources.displayMetrics.density
+    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = w; this.color = 0xff2a2f3a.toInt() }
+    private val done = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = w; this.color = color; strokeCap = Paint.Cap.ROUND }
 
     override fun onDraw(c: Canvas) {
-        val box = RectF(w * 1.5f, w * 1.5f, width - w * 1.5f, height - w * 1.5f)
+        val box = RectF(w / 2, w / 2, width - w / 2, height - w / 2)
         c.drawOval(box, track)
         if (progress > 0f) c.drawArc(box, -90f, 360f * progress, false, done)
     }

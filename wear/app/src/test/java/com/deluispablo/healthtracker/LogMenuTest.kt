@@ -35,22 +35,13 @@ class LogMenuTest {
     fun splitsFaceAndTileTrackersWithTodaysValues() {
         val menu = logMenu(parseDialData(catalogJson()), emptyList())
         assertEquals(listOf("caffeine" to "2", "cigarettes" to "3", "alcohol" to "0", "water" to "750 ml"), menu.face.map { it.id to it.today })
-        assertEquals(listOf("melatonin" to "1 mg", "protein" to "60 g", "creatine" to "0 g"), menu.more.map { it.id to it.today })
+        assertEquals(listOf("melatonin" to "1 mg", "protein" to "60 g", "creatine" to "0 g"), menu.supplements.map { it.id to it.today })
         assertEquals(0.375f, menu.face.single { it.id == "water" }.progress)
     }
 
     @Test
-    fun theTileGridHoldsFourFaceTrackersAndTheRestGoToTheList() {
-        val menu = logMenu(parseDialData(catalogJson()), emptyList())
-        assertEquals(listOf("caffeine", "cigarettes", "alcohol", "water"), tileGrid(menu).trackers.map { it.id })
-        assertEquals(listOf("melatonin", "protein", "creatine"), tileGrid(menu).more.map { it.id })
-        val five = menu.copy(face = menu.face + LogItem("tea", "Té", "1"))
-        assertEquals(listOf("tea", "melatonin", "protein", "creatine"), tileGrid(five).more.map { it.id })
-    }
-
-    @Test
     fun anArchivedTrackerIsSimplyNotOffered() {
-        assertEquals(listOf("melatonin", "creatine"), logMenu(parseDialData(catalogJson(archivedProtein = true)), emptyList()).more.map { it.id })
+        assertEquals(listOf("melatonin", "creatine"), logMenu(parseDialData(catalogJson(archivedProtein = true)), emptyList()).supplements.map { it.id })
     }
 
     @Test
@@ -59,7 +50,7 @@ class LogMenuTest {
         val taps = listOf(Tap("w1", "water", at), Tap("w2", "water", at), Tap("p1", "protein", at), Tap("tap-1", "cigarettes", at, undo = true))
         val menu = logMenu(d, taps)
         assertEquals("1,3 L", menu.face.single { it.id == "water" }.today)
-        assertEquals("90 g", menu.more.single { it.id == "protein" }.today)
+        assertEquals("90 g", menu.supplements.single { it.id == "protein" }.today)
         assertEquals("2", menu.face.single { it.id == "cigarettes" }.today)
     }
 
@@ -67,7 +58,7 @@ class LogMenuTest {
     fun anOldWorkerStillGetsTheFaceTrackers() {
         val menu = logMenu(parseDialData(sampleJson()), listOf(Tap("c1", "caffeine", at)))
         assertEquals(listOf("caffeine" to "2", "cigarettes" to "1", "alcohol" to "1"), menu.face.map { it.id to it.today })
-        assertEquals(emptyList<LogItem>(), menu.more)
+        assertEquals(emptyList<LogItem>(), menu.supplements)
         assertEquals(listOf("caffeine", "cigarettes", "alcohol"), logMenu(null, emptyList()).face.map { it.id })
     }
 
@@ -80,8 +71,10 @@ class LogMenuTest {
     }
 
     @Test
-    fun supplementsNeverReachTheDial() {
+    fun supplementsShowAsOneMarkNamingWhichOne() {
         val day = DialData("2026-10-22", 0, emptyList(), emptyList(), emptyList(), List(96) { null })
-        assertEquals(listOf("agua"), withTaps(day, listOf(Tap("p1", "protein", at), Tap("w1", "water", at))).events.map { it.k })
+        assertEquals(listOf("suplemento" to "protein", "agua" to null),
+            withTaps(day, listOf(Tap("p1", "protein", at), Tap("w1", "water", at + 60))).events.map { it.k to it.m })
+        assertEquals("creatine", parseDialData(sampleJson().replace("{\"t\":460,\"k\":\"cafe\"}", "{\"t\":460,\"k\":\"suplemento\",\"id\":\"creatine\"}")).events[0].m)
     }
 }

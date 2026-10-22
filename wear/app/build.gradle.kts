@@ -41,9 +41,6 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.wear.watchface.complications.data.source.ktx)
-    implementation(libs.androidx.wear.tiles)
-    implementation(libs.androidx.wear.protolayout)
-    implementation(libs.androidx.concurrent.futures)
     testImplementation(libs.junit)
     // Android's org.json is a stub on the JVM; tests need the real one.
     testImplementation(libs.org.json)

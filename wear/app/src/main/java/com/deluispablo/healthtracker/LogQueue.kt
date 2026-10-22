@@ -34,10 +34,18 @@ fun kindOf(tracker: String): String = when {
     tracker == "alcohol" -> "alcohol"
     tracker == "water" -> "agua"
     tracker.startsWith("mood_") -> "animo"
-    else -> "other"
+    // Everything else the watch logs comes from the Suplementos ring.
+    else -> "suplemento"
 }
 
 /** Acks from another [run] are dropped: the tap is simply sent again, which the idempotency key makes safe. */
+/** The mood's name, or the supplement's id, that a mark of [tracker] carries in its `m`. */
+fun which(tracker: String): String? = when (kindOf(tracker)) {
+    "animo" -> tracker.removePrefix("mood_")
+    "suplemento" -> tracker
+    else -> null
+}
+
 fun parseTaps(json: String, run: String = RUN): List<Tap> = JSONArray(json).let { a ->
     List(a.length()) { i ->
         runCatching {
@@ -82,9 +90,8 @@ class FetchOrder {
 fun withTaps(data: DialData, taps: List<Tap>): DialData {
     val today = taps.mapNotNull { tap ->
         val local = Instant.ofEpochSecond(tap.at).atZone(MADRID)
-        // Only the face's trackers have a mark; supplements live in the Tile and the dashboard.
-        if (local.toLocalDate().toString() == data.date && kindOf(tap.tracker) != "other") tap to Mark(minutesSince(data.date, local), kindOf(tap.tracker),
-            tap.tracker.removePrefix("mood_").takeIf { tap.tracker.startsWith("mood_") }, tap.id) else null
+        if (local.toLocalDate().toString() == data.date) tap to Mark(minutesSince(data.date, local), kindOf(tap.tracker),
+            which(tap.tracker), tap.id) else null
     }
     if (today.isEmpty()) return data
     val shown = data.events.mapNotNull { it.i }.toSet()

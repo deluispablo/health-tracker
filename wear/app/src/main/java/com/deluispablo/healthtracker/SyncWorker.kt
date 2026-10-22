@@ -88,7 +88,6 @@ fun refreshCache(ctx: Context, body: String?, fetchTicket: Long = 0) = synchroni
     ComplicationDataSourceUpdateRequester
         .create(ctx, ComponentName(ctx, DialComplicationService::class.java))
         .requestUpdateAll()
-    updateTile(ctx)
 }
 
 private fun Bitmap.png(): ByteArray =

@@ -25,20 +25,6 @@
         </activity>
 
         <service
-            android:name=".LogTileService"
-            android:exported="true"
-            android:icon="@drawable/ic_launcher"
-            android:label="@string/tile_label"
-            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
-            <intent-filter>
-                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
-            </intent-filter>
-            <meta-data
-                android:name="androidx.wear.tiles.PREVIEW"
-                android:resource="@drawable/ic_launcher" />
-        </service>
-
-        <service
             android:name=".DialComplicationService"
             android:exported="true"
             android:icon="@drawable/ic_launcher"

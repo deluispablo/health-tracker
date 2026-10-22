@@ -7,15 +7,10 @@ import kotlin.math.roundToInt
 data class LogItem(val id: String, val name: String, val today: String, val progress: Float? = null)
 
 /**
- * What the face menu, the Tile and the «more» list offer: [face] in catalog order (moods are one
- * separate button), [more] the trackers only the Tile and the list carry.
+ * What the centre menu offers: [face] in catalog order (moods are one separate button), and the
+ * [supplements] its Suplementos button opens, which is every catalog row outside the face.
  */
-data class LogMenu(val face: List<LogItem>, val more: List<LogItem>)
-
-/** The Tile's 2x3 grid: up to four face trackers, then mood and «more»; the rest go to the list. */
-data class TileGrid(val trackers: List<LogItem>, val more: List<LogItem>)
-
-fun tileGrid(menu: LogMenu): TileGrid = TileGrid(menu.face.take(4), menu.face.drop(4) + menu.more)
+data class LogMenu(val face: List<LogItem>, val supplements: List<LogItem>)
 
 // Before the Worker sends its catalog, the watch still offers what it always had.
 private val FALLBACK = listOf(
