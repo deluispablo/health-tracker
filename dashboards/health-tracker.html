@@ -1,6 +1,6 @@
 <title>Health Tracker</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<script type="application/json" id="mcp-manifest">{"servers":[{"server":"Pixel Health","tools":["health_status","health_daily","health_sleep","health_workouts","health_trackers","health_log_event","health_delete_event","health_intraday","health_sql"]}]}</script>
+<script type="application/json" id="mcp-manifest">{"servers":[{"server":"Pixel Health","tools":["health_status","health_daily","health_sleep","health_workouts","health_trackers","health_profile","health_log_event","health_delete_event","health_intraday","health_sql"]}]}</script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Red+Hat+Mono:wght@400;500&display=swap');
   /* Tokens: Health Tracker design system (tokens.css). Light by default; dark by preference or data-theme. */
@@ -1034,6 +1034,8 @@
   }
 
   /* ---- steps expected by now: an active day 07:00-23:00 ---- */
+  /* The owner's step goal from health_profile; 8,000 until the profile is readable. */
+  const stepGoal = (p) => Number.isInteger(p?.step_goal) && p.step_goal > 0 ? p.step_goal : 8000;
   const expectedSteps = (min, goal) => Math.round(Math.min(goal, Math.max(0, goal * (min - 420) / (1380 - 420))));
 
   /* ---- dial geometry: 0 deg at 00:00 (top), clockwise; local minutes from each item's own local time ---- */
@@ -1199,7 +1201,7 @@
 
   window.HTLogic = {
     COPY, t, tn, pickLang, fmt: { num, signed, dur, ago, day, vital, range }, VITALS, shiftDate, dayValue, typicalRange, rangeStatus, rangeFlag, outliers,
-    recovery, expectedSteps, dialAngle, localMinutes, sleepWedge, clipWorkout, mainSession, CHIPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
+    recovery, stepGoal, expectedSteps, dialAngle, localMinutes, sleepWedge, clipWorkout, mainSession, CHIPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
     available, summary, dialEvents, dayItems, stageMinutes, gapRuns, GROUP_MIN, clusterEvents, writeQueue, doubleTap, NIGHT_END, dayFor, bridgeEvents,
     applyLog, applyUndo, acceptSnapshot, syncLabel, errorKind
   };
@@ -1345,6 +1347,7 @@
     'act.wkEmptyB': ['Workouts recorded on the watch appear here after it syncs.', 'Los entrenos que registre el reloj aparecen aquí cuando sincroniza.'],
     'act.wkTime': ['Time', 'Hora'],
     'act.wkHr': ['Average heart rate', 'Pulso medio'],
+    'act.wkMaxHr': ['Maximum heart rate', 'Pulso máximo'],
     'act.wkKcal': ['Energy', 'Energía'],
     'act.wkDist': ['Distance', 'Distancia'],
     'act.wkAzm': ['Active zone minutes', 'Minutos en zona activa'],
@@ -1417,7 +1420,8 @@
 (async () => {
   'use strict';
   const L = window.HTLogic, $ = (id) => document.getElementById(id);
-  const SERVER = 'Pixel Health', GOAL = 8000;
+  const SERVER = 'Pixel Health';
+  let GOAL = L.stepGoal(null);
   const WATCH = { cache: { staleTime: 300000, gcTime: 86400000 }, refetchInterval: 300000 };
   const FRESH = { cache: { refresh: true, gcTime: 86400000 } };
   const SOURCES = ['status', 'daily', 'sleep', 'trackers', 'workouts'];
@@ -1740,7 +1744,7 @@
   function workoutFacts(w) {
     const mins = finiteNum(w.duration_min) ? w.duration_min : Math.round((Date.parse(w.end_local + 'Z') - Date.parse(w.start_local + 'Z')) / 60000), u = (k) => ' ' + t(k);
     return { icon: icon('actividad', 'ht-ico-sm'), title: wkName(w.type), when: span2(String(w.start_local).slice(11, 16), String(w.end_local).slice(11, 16)), big: finiteNum(mins) && mins > 0 ? fmt.dur(mins, lang) : null,
-      lines: [[t('act.wkHr'), finiteNum(w.avg_hr) && fmt.num(w.avg_hr, lang) + u('u.bpm')], [t('act.wkKcal'), finiteNum(w.kcal) && fmt.num(w.kcal, lang) + u('u.kcal')],
+      lines: [[t('act.wkHr'), finiteNum(w.avg_hr) && fmt.num(w.avg_hr, lang) + u('u.bpm')], [t('act.wkMaxHr'), finiteNum(w.max_hr) && fmt.num(w.max_hr, lang) + u('u.bpm')], [t('act.wkKcal'), finiteNum(w.kcal) && fmt.num(w.kcal, lang) + u('u.kcal')],
         [t('act.wkDist'), finiteNum(w.distance_m) && w.distance_m > 0 && fmt.num(w.distance_m / 1000, lang, 1) + u('u.km')], [t('act.wkAzm'), finiteNum(w.azm) && fmt.num(w.azm, lang) + u('u.min')]].filter((x) => x[1]) };
   }
   const STAGE_ORDER = ['DEEP', 'LIGHT', 'REM', 'AWAKE'], STAGE_K = { DEEP: 'm-deep', REM: 'm-rem', LIGHT: 'm-light', AWAKE: 'm-awake' };
@@ -2075,10 +2079,10 @@
      They start when the tab is first shown and use the shared subscribe/readOnce/sourceState helpers. */
   const HV_ORDER = ['hrv_rmssd', 'rhr', 'resp_rate', 'spo2_avg', 'skin_temp_dev'];
   const HV_COLOR = { hrv_rmssd: 'm-hrv', rhr: 'm-hr', resp_rate: 'primary', spo2_avg: 'primary', skin_temp_dev: 'primary' };
-  const HV_MARKS = [['cafe', 'caffeine_mg', 'm-caffeine'], ['cigarro', 'cigarettes', 'm-cig'], ['alcohol', 'alcohol_g', 'm-alcohol']];
+  const HV_MARKS = [['cafe', 'caffeine_mg', 'm-caffeine'], ['cigarro', 'cigarettes', 'm-cig'], ['alcohol', 'alcohol_g', 'm-alcohol'], ['animo', L.MOODS.map((m) => m.id), 'm-mood']];
   Object.assign(TOOLS, { vitals: 'health_daily', hr: 'health_intraday', hrev: 'health_intraday' });
   Object.assign(INPUTS, {
-    vitals: (d) => ({ start: L.shiftDate(d, -89), end: d, metrics: [...L.VITALS, ...HV_MARKS.map((m) => m[1])] }),
+    vitals: (d) => ({ start: L.shiftDate(d, -89), end: d, metrics: [...L.VITALS, ...HV_MARKS.flatMap((m) => m[1])] }),
     hr: (d) => ({ metric: 'hr', date: d, resolution: '5m' })
   });
   ['vitals', 'hr', 'hrev'].forEach((n) => { S[n] = reset({ token: 0, unsubscribe: null }); });
@@ -2133,7 +2137,7 @@
   /* ---- one vital: value, usual range, flag, trend with its band ---- */
   function hvRow(m, d, outs, W) {
     const v = L.dayValue(d, m, dayDate), r = L.typicalRange(d, m, dayDate), wide = L.typicalRange(d, m, dayDate, true);
-    const ser = L.series(d, m, dayDate, hvDays), marks = hvMark ? L.series(d, hvMark[1], dayDate, hvDays) : null;
+    const ser = L.series(d, m, dayDate, hvDays), marks = hvMark ? [].concat(hvMark[1]).map((k) => L.series(d, k, dayDate, hvDays)).reduce((a, b) => a.map((x, i) => ({ ...x, v: (x.v ?? 0) + (b[i].v ?? 0) }))) : null;   // mood: any of the eight per day
     const out = outs.find((o) => o.metric === m), learning = r.learning != null, name = t(L.VMETA[m][0]);
     const ref = L.HREF[m], refText = ref ? t('hv.ref', { x: ref[1] == null ? t('hv.atLeast', { x: fmt.vital(m, ref[0], lang) }) : fmt.range(m, { low: ref[0], high: ref[1] }, lang) }) : null;
     // chart geometry
@@ -2357,11 +2361,11 @@
     sub.textContent = t('bars.met', { a: met, b: done.length });
     const n0 = (x) => fmt.num(x, lang);
     swap(box, actBars({ values: series.map((x) => x.v), partial: past ? -1 : ACT_DAYS - 1, band, dim: (q) => q < GOAL,
-      refs: [{ v: GOAL, ink: true }, { v: STEPS_REF[0] }],
+      refs: [{ v: GOAL, ink: true }, GOAL !== STEPS_REF[0] && { v: STEPS_REF[0] }].filter(Boolean),
       ticks: [0, 10, 20, ACT_DAYS - 1].map((i) => [i, i === ACT_DAYS - 1 && !past ? t('bars.today') : fmt.day(series[i].date, lang)]),
       titles: series.map((x) => x.v == null ? t('gap.day', { d: fmt.day(x.date, lang) }) : t('act.dayTitle', { d: fmt.day(x.date, lang), n: n0(x.v) })),
       label: t('bars.ariaDay', { n: done.length, g: n0(GOAL), a: met }) }),
-      actLegend(band && ['band', t('trend.band')], ['goal', t('bars.goal', { n: n0(GOAL) })], ['ref', t('act.ref', { n: n0(STEPS_REF[0]) })], !past && ['part', t('act.legPart')], series.some((x) => x.v == null) && ['nodata', t('gap.key')]),
+      actLegend(band && ['band', t('trend.band')], ['goal', t('bars.goal', { n: n0(GOAL) })], GOAL !== STEPS_REF[0] && ['ref', t('act.ref', { n: n0(STEPS_REF[0]) })], !past && ['part', t('act.legPart')], series.some((x) => x.v == null) && ['nodata', t('gap.key')]),
       h('p', { class: 'act-sub', text: [avg == null ? null : t('act.avg', { n: n0(avg) }), band ? t('base.normal', { x: n0(Math.round(r.low)) + '–' + n0(Math.round(r.high)) }) : t('range.learning', { n: r.learning })].filter(Boolean).join(' · ') }),
       h('details', { class: 'act-more' }, h('summary', { text: t('act.about') }), h('p', { text: t('act.refNote', { a: n0(STEPS_REF[0]), b: n0(STEPS_REF[1]), c: n0(STEPS_REF[2]) }) })),
       actTable(series.slice().reverse().map((x) => [fmt.day(x.date, lang), x.v == null ? '—' : n0(x.v)])),
@@ -2400,7 +2404,7 @@
     swap(box, h('ul', { class: 'act-wk' }, list.map((w) => {
       const start = String(w.start_local ?? ''), end = String(w.end_local ?? ''), key = start + '|' + w.type;
       const rows = [['act.wkTime', start.slice(11, 16) + '–' + end.slice(11, 16)],
-        ['act.wkHr', finiteNum(w.avg_hr) && fmt.num(w.avg_hr, lang) + u('u.bpm')], ['act.wkAzm', finiteNum(w.azm) && fmt.num(w.azm, lang) + u('u.min')],
+        ['act.wkHr', finiteNum(w.avg_hr) && fmt.num(w.avg_hr, lang) + u('u.bpm')], ['act.wkMaxHr', finiteNum(w.max_hr) && fmt.num(w.max_hr, lang) + u('u.bpm')], ['act.wkAzm', finiteNum(w.azm) && fmt.num(w.azm, lang) + u('u.min')],
         ['act.wkKcal', finiteNum(w.kcal) && fmt.num(w.kcal, lang) + u('u.kcal')], ['act.wkDist', finiteNum(w.distance_m) && w.distance_m > 0 && fmt.num(w.distance_m / 1000, lang, 1) + u('u.km')]].filter((r) => r[1]);
       return h('li', {}, h('details', { open: actOpen.has(key), ontoggle: (e) => { if (e.target.open) actOpen.add(key); else actOpen.delete(key); } },
         h('summary', { 'data-fk': 'wk-' + key },
@@ -2848,6 +2852,8 @@
   } catch (e) { connector = null; }
   noConnector = !connector;
   if (connector) { SOURCES.forEach(subscribe); syncNow(); }
+  /* The goal never blocks the page: on any failure the default stays. */
+  if (connector) connector.callTool(SERVER, 'health_profile', {}).then((r) => { GOAL = L.stepGoal(r?.payload); if (!stopped) render(); }).catch(() => {});
   render();
 })();
 </script>
