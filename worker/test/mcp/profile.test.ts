@@ -20,7 +20,15 @@ beforeEach(async () => { await env.DB.batch([env.DB.prepare("DELETE FROM profile
 
 describe("T35 AC2 profile reads", () => {
   it("returns the exact empty shape without persisting read defaults", async () => {
-    expect(await read()).toEqual(empty);
+    const batch = vi.fn((statements: D1PreparedStatement[]) => env.DB.batch(statements));
+    const db = new Proxy(env.DB, { get(target, property) {
+      if (property === "batch") return batch;
+      if (property === "prepare") return target.prepare.bind(target);
+      throw new Error(`unexpected operation ${String(property)}`);
+    } });
+    expect(await healthProfile(db, options)).toEqual(empty);
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect(batch.mock.calls[0][0]).toHaveLength(2);
     expect(await stored()).toEqual({ profile: [], weights: [] });
   });
 
@@ -50,29 +58,19 @@ describe("T35 AC2 profile reads", () => {
     const weights = Array.from({ length: 92 }, (_, i) => ({ date: new Date(Date.UTC(2000, 0, i + 1)).toISOString().slice(0, 10), kg: 30 }));
     await env.DB.batch([
       ...weights.map(({ date, kg }) => env.DB.prepare("INSERT INTO weight_log VALUES (?, ?, 1)").bind(date, kg)),
-      ...[["garbage", 30], ["2026-02-30", 30], ["2026-12-31", "bad"], ["2026-12-30", 301], ["2026-12-29", 999999]]
+      env.DB.prepare("INSERT INTO weight_log VALUES ('2026-12-28', 1e999, 1), ('2026-12-27', -1e999, 1)"),
+      ...[["2026-2-01", 30], ["2026-02-29", 30], ["2026-11-31", 30], ["2026-12-26", 29.9], ["garbage", 30], ["2026-02-30", 30], ["2026-12-31", "bad"], ["2026-12-30", 301], ["2026-12-29", 999999]]
         .map(([date, kg]) => env.DB.prepare("INSERT INTO weight_log VALUES (?, ?, 1)").bind(date, kg)),
     ]);
-    // D1's JSON transport cannot represent non-finite values; inject at the read boundary.
-    const db = new Proxy(env.DB, { get(target, property) {
-      if (property === "prepare") return (sql: string) => {
-        const statement = target.prepare(sql);
-        if (!sql.includes("FROM weight_log")) return statement;
-        return { all: async () => {
-          const result = await statement.all<{ local_date: string; kg: number }>();
-          return { ...result, results: result.results.map((row) => ({ ...row, kg: row.kg === 999999 ? Infinity : row.kg })) };
-        } };
-      };
-      throw new Error(`unexpected operation ${String(property)}`);
-    } });
     const expected = weights.reverse().slice(0, 90);
-    expect(await healthProfile(db, options)).toEqual({ ...empty, weight_kg: 30, weight_date: expected[0].date, weight_history: expected });
+    expect(await healthProfile(env.DB, options)).toEqual({ ...empty, weight_kg: 30, weight_date: expected[0].date, weight_history: expected });
     expect(await set({ smoker: false })).toMatchObject({ smoker: false, weight_history: expected });
   });
 
   it.each(["profile", "weight_log"])("propagates a D1 %s read failure", async (table) => {
     const failure = new Error("private read sentinel");
     const db = new Proxy(env.DB, { get(target, property) {
+      if (property === "batch") return target.batch.bind(target);
       if (property === "prepare") return (sql: string) => {
         if (sql.includes(`FROM ${table}`)) throw failure;
         return target.prepare(sql);
@@ -96,7 +94,8 @@ describe("T35 AC3 profile updates", () => {
       .toEqual({ birth_year: 2027, sex: "female", height_cm: 100.2, weight_kg: 30.2, weight_date: "2027-01-01",
         step_goal: 1000, sleep_goal_min: 240, max_hr: 120, max_hr_source: "measured", smoker: false, age: 0,
         weight_history: [{ date: "2027-01-01", kg: 30.2 }] });
-    expect(batch).toHaveBeenCalledTimes(1);
+    expect(batch).toHaveBeenCalledTimes(2);
+    expect(batch.mock.calls.map(([statements]) => statements.length)).toEqual([8, 2]);
     expect(await env.DB.prepare("SELECT value FROM profile WHERE key = 'smoker'").first("value")).toBe("false");
     expect(await env.DB.prepare("SELECT value FROM profile WHERE key = 'sex'").first("value")).toBe('"female"');
     expect((await stored()).profile).toEqual(expect.arrayContaining([expect.objectContaining({ updated_at: options.now })]));

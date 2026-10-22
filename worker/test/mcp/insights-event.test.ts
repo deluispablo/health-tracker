@@ -1,6 +1,7 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { dateTimeFormat } from "../../src/lib/time";
 import { ACUTE, acuteDays, candidateTimes, loadAcuteInput } from "../../src/mcp/tools/insights/event";
 import type { AcuteInput, WindowAgg } from "../../src/mcp/tools/insights/event";
 import type { AcuteTracker } from "../../src/mcp/tools/insights/types";
@@ -180,6 +181,17 @@ async function seedMinutes(start: number, count: number, bumpAt: number, dst = f
 }
 const params = { ...range, nowSec: day + 2 * 86400, tz: "UTC" };
 describe("acute D1 loading", () => {
+  it("reuses the cached zone formatter across loads", async () => {
+    dateTimeFormat("en-US", { timeZone: params.tz, timeZoneName: "longOffset" });
+    const constructor = vi.spyOn(Intl, "DateTimeFormat");
+    try {
+      await loadAcuteInput(env.DB, params);
+      await loadAcuteInput(env.DB, params);
+      expect(constructor).not.toHaveBeenCalled();
+    } finally {
+      constructor.mockRestore();
+    }
+  });
   it("returns aggregates for exactly candidateTimes and an end-to-end 8 bpm bump", async () => {
     await seedTap(tap().ts); await seedTap(tap().ts + 60, 0, true);
     await seedMinutes(day - 900, 1590, tap().ts);

@@ -76,7 +76,7 @@ describe("T31 idle cron", () => {
       expect(await env.DB.prepare("SELECT local_date, computed_at FROM daily_summary").first())
         .toEqual({ local_date: "2026-10-21", computed_at: now });
       expect(await env.DB.prepare("SELECT local_date, total FROM tracker_daily").first())
-        .toEqual({ local_date: "2026-10-21", total: 80 });
+        .toBeNull();
       expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first("n")).toBe(exhausted ? 1 : 0);
     } finally { createClient.mockRestore(); }
   });
@@ -131,7 +131,7 @@ describe("AC1 five-minute cron", () => {
     expect((await env.DB.prepare("SELECT metric, ts, value FROM metric_minute").all()).results).toEqual([{ metric: "hr", ts: at("2026-10-20T21:00:00Z"), value: 61 }]);
     expect((await env.DB.prepare("SELECT local_date, hr_wear_min, computed_at FROM daily_summary ORDER BY local_date").all()).results).toEqual([
       { local_date: "2026-10-20", hr_wear_min: 1, computed_at: NOW },
-      { local_date: "2026-10-21", hr_wear_min: 0, computed_at: NOW }]);
+      { local_date: "2026-10-21", hr_wear_min: null, computed_at: NOW }]);
     expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first()).toEqual({ n: 0 });
   });
 
@@ -194,7 +194,7 @@ describe("T10e AC1/AC2 watch sync in the five-minute cron", () => {
       { local_date: "2026-10-21", steps: 8123, computed_at: now },
     ]);
     expect((await env.DB.prepare("SELECT local_date, tracker_id, total, n FROM tracker_daily").all()).results)
-      .toEqual([{ local_date: "2026-10-21", tracker_id: "caffeine", total: 80, n: 1 }]);
+      .toEqual([]);
     expect(await env.DB.prepare("SELECT * FROM sync_state WHERE data_type = 'sleep'").first()).toEqual(other);
   }
 
@@ -286,7 +286,7 @@ describe("T10e AC1/AC2 watch sync in the five-minute cron", () => {
     },
   );
 
-  it.each([false, true])("swallows a watch upsert failure and still completes both rollups (lookup rejects: %s)", async (reject) => {
+  it.each([false, true])("logs a watch upsert failure and still completes daily rollups (lookup rejects: %s)", async (reject) => {
     await storeRefreshToken();
     await seedWatch();
     await env.DB.prepare(`CREATE TRIGGER fail_watch_write BEFORE INSERT ON sync_state
@@ -298,18 +298,40 @@ describe("T10e AC1/AC2 watch sync in the five-minute cron", () => {
       calls.push(url);
       return reject && url.endsWith("/pairedDevices") ? Promise.reject(new Error("watch lookup failed")) : g.fetch(input, init);
     };
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       await handleScheduled("*/5 * * * *", appEnv(), deps(fetch));
       await rollupsCompleted();
       expect(await state()).toEqual(previous);
+      expect(log).toHaveBeenCalledExactlyOnceWith("watch persistence", expect.stringContaining("watch write unavailable"));
       expect(calls.filter((url) => url.endsWith("/pairedDevices"))).toHaveLength(1);
     } finally {
+      log.mockRestore();
       await env.DB.prepare("DROP TRIGGER fail_watch_write").run();
     }
   });
 });
 
 describe("AC2 daily cron", () => {
+  it.each(["2026-10-21T04:30:27Z", "2026-10-20T22:30:00Z"])(
+    "repairs exactly the last eight local dates at %s, removing stale and deleted totals", async (iso) => {
+      const dates = Array.from({ length: 10 }, (_, i) => `2026-10-${String(i + 13)}`);
+      await env.DB.batch(dates.flatMap((date) => [
+        env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at, deleted_at)
+          VALUES (?, 'caffeine', ?, 120, ?, 80, 'mcp', ?, ?)`)
+          .bind(date, NOW, date, NOW, date === "2026-10-17" ? NOW : null),
+        env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES (?, 'caffeine', 1, 1, 0)").bind(date),
+      ]));
+      const g = google();
+      await handleScheduled("30 4 * * *", appEnv(), { ...deps(g.fetch), now: () => at(iso) });
+      expect((await env.DB.prepare("SELECT local_date, total, n FROM tracker_daily ORDER BY local_date").all()).results)
+        .toEqual(dates.filter((date) => date !== "2026-10-17").map((local_date) => ({
+          local_date, total: ["2026-10-13", "2026-10-22"].includes(local_date) ? 1 : 80, n: 1,
+        })));
+      expect(g.calls).toEqual([]);
+    },
+  );
+
   it("T30 AC1 prunes audit rows older than 90 days, keeping the cutoff and newer rows", async () => {
     await env.DB.prepare("INSERT INTO audit_log (ts, kind) VALUES (?, 'auth'), (?, 'tool'), (?, 'tool')")
       .bind(NOW - 91 * 86400, NOW - 90 * 86400, NOW - 89 * 86400).run();

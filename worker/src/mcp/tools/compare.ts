@@ -29,9 +29,7 @@ function calendarTime(date: string): number {
 }
 
 // Callers validate column names before interpolation; dates always use bound parameters.
-export async function analysisSeries(db: D1Database, start: string, end: string, lag: number, columns: string[]): Promise<{
-  days: number; series: (number | null)[][];
-}> {
+function analysisSeriesQuery(db: D1Database, start: string, end: string, lag: number, columns: string[]) {
   const first = calendarTime(start);
   const days = (calendarTime(end) - first) / DAY + 1;
   if (days < 1 || days > 365) throw new RangeError("range must contain 1 to 365 dates");
@@ -51,19 +49,28 @@ export async function analysisSeries(db: D1Database, start: string, end: string,
       ON total_${column}.local_date = calendar.local_date AND total_${column}.tracker_id = '${trackers[column]}'`).join(" ")}`;
   const selected = columns.map((column) => behaviors.includes(column) ? `total_${column}.total AS ${column}` : `v_daily.${column}`);
   const dateColumn = behaviors.length === 0 ? "local_date" : "calendar.local_date";
-  const { results } = await db.prepare(
+  const statement = db.prepare(
     `SELECT ${dateColumn}, ${[...selected, ...eligibility].join(", ")} FROM ${source} ORDER BY ${dateColumn}`,
-  ).bind(...behaviors.map((column) => trackers[column]), start, dates[dates.length - 1]).all<{ local_date: string; [column: string]: unknown }>();
-  const rows = new Map(results.map((row) => [row.local_date, row]));
-  return { days, series: columns.map((column) => dates.map((date) => {
-    const row = rows.get(date);
-    if (BEHAVIORS.includes(column)) {
-      const firstBday = row?.[`first_bday_${column}`];
-      if (!row?.active_logging || typeof firstBday !== "string" || date <= firstBday) return null;
-    }
-    const value = row?.[column];
-    return typeof value === "number" && Number.isFinite(value) ? value : BEHAVIORS.includes(column) ? 0 : null;
-  })) };
+  ).bind(...behaviors.map((column) => trackers[column]), start, dates[dates.length - 1]);
+  const parse = (results: { local_date: string; [column: string]: unknown }[]) => {
+    const rows = new Map(results.map((row) => [row.local_date, row]));
+    return { days, series: columns.map((column) => dates.map((date) => {
+      const row = rows.get(date);
+      if (BEHAVIORS.includes(column)) {
+        const firstBday = row?.[`first_bday_${column}`];
+        if (!row?.active_logging || typeof firstBday !== "string" || date <= firstBday) return null;
+      }
+      const value = row?.[column];
+      return typeof value === "number" && Number.isFinite(value) ? value : BEHAVIORS.includes(column) ? 0 : null;
+    })) };
+  };
+  return { statement, parse };
+}
+
+export async function analysisSeries(db: D1Database, start: string, end: string, lag: number, columns: string[]) {
+  const query = analysisSeriesQuery(db, start, end, lag, columns);
+  const { results } = await query.statement.all<{ local_date: string; [column: string]: unknown }>();
+  return query.parse(results);
 }
 
 export async function healthCompare(db: D1Database, { behavior, outcome, start, end, lag_days = 1, bins = DEFAULT_BINS[behavior] }: {
@@ -75,11 +82,16 @@ export async function healthCompare(db: D1Database, { behavior, outcome, start, 
   if (bins.length < 1 || bins.length > 5 || bins.some((t, i) => !Number.isFinite(t) || t <= 0 || (i > 0 && t <= bins[i - 1]))) {
     throw new RangeError("bins must be 1 to 5 ascending positive finite numbers");
   }
-  const { days, series: [behaviors, outcomes] } = await analysisSeries(db, start, end, lag_days, [behavior, outcome]);
+  const query = analysisSeriesQuery(db, start, end, lag_days, [behavior, outcome]);
   const tracker = { cigarettes: "cigarettes", alcohol_g: "alcohol", caffeine_mg: "caffeine" }[behavior];
-  const { results: [behavior_logging] } = await db.prepare(
-    "SELECT COUNT(*) AS logged_days, MIN(local_date) AS first_logged_date, MAX(local_date) AS last_logged_date FROM tracker_daily WHERE tracker_id = ? AND local_date BETWEEN ? AND ?",
-  ).bind(tracker, start, end).all<{ logged_days: number; first_logged_date: string | null; last_logged_date: string | null }>();
+  const [seriesResult, loggingResult] = await db.batch<{ local_date: string; [column: string]: unknown } | { logged_days: number; first_logged_date: string | null; last_logged_date: string | null }>([
+    query.statement,
+    db.prepare(
+      "SELECT COUNT(*) AS logged_days, MIN(local_date) AS first_logged_date, MAX(local_date) AS last_logged_date FROM tracker_daily WHERE tracker_id = ? AND local_date BETWEEN ? AND ?",
+    ).bind(tracker, start, end),
+  ]);
+  const { days, series: [behaviors, outcomes] } = query.parse(seriesResult.results as { local_date: string; [column: string]: unknown }[]);
+  const behavior_logging = loggingResult.results[0] as { logged_days: number; first_logged_date: string | null; last_logged_date: string | null };
   const labels = ["0", ...bins.map((t, i) => `>${String(i === 0 ? 0 : bins[i - 1])}–${String(t)}`), `>${String(bins[bins.length - 1])}`];
   const groups = labels.map((): number[] => []);
   let n = 0;

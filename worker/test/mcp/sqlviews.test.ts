@@ -1,14 +1,17 @@
+import { Parser } from "node-sql-parser/build/sqlite";
 import { describe, expect, it } from "vitest";
 import { viewsOnly } from "../../src/mcp/tools/sqlviews";
 
+const parser = new Parser();
+
 function refuses(sql: string, reason: RegExp = /\S/) {
-  const result: unknown = viewsOnly(sql);
+  const result: unknown = viewsOnly(sql, parser);
   expect(result, sql).toMatchObject({ ok: false });
   expect(result, sql).toHaveProperty("reason", expect.stringMatching(reason));
 }
 
 function accepts(sql: string) {
-  expect(viewsOnly(sql), sql).toEqual({ ok: true });
+  expect(viewsOnly(sql, parser), sql).toEqual({ ok: true });
 }
 
 describe("T11 AC3e parser layer allows only the four views and declared CTEs", () => {
@@ -47,6 +50,6 @@ describe("T11 AC3e parser layer allows only the four views and declared CTEs", (
     "SELECT AVG(rhr) OVER (PARTITION BY 1 ORDER BY local_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) FROM v_daily",
     "SELECT AVG(rhr) OVER (PARTITION BY 1 ORDER BY local_date RANGE BETWEEN 6 PRECEDING AND CURRENT ROW) FROM v_daily",
   ])("refuses syntax the parser does not support with rewrite hints: %s", (sql) => {
-    expect(viewsOnly(sql)).toEqual({ ok: false, reason: "unsupported SQL syntax: window functions need PARTITION BY (use PARTITION BY 1 for the whole table) and window frames (ROWS/RANGE BETWEEN) are not supported; compute rolling values with a correlated subquery; quote identifiers with double quotes" });
+    expect(viewsOnly(sql, parser)).toMatchObject({ ok: false, reason: "unsupported SQL syntax; quote identifiers with double quotes", error: expect.any(Error) as unknown });
   });
 });

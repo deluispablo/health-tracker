@@ -73,7 +73,22 @@ describe("AC1 base columns", () => {
   it("writes a row for every date in the range, with nulls when there is no data", async () => {
     expect(await recomputeDailySummary(env.DB, "2026-10-01", "2026-10-03", NOW)).toBe(3);
     const rows = (await env.DB.prepare("SELECT local_date, rhr, sleep_min, steps, workout_min, hr_wear_min FROM daily_summary ORDER BY local_date").all()).results;
-    expect(rows).toEqual(["2026-10-01", "2026-10-02", "2026-10-03"].map((d) => ({ local_date: d, rhr: null, sleep_min: null, steps: null, workout_min: null, hr_wear_min: 0 })));
+    expect(rows).toEqual(["2026-10-01", "2026-10-02", "2026-10-03"].map((d) => ({ local_date: d, rhr: null, sleep_min: null, steps: null, workout_min: null, hr_wear_min: null })));
+  });
+
+  it("repairs zero wear on recompute and follows HR ingestion and removal", async () => {
+    const D = "2026-10-01";
+    await summary(D, { hr_wear_min: 0 });
+    await minute(at("2026-10-01T10:00:00Z"), 120, "steps");
+    await minute(at("2026-10-01T10:00:00Z"), 120, "hr", "other");
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect((await row(D))?.hr_wear_min).toBeNull();
+    await minute(at("2026-10-01T10:00:00Z"));
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect((await row(D))?.hr_wear_min).toBe(1);
+    await env.DB.prepare("DELETE FROM metric_minute WHERE metric = 'hr' AND source = 'gh'").run();
+    await recomputeDailySummary(env.DB, D, D, NOW);
+    expect((await row(D))?.hr_wear_min).toBeNull();
   });
 
   it("replaces an existing row on recompute and leaves dates outside the range alone", async () => {

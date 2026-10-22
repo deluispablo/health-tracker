@@ -1,9 +1,6 @@
-import { Parser } from "node-sql-parser/build/sqlite";
-import type { From, With } from "node-sql-parser/build/sqlite";
+import type { From, Parser, With } from "node-sql-parser/build/sqlite";
 
-const parser = new Parser();
-
-export function viewsOnly(sql: string): { ok: true } | { ok: false; reason: string } {
+export function viewsOnly(sql: string, parser: Parser): { ok: true } | { ok: false; reason: string; error?: unknown } {
   try {
     const { ast, tableList } = parser.parse(sql);
     const statements = Array.isArray(ast) ? ast : [ast];
@@ -39,10 +36,11 @@ export function viewsOnly(sql: string): { ok: true } | { ok: false; reason: stri
       }
     }
     return { ok: true };
-  } catch {
+  } catch (error) {
     return {
       ok: false,
-      reason: "unsupported SQL syntax: window functions need PARTITION BY (use PARTITION BY 1 for the whole table) and window frames (ROWS/RANGE BETWEEN) are not supported; compute rolling values with a correlated subquery; quote identifiers with double quotes",
+      reason: "unsupported SQL syntax; quote identifiers with double quotes",
+      error,
     };
   }
 }

@@ -172,12 +172,13 @@ export async function evaluateScan(db: D1Database, origin: ScanOrigin, opts: Eva
   return computeScan(t, acute, origin, opts);
 }
 
-export async function healthScan(db: D1Database, args: unknown, deps: { nowSec: number; tz: string }): Promise<Record<string, unknown> & Envelope> {
+export async function healthScan(db: D1Database, args: unknown, deps: { nowSec: number; tz: string }, ctx: ExecutionContext): Promise<Record<string, unknown> & Envelope> {
   const { origin, limit } = validateScanArgs(args, deps.nowSec, deps.tz);
   const family = await evaluateScan(db, origin, deps);
   const result = shapeResponse({ rows: rankRows(family.rows).slice(0, limit).map(publicRow), skipped: family.extra.skipped }, ["rows", "skipped"],
     { range: family.resolved, excluded: family.excluded, tests: family.tests, tests_last_24h: family.tests_last_24h + family.tests });
   result.truncated ||= family.rows.length > limit;
-  await analysisLogStatement(db, "health_scan", family.tests, deps.nowSec * 1000).run();
+  ctx.waitUntil(Promise.resolve().then(() => analysisLogStatement(db, "health_scan", family.tests, deps.nowSec * 1000).run())
+    .catch((cause: unknown) => { console.error("analysis_log health_scan", cause instanceof Error ? cause.name : "UnknownError"); }));
   return { ...result };
 }

@@ -326,7 +326,9 @@ export async function drainSyncPending(
 
       await db.batch([...statements, remove]);
       processed++;
-    } catch {
+    } catch (cause) {
+      const status = cause instanceof Error ? cause.message.match(/^(?:Google API |Google token refresh failed: )([45]\d{2})$/) : null;
+      console.error(type, cause instanceof Error ? cause.name : "UnknownError", ...(status ? [Number(status[1])] : []));
       await db.prepare(`UPDATE sync_pending SET attempts = attempts + 1 WHERE ${predicate}`).bind(...key).run();
       failed++;
     }

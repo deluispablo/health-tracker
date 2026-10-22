@@ -93,12 +93,12 @@ describe("T10f AC5 healthWorkouts", () => {
     const { db, sql } = guarded();
     const args = { start: "2026-10-02", end: "2026-10-02" };
     expect((await query(db, args)).workouts.map((w) => w.max_hr)).toEqual([150.3, 160.2, null]);
-    expect(sql.length).toBeLessThanOrEqual(2);
+    expect(sql.length).toBe(1);
     await env.DB.prepare("UPDATE metric_minute SET vmax = 0 WHERE metric = 'hr' AND source = 'gh'").run();
     expect((await query(env.DB, args)).workouts.map((w) => w.max_hr)).toEqual([0, 0, null]);
   });
 
-  it("T38 AC2 returns 101 workouts with correct HR maxima using at most two SELECTs and 100 binds each", async () => {
+  it("T38 AC2 returns 101 workouts with correct HR maxima using one SELECT and 100 binds each", async () => {
     const start = at("2026-10-02T00:00:00Z");
     await env.DB.batch(Array.from({ length: 101 }, (_, i) => env.DB.prepare(`INSERT INTO workout
       (source_id, type, start_ts, end_ts, tz_offset_min, local_date, updated_at)
@@ -109,15 +109,15 @@ describe("T10f AC5 healthWorkouts", () => {
     const out = await query(db, { start: "2026-10-02", end: "2026-10-02" });
     expect(out.count).toBe(101);
     expect(out.workouts.map((w) => w.max_hr)).toEqual(Array.from({ length: 101 }, (_, i) => 100 + i));
-    expect(sql.length).toBeLessThanOrEqual(2);
+    expect(sql.length).toBe(1);
   });
 
-  it("T38 AC2 rejects a failed HR read after the workout read succeeds", async () => {
+  it("T38 AC2 rejects a failed combined workout and HR read", async () => {
     await seed("probe");
-    const { db, sql } = guarded(2);
+    const { db, sql } = guarded(1);
     await expect(query(db, { start: "2026-10-02", end: "2026-10-02" })).rejects.toThrow("D1 down");
-    expect(sql).toHaveLength(2);
-    expect(sql[1]).toMatch(/metric_minute/i);
+    expect(sql).toHaveLength(1);
+    expect(sql[0]).toMatch(/metric_minute/i);
   });
 
   it.each([
@@ -142,12 +142,12 @@ describe("T10f AC5 healthWorkouts", () => {
     expect(await query(env.DB, { start, end })).toEqual({ workouts: [], count: 0 });
   });
 
-  it("performs at most two bound reads including an empty result from workout in the required order and never writes", async () => {
+  it("performs one bound read including an empty result from workout in the required order and never writes", async () => {
     const { db, sql, binds } = guarded();
     expect(await query(db, { start: "2026-10-02", end: "2026-10-03" })).toEqual({ workouts: [], count: 0 });
-    expect(sql.length).toBeLessThanOrEqual(2);
+    expect(sql.length).toBe(1);
     expect(sql.length).toBeGreaterThan(0);
-    expect(sql[0]).toMatch(/FROM\s+workout\s+WHERE\s+local_date\s+BETWEEN\s+\?\s+AND\s+\?\s+ORDER\s+BY\s+start_ts\s*,\s*source_id/i);
+    expect(sql[0]).toMatch(/FROM\s+workout\s+w\s+WHERE\s+local_date\s+BETWEEN\s+\?\s+AND\s+\?\s+ORDER\s+BY\s+start_ts\s*,\s*source_id/i);
     expect(sql[0]).not.toContain("2026-10");
     expect(binds).toHaveLength(sql.length);
     for (const [i, query] of sql.entries()) {

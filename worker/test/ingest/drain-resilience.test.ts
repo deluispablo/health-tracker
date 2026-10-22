@@ -1,6 +1,6 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGoogleClient } from "../../src/google/client";
 import { drainSyncPending } from "../../src/ingest/drain";
 
@@ -12,9 +12,9 @@ const drainEnv = (DB = env.DB) => ({ DB, USER_TZ: "Europe/Madrid" });
 
 function client(value: number, failingType = "", failure?: Failure): Parameters<typeof drainSyncPending>[1] {
   function answer<T extends object>(type: string, point: T): T {
-    if (type === failingType && failure === "google") throw new Error("Google down");
+    if (type === failingType && failure === "google") throw new Error("Google down weight_kg=72.4");
     return type === failingType && failure === "mapping"
-      ? new Proxy(point, { get() { throw new Error("mapping failed"); } }) : point;
+      ? new Proxy(point, { get() { throw new Error("mapping failed weight_kg=72.4"); } }) : point;
   }
   return {
     rollUpSteps: () => Promise.resolve([]),
@@ -45,6 +45,8 @@ async function stored(type: string) {
   return type === "sleep" ? [rows, (await env.DB.prepare("SELECT * FROM sleep_stage").all()).results] : rows;
 }
 
+afterEach(() => { vi.restoreAllMocks(); });
+
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
 beforeEach(async () => {
   await env.DB.batch(["DROP TRIGGER IF EXISTS fail_write", "DROP TRIGGER IF EXISTS fail_attempt",
@@ -54,6 +56,7 @@ beforeEach(async () => {
 
 describe.each(types)("T23 AC1/AC3 isolation for %s", (type) => {
   it.each<Failure>(["google", "mapping", "binding", "batch"])("counts a %s failure, preserves stored data and drains other types", async (failure) => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
     await queue();
     expect(await drainSyncPending(drainEnv(), client(99), { now: () => 1 })).toEqual({ processed: 5, failed: 0 });
     const before = await stored(type);
@@ -62,18 +65,20 @@ describe.each(types)("T23 AC1/AC3 isolation for %s", (type) => {
     let db = env.DB;
     if (failure === "batch") {
       await env.DB.prepare(`CREATE TRIGGER fail_write BEFORE INSERT ON ${table}
-        ${metric ? `WHEN NEW.metric = '${metric}'` : ""} BEGIN SELECT RAISE(ABORT, 'write failed'); END`).run();
+        ${metric ? `WHEN NEW.metric = '${metric}'` : ""} BEGIN SELECT RAISE(ABORT, 'write failed weight_kg=72.4'); END`).run();
     } else if (failure === "binding") {
       db = { prepare: (sql: string) => {
         const statement = env.DB.prepare(sql);
         if (!sql.startsWith(`INSERT INTO ${table} `)) return statement;
         return { bind: (...values: unknown[]) => {
-          if (!metric || values[0] === metric) throw new Error("bind failed");
+          if (!metric || values[0] === metric) throw new Error("bind failed weight_kg=72.4");
           return statement.bind(...values);
         } };
       }, batch: (statements: D1PreparedStatement[]) => env.DB.batch(statements) } as D1Database;
     }
     expect(await drainSyncPending(drainEnv(db), client(61, type, failure), { now: () => 2 })).toEqual({ processed: 4, failed: 1 });
+    expect(log).toHaveBeenCalledExactlyOnceWith(type, "Error");
+    expect(JSON.stringify(log.mock.calls)).not.toContain("weight_kg=72.4");
     expect(await pending()).toEqual([{ data_type: type, attempts: 1 }]);
     expect(await stored(type)).toEqual(before);
   });
@@ -81,7 +86,7 @@ describe.each(types)("T23 AC1/AC3 isolation for %s", (type) => {
 
 it("T23 AC1 rejects when the attempt update after a batch failure also fails", async () => {
   await queue();
-  await env.DB.prepare("CREATE TRIGGER fail_write BEFORE INSERT ON metric_minute BEGIN SELECT RAISE(ABORT, 'write failed'); END").run();
+  await env.DB.prepare("CREATE TRIGGER fail_write BEFORE INSERT ON metric_minute BEGIN SELECT RAISE(ABORT, 'write failed weight_kg=72.4'); END").run();
   await env.DB.prepare("CREATE TRIGGER fail_attempt BEFORE UPDATE ON sync_pending BEGIN SELECT RAISE(ABORT, 'attempt failed'); END").run();
   await expect(drainSyncPending(drainEnv(), client(61))).rejects.toThrow("attempt failed");
   expect(await pending()).toHaveLength(5);
@@ -103,4 +108,17 @@ it("T23 AC2 stores only the valid minute when a rollup point lacks its average",
   expect((await env.DB.prepare("SELECT ts, value, vmin, vmax FROM metric_minute").all()).results)
     .toEqual([{ ts: START + 60, value: 61, vmin: 60, vmax: 62 }]);
   expect(await pending()).toEqual([]);
+});
+
+it("logs only the error name and HTTP status for Google failures", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  await queue(["heart-rate"]);
+  const googleClient = createGoogleClient({
+    fetch: () => Promise.resolve(new Response("weight_kg=72.4", { status: 503 })),
+    kv: { get: () => Promise.resolve("access") } as unknown as KVNamespace,
+    clientId: "cid", clientSecret: "secret", refreshToken: "refresh", sleep: () => Promise.resolve(),
+  });
+  expect(await drainSyncPending(drainEnv(), googleClient)).toEqual({ processed: 0, failed: 1 });
+  expect(log).toHaveBeenCalledExactlyOnceWith("heart-rate", "Error", 503);
+  expect(JSON.stringify(log.mock.calls)).not.toContain("weight_kg=72.4");
 });

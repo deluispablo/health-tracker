@@ -17,7 +17,7 @@ async function sleep(id:string, wake:string, start = wake+"T00:00:00Z", bed = 48
   await env.DB.prepare("INSERT INTO sleep_session (source_id,start_ts,end_ts,tz_offset_min,local_date,is_nap,minutes_asleep,minutes_in_bed,deep_min,rem_min,updated_at) VALUES (?,?,?,?,?,?,?,?,60,90,1)")
     .bind(id,Date.parse(start)/1000,Date.parse(end)/1000,offset,wake,nap,asleep,bed).run();
 }
-async function summary(day:string,wear:number,workout:number|null = null) {
+async function summary(day:string,wear:number|null,workout:number|null = null) {
   await env.DB.prepare("INSERT INTO daily_summary (local_date,steps,hr_wear_min,workout_min,ln_rmssd,computed_at) VALUES (?,5000,?,?,4,1)").bind(day,wear,workout).run();
 }
 beforeAll(async () => {
@@ -145,6 +145,16 @@ it("applies wear and zero-denominator gates", async () => {
   expect(t.metric.deep_pct[b]).toBeNull();
   expect(t.metric.hrv[b]).toBe(4);
   expect(t.behavior.short_sleep[b]).toBe(1);
+});
+it.each([null,0,599,600])("requires confirmed wear for steps and workout absence: %s", async wear => {
+  await summary("2026-10-02",wear);
+  await summary("2026-10-03",wear,30);
+  const t=await loadDayTable(env.DB,range(),now);
+  const absent=t.idx("2026-10-02"),present=t.idx("2026-10-03");
+  expect([t.metric.steps[absent],t.behavior.steps[absent],t.metric.workout_min[absent],t.behavior.workout[absent]])
+    .toEqual(wear===600 ? [5000,5000,0,0] : [null,null,null,null]);
+  expect([t.metric.steps[present],t.behavior.steps[present],t.metric.workout_min[present],t.behavior.workout[present]])
+    .toEqual(wear===600 ? [5000,5000,30,1] : [null,null,null,1]);
 });
 it("uses workout ending times for late versus earlier-only windows", async () => {
   await sleep("s","2026-10-03");

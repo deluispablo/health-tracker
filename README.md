@@ -85,7 +85,7 @@ Freshness depends first on how often the watch syncs to the Google Health app (m
 |---|---|
 | `worker/` | The Worker (TypeScript, strict), D1 migrations and tests |
 | `py/` | Offline tooling (uv, Python 3.12+): manual export and restore check |
-| `dashboards/` | HTML dashboards that call the MCP tools |
+| `dashboards/` | HTML dashboard that calls the MCP tools |
 | `wear/` | Wear OS watch face and its companion app: [docs/watch.md](docs/watch.md) |
 | `docs/` | Architecture reference |
 
@@ -126,15 +126,9 @@ Notes:
 
 ## Dashboards
 
-The dashboards are self-contained HTML pages that read live data through the MCP connector of the client that hosts them (they are built for claude.ai artifacts and look for a connector named `Health Tracker`).
+The dashboard is a self-contained HTML page that reads live data through the MCP connector of the client that hosts it (it is built for claude.ai artifacts and looks for a connector named `Health Tracker`).
 
-| File | Content |
-|---|---|
-| `dashboards/today.html` | Day view: daily metrics, intraday heart rate, sleep stages |
-| `dashboards/tracker.html` | Tracker logging and totals |
-| `dashboards/trends.html` | Daily metrics over time |
-
-A single-file replacement, **Health Tracker** (`dashboards/health-tracker.html`), is on the `feature/health-tracker` branch and not yet merged:
+**Health Tracker** (`dashboards/health-tracker.html`):
 
 - Tabs: Today, Sleep, Health, Activity.
 - 24-hour day dial with sleep, workouts and logged events.
@@ -211,7 +205,7 @@ An unauthenticated request to `/mcp` returns `401` with a `WWW-Authenticate` hea
 
 ### 6. Dashboards and backups
 
-- Publish a file from `dashboards/` as an artifact in the client where the connector is enabled.
+- Publish `dashboards/health-tracker.html` as an artifact in the client where the connector is enabled.
 - Backup (run it manually, e.g. weekly; nothing schedules it): `uv run --directory py python src/health_tracker/export.py` from the repo root. It uses your logged-in `wrangler`.
 
 ### Development

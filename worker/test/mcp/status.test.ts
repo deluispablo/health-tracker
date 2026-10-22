@@ -8,7 +8,7 @@ interface Status {
   streams: { stream: string; latest_local: string | null; age_hours: number | null }[];
   queue: { pending: number; stuck: number; oldest_received_local: string | null };
   google: { connected: boolean; token_updated_local: string | null };
-  coverage: { date: string; hr_minutes: number }[];
+  coverage: { date: string; hr_minutes: number | null }[];
   alerts: { code: string; message: string }[];
 }
 const readStatus: (db: D1Database, options: { now: number; tz: string }) => Promise<Status> = healthStatus;
@@ -18,7 +18,7 @@ const options = { now: NOW, tz: "Europe/Madrid" };
 const codes = (out: Status) => out.alerts.map((alert) => alert.code);
 const coverage = (first: string, counts: Record<string, number> = {}) => Array.from({ length: 14 }, (_, i) => {
   const date = new Date(Date.parse(`${first}T00:00:00Z`) + i * 86400000).toISOString().slice(0, 10);
-  return { date, hr_minutes: counts[date] ?? 0 };
+  return { date, hr_minutes: counts[date] ?? null };
 });
 async function minute(ts: number, offset = 120, metric = "hr", source = "gh") {
   await env.DB.prepare("INSERT INTO metric_minute (metric, ts, tz_offset_min, value, source) VALUES (?, ?, ?, 60, ?)")
@@ -209,7 +209,7 @@ describe("T10d AC1 health_status", () => {
     const reads: string[] = [];
     const out = await readStatus(selectOnlyDb((sql) => { reads.push(sql); }), { ...options, now });
     expect(out.coverage).toEqual(
-      coverage("2026-10-13", { "2026-10-13": 2, "2026-10-25": 3, "2026-10-26": 1 }),
+      coverage("2026-10-13", { "2026-10-13": 2, "2026-10-15": 0, "2026-10-25": 3, "2026-10-26": 1 }),
     );
     const minuteReads = reads.filter((sql) => /\bmetric_minute\b/i.test(sql));
     expect(minuteReads).not.toHaveLength(0);
@@ -308,23 +308,23 @@ describe("T10d AC3 SELECT-only and all-or-nothing D1 reads", () => {
 });
 
 describe("T27 AC2 batched reads", () => {
-  it.each([0, 1, 3])("uses one name scan then one batch with %i gh metrics", async (count) => {
+  it.each([0, 1, 3])("uses one batch with %i gh metrics", async (count) => {
     for (let i = 0; i < count; i++) await minute(NOW - 60, 120, `metric-${String(i)}`);
     await minute(NOW, 120, "other-only", "other");
     const calls: string[] = [];
     const out = await readStatus(selectOnlyDb(() => {}, (method) => { calls.push(method); }), options);
-    expect(calls).toEqual(["all", "batch"]);
+    expect(calls).toEqual(["batch"]);
     expect(out.streams.filter((row) => row.stream.startsWith("metric:")).map((row) => row.stream))
       .toEqual(Array.from({ length: count }, (_, i) => `metric:metric-${String(i)}`));
   });
 
-  it("still batches the remaining reads when there are no metric names", async () => {
+  it("uses one batch when there are no metric names", async () => {
     const calls: string[] = [];
     await readStatus(selectOnlyDb(() => {}, (method) => { calls.push(method); }), options);
-    expect(calls).toEqual(["all", "batch"]);
+    expect(calls).toEqual(["batch"]);
   });
 
-  it("rejects a D1 batch failure after the successful name scan", async () => {
+  it("rejects a D1 batch failure", async () => {
     const failure = new Error("D1 batch unavailable");
     const db = new Proxy(env.DB, { get(t, p) {
       if (p === "batch") return () => Promise.reject(failure);
@@ -358,6 +358,7 @@ describe("QA1-F4 prolonged stream gaps", () => {
 
   it.each([
     ["three near-zero days", [0, 0.4, 1], true],
+    ["three unknown days", [null, null, null], false],
     ["two days", [600, 0, 0], false],
     ["coverage breaks the run", [0, 2, 0], false],
     ["null coverage breaks the run", [0, null, 0], false],

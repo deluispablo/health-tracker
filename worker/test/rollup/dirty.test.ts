@@ -165,16 +165,19 @@ describe("T24 AC2 drain marks", () => {
 });
 
 describe("T24 AC3–AC5 scheduled dirty rollup", () => {
-  it("skips every daily_summary write when idle, but rebuilds trackers for D-2..D only", async () => {
+  it("uses one three-statement batch for idle rollup checks without rebuilding summaries or trackers", async () => {
     await today();
     await env.DB.batch([-3, -2, -1, 0].map((n) => env.DB.prepare(`INSERT INTO event
       (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at) VALUES (?, 'caffeine', ?, 120, ?, 80, 'mcp', ?)`)
       .bind(String(n), NOW, day("2026-10-21", n), NOW)));
     await env.DB.prepare("CREATE TRIGGER no_daily BEFORE INSERT ON daily_summary BEGIN SELECT RAISE(ABORT, 'idle write'); END").run();
-    try { await tick(); } finally { await env.DB.prepare("DROP TRIGGER no_daily").run(); }
+    const batches: string[][] = [];
+    const db = observedDb((sql) => { batches.push(sql); return Promise.resolve(); });
+    try { await tick(db); } finally { await env.DB.prepare("DROP TRIGGER no_daily").run(); }
+    expect(batches.map((batch) => batch.length)).toEqual([3]);
     expect(await summaries()).toEqual([{ local_date: "2026-10-21", computed_at: 1 }]);
     expect((await env.DB.prepare("SELECT local_date, total FROM tracker_daily ORDER BY local_date").all()).results)
-      .toEqual(["2026-10-19", "2026-10-20", "2026-10-21"].map((local_date) => ({ local_date, total: 80 })));
+      .toEqual([]);
   });
 
   it("bootstraps each new USER_TZ day without Google or data", async () => {
