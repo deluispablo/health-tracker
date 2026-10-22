@@ -70,7 +70,7 @@ flowchart LR
 | `/mcp` | Stateless MCP server behind the OAuth provider (scope `health:read`) |
 | `/authorize`, `/oauth/google/callback` | Connector consent and Google sign-in (allowlisted email only) |
 | `/google/connect`, `/google/callback` | One-time Google Health consent; stores the encrypted refresh token |
-| `/`, `/privacy` | Static home and privacy pages |
+| `/`, `/privacy`, `/terms` | Static home, privacy and terms pages (the Google OAuth consent screen links to them) |
 
 Freshness depends first on how often the watch syncs to the Google Health app (minutes, sometimes hours), then on the 5-minute cron and the queue backlog. Details: [docs/architecture.md](docs/architecture.md).
 
@@ -165,7 +165,7 @@ Set each with `npx wrangler secret put <NAME> --config wrangler.production.jsonc
 
 | Name | Purpose |
 |---|---|
-| `ALLOWED_EMAIL` | The only Google account allowed to sign in; also shown as the contact on `/privacy` |
+| `ALLOWED_EMAIL` | The only Google account allowed to sign in; also shown as the contact on `/privacy` and `/terms` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client (connector sign-in and Health consent) |
 | `TOKEN_ENC_KEY` | Base64 of exactly 32 random bytes; AES-256-GCM key for the stored refresh token |
 | `WEBHOOK_SECRET` | Webhook authorization value, including the `Bearer ` prefix (at least 16 characters) |

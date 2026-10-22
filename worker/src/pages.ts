@@ -5,7 +5,7 @@ export const homepage = `<!doctype html>
 <main>
 <h1>Health Tracker</h1>
 <p>Health Tracker es un sistema privado de procesamiento de datos de salud personales para un único usuario.</p>
-<a href="/privacy">Política de privacidad</a>
+<a href="/privacy">Política de privacidad</a> · <a href="/terms">Condiciones de servicio</a>
 </main>
 </body>
 </html>`;
@@ -22,6 +22,22 @@ export const privacy = (contact: string) => `<!doctype html>
 <p>Los datos solo salen hacia el asistente que conectes y autorices, cuando tú, como propietario, lo solicites.</p>
 <p>Los datos nunca se venden, se comparten ni se utilizan para publicidad.</p>
 <p>Puedes revocar el acceso en <a href="https://myaccount.google.com/permissions">los permisos de tu cuenta de Google</a>.</p>
+<p>Contacto: <a href="mailto:${contact}">${contact}</a>.</p>
+<a href="/">Health Tracker</a>
+</main>
+</body>
+</html>`;
+
+export const terms = (contact: string) => `<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Condiciones de servicio — Health Tracker</title></head>
+<body>
+<main>
+<h1>Condiciones de servicio de Health Tracker</h1>
+<p>Health Tracker es un proyecto personal y sin ánimo de lucro con un único usuario: su propio desarrollador. No se ofrece a terceros y nadie más puede iniciar sesión.</p>
+<p>El servicio muestra datos de salud del propietario con fines informativos. No es un producto sanitario ni sustituye el consejo de un profesional de la salud.</p>
+<p>Se ofrece tal cual, sin garantías de disponibilidad, exactitud ni continuidad, y puede cambiar o dejar de funcionar en cualquier momento.</p>
+<p>El uso de los datos se rige por la <a href="/privacy">política de privacidad</a>. Puedes revocar el acceso a Google en <a href="https://myaccount.google.com/permissions">los permisos de tu cuenta de Google</a>.</p>
 <p>Contacto: <a href="mailto:${contact}">${contact}</a>.</p>
 <a href="/">Health Tracker</a>
 </main>

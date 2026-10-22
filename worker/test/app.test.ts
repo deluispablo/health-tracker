@@ -370,7 +370,7 @@ describe("T20 public pages", () => {
     const res = await getPage("/");
     expect(res.status).toBe(200);
     const html = await res.text();
-    for (const text of ['lang="es"', "Health Tracker", "privado", "datos de salud personales", "único usuario", 'href="/privacy"']) {
+    for (const text of ['lang="es"', "Health Tracker", "privado", "datos de salud personales", "único usuario", 'href="/privacy"', 'href="/terms"']) {
       expect(html).toContain(text);
     }
   });
@@ -388,7 +388,17 @@ describe("T20 public pages", () => {
     ]) expect(html).toContain(text);
   });
 
-  it.each(["/", "/privacy"])("AC3/AC4 serves GET and bodyless HEAD with matching cache and security headers at %s", async (path) => {
+  it("serves the terms of service", async () => {
+    const res = await getPage("/terms");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    for (const text of [
+      "Condiciones de servicio", "único usuario", "nadie más puede iniciar sesión", "No es un producto sanitario",
+      "sin garantías", 'href="/privacy"', 'href="https://myaccount.google.com/permissions"', "owner@example.com",
+    ]) expect(html).toContain(text);
+  });
+
+  it.each(["/", "/privacy", "/terms"])("AC3/AC4 serves GET and bodyless HEAD with matching cache and security headers at %s", async (path) => {
     const get = await getPage(path);
     const head = await getPage(path, "HEAD");
     expect(head.status).toBe(get.status);
@@ -403,7 +413,7 @@ describe("T20 public pages", () => {
   });
 
   it.each(["POST", "PUT", "PATCH", "DELETE", "OPTIONS"])("AC3 rejects %s on both pages", async (method) => {
-    for (const path of ["/", "/privacy"]) {
+    for (const path of ["/", "/privacy", "/terms"]) {
       expect((await getPage(path, method)).status).toBe(405);
     }
   });

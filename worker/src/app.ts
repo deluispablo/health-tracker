@@ -5,7 +5,7 @@ import { drainSyncPending } from "./ingest/drain";
 import { enqueueReconcile } from "./ingest/poll";
 import { handleGoogleWebhook } from "./ingest/webhook";
 import { dateTimeFormat } from "./lib/time";
-import { homepage, pageResponse, privacy } from "./pages";
+import { homepage, pageResponse, privacy, terms } from "./pages";
 import { recomputeDailySummary } from "./rollup/daily";
 import { recomputeTrackerDaily } from "./rollup/trackers";
 
@@ -111,6 +111,8 @@ export async function route(request: Request, env: AppEnv, deps: AppDeps): Promi
       return pageResponse(request, homepage);
     case "/privacy":
       return pageResponse(request, privacy(env.ALLOWED_EMAIL));
+    case "/terms":
+      return pageResponse(request, terms(env.ALLOWED_EMAIL));
     case "/webhooks/google":
       if (request.method !== "POST") return new Response(null, { status: 405 });
       return handleGoogleWebhook(request, env, {
