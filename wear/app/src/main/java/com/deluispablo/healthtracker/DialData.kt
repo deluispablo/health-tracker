@@ -27,16 +27,17 @@ fun parseDialData(json: String): DialData {
     return DialData(
         date = date,
         generatedAt = o.getLong("generatedAt"),
-        sleep = o.getJSONArray("sleep").objects().map {
-            it.span(it.getBoolean("nap"))
-        },
-        workouts = o.getJSONArray("workouts").objects().map { it.span() },
-        events = o.getJSONArray("events").objects().map { Mark(it.minute("t"), it.getString("k")) },
+        // A malformed item is skipped so one bad row cannot blank the whole day.
+        sleep = o.getJSONArray("sleep").items { it.span(it.getBoolean("nap")) },
+        workouts = o.getJSONArray("workouts").items { it.span() },
+        events = o.getJSONArray("events").items { Mark(it.minute("t"), it.getString("k")) },
         hr = List(96) { i -> if (hr.isNull(i)) null else hr.getInt(i) },
     )
 }
 
-private fun JSONArray.objects(): List<JSONObject> = List(length()) { getJSONObject(it) }
+/** Parses each item on its own; non-objects and malformed rows are dropped. */
+private fun <T : Any> JSONArray.items(parse: (JSONObject) -> T): List<T> =
+    List(length()) { i -> runCatching { parse(getJSONObject(i)) }.getOrNull() }.filterNotNull()
 
 private fun JSONObject.minute(key: String): Int {
     val value = get(key)

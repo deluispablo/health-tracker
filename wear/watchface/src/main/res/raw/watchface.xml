@@ -10,6 +10,7 @@
       <Complication type="SMALL_IMAGE">
         <PartImage x="0" y="0" width="450" height="450">
           <Variant mode="AMBIENT" target="alpha" value="0"/>
+          <Launch target="com.deluispablo.healthtracker"/>
           <Image resource="[COMPLICATION.SMALL_IMAGE]"/>
         </PartImage>
         <PartImage x="0" y="0" width="450" height="450" alpha="0">
