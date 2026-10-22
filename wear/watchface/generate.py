@@ -24,10 +24,13 @@ for h in range(24):
 R_IN, R_OUT = R_BEZEL, 225.0
 R_MID = (R_IN + R_OUT) / 2
 APP = "com.deluispablo.healthtracker"
-slots = [(1, 45, "WATCH_BATTERY", "RANGED_VALUE"), (2, 135, "STEP_COUNT", "GOAL_PROGRESS"),
-         (3, 225, "EMPTY", "EMPTY"), (4, 315, "EMPTY", "EMPTY")]
+FITBIT_CALORIES = ("com.fitbit.FitbitMobile/com.google.android.wearable.fitbit.mainapp.complications"
+                   ".offloadable.calories.OffloadableCaloriesComplicationDataSourceService")
+# Each diagonal tints its icon and progress; calories falls back to empty when Fitbit is missing.
+slots = [(1, 45, "WATCH_BATTERY", "RANGED_VALUE", "#5ccf97"), (2, 135, "STEP_COUNT", "GOAL_PROGRESS", "#8ea9ff"),
+         (3, 225, "EMPTY", "EMPTY", "#f0a650", FITBIT_CALORIES), (4, 315, "WORLD_CLOCK", "SHORT_TEXT", "#6fc3e6")]
 
-def edge_slot(sid, mid, provider, ptype):
+def edge_slot(sid, mid, provider, ptype, color, primary=None):
     # Concentric-style edge slot (after lukakilic/concentric-watch-face, MIT): icon, value and
     # progress share one curved line centred on the diagonal; lower slots read counter-clockwise.
     half, rg, fs, ico = 35.0, 208.0, 19, 25
@@ -41,7 +44,7 @@ def edge_slot(sid, mid, provider, ptype):
 
     def text(align, icon):
         img = f"""
-                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" width="{ico}" height="{ico}"/>
+                <InlineImage resource="blank" source="COMPLICATION.MONOCHROMATIC_IMAGE" color="{color}" width="{ico}" height="{ico}"/>
                 <Template>%s<Parameter expression="&#160;"/></Template>""" if icon else ""
         return f"""
         <PartText x="0" y="0" width="450" height="450">
@@ -64,7 +67,7 @@ def edge_slot(sid, mid, provider, ptype):
           <Arc centerX="{f(C)}" centerY="{f(C)}" width="{f(d)}" height="{f(d)}" startAngle="{f(s)}" endAngle="{f(e)}">
             <Transform target="endAngle" value="{edge}"/>
             <Transform target="startAngle" value="{edge} - {frac} * ({edge} - {f(s)})"/>
-            <Stroke color="{PRIMARY}" thickness="5" cap="ROUND"/>
+            <Stroke color="{color}" thickness="5" cap="ROUND"/>
           </Arc>"""
         else:
             edge = f"{f(s)} + {lead}"
@@ -75,7 +78,7 @@ def edge_slot(sid, mid, provider, ptype):
           <Arc centerX="{f(C)}" centerY="{f(C)}" width="{f(d)}" height="{f(d)}" startAngle="{f(s)}" endAngle="{f(e)}">
             <Transform target="startAngle" value="{edge}"/>
             <Transform target="endAngle" value="{edge} + {frac} * ({f(e)} - ({edge}))"/>
-            <Stroke color="{PRIMARY}" thickness="5" cap="ROUND"/>
+            <Stroke color="{color}" thickness="5" cap="ROUND"/>
           </Arc>"""
         return f"""
         <PartDraw x="0" y="0" width="450" height="450">
@@ -98,7 +101,7 @@ def edge_slot(sid, mid, provider, ptype):
     goal = "[COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE]"
     return f"""
     <ComplicationSlot x="0" y="0" width="450" height="450" slotId="{sid}" displayName="slot_{sid}_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="TRUE">
-      <DefaultProviderPolicy defaultSystemProvider="{provider}" defaultSystemProviderType="{ptype}"/>
+      <DefaultProviderPolicy defaultSystemProvider="{provider}" defaultSystemProviderType="{ptype}"{f' primaryProvider="{primary}" primaryProviderType="SHORT_TEXT"' if primary else ""}/>
       <BoundingArc centerX="{f(C)}" centerY="{f(C)}" width="{f(2 * R_OUT)}" height="{f(2 * R_OUT)}" thickness="{f(R_OUT - R_IN)}" startAngle="{f(s)}" endAngle="{f(e)}" isRoundEdge="TRUE"/>
       <Variant mode="AMBIENT" target="alpha" value="0"/>
       <Complication type="RANGED_VALUE">{progress(ranged)}
