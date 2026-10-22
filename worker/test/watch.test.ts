@@ -166,9 +166,22 @@ describe("POST /watch/log", () => {
     expect(bad.status).toBe(400);
     expect((await env.DB.prepare("SELECT count(*) AS n FROM event").first<{ n: number }>())?.n).toBe(0);
   });
+
+  it("never replays an event of another tracker", async () => {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO tracker (id, name, unit, value_type, default_value, min_value, max_value, created_at)
+        VALUES ('water', 'Agua', 'ml', 'amount', 250, 0, 2000, 1) ON CONFLICT(id) DO NOTHING`),
+      env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at)
+        VALUES ('k_w-other-0001', 'water', ?, 120, '2026-10-21', 250, 'private', 'mcp', 1)`).bind(NOW - 60),
+    ]);
+    const res = await post({ ...tap, idempotency_key: "other-0001" });
+    expect(res.status).toBe(409);
+    expect(await res.text()).toBe("");
+  });
 });
 
 describe("DELETE /watch/log", () => {
+  const tap0 = { tracker_id: "caffeine", at: "2026-10-21T19:58:00Z" };
   const del = (body: unknown, authorization = `Bearer ${TOKEN}`) => route(
     new Request("https://example.com/watch/log", { method: "DELETE", headers: { authorization }, body: JSON.stringify(body) }),
     appEnv(), { fetch, now: () => NOW, sleep: () => Promise.resolve() },
@@ -194,7 +207,16 @@ describe("DELETE /watch/log", () => {
     expect((await del({ idempotency_key: "water-key-0001" })).status).toBe(404);
     expect((await env.DB.prepare("SELECT deleted_at FROM event WHERE id = 'k_water-key-0001'").first())?.deleted_at).toBeNull();
     expect((await del({ idempotency_key: "missing-key-0001" })).status).toBe(404);
+    expect((await del({ idempotency_key: "x".repeat(63) })).status).toBe(400);
     expect((await del({ idempotency_key: "short" })).status).toBe(400);
     expect((await del({ idempotency_key: "undo-0001-abcd" }, `Bearer ${TOKEN.slice(0, -1)}x`)).status).toBe(401);
+  });
+
+  it("cannot undo an MCP log of a watch tracker with the same key", async () => {
+    await env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at)
+      VALUES ('k_mcp-cafe-0001', 'caffeine', ?, 120, '2026-10-21', 80, 'mcp', 1)`).bind(NOW - 60).run();
+    expect((await del({ idempotency_key: "mcp-cafe-0001" })).status).toBe(404);
+    expect((await env.DB.prepare("SELECT deleted_at FROM event WHERE id = 'k_mcp-cafe-0001'").first())?.deleted_at).toBeNull();
+    expect((await post({ ...tap0, idempotency_key: "mcp-cafe-0001" })).status).toBe(201);
   });
 });

@@ -9,6 +9,8 @@ const KINDS: Record<string, string> = { caffeine: "cafe", cigarettes: "cigarro",
 const MOODS = ["genial", "bien", "tranquilo", "cansado", "estresado", "ansioso", "triste", "enfadado"];
 // The watch token can only log the trackers the watch has buttons for.
 const LOGGABLE = new Set([...Object.keys(KINDS), ...MOODS.map((m) => `mood_${m}`)]);
+// Watch keys live apart from MCP keys, so the watch token can neither replay nor undo an MCP log.
+const watchKey = (key: unknown) => typeof key === "string" && /^[A-Za-z0-9_-]{8,62}$/.test(key) ? `w-${key}` : null;
 
 async function authorized(request: Request, env: AppEnv): Promise<boolean> {
   // Equal-length digests allow a constant-time comparison even when header lengths differ.
@@ -23,23 +25,22 @@ export async function handleWatchLog(request: Request, env: AppEnv, now: number)
   if (!await authorized(request, env)) return new Response(null, { status: 401 });
   if (request.method === "DELETE") {
     const body = await request.json().catch(() => null) as { idempotency_key?: unknown } | null;
-    const key = body?.idempotency_key;
-    if (typeof key !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(key)) {
-      return Response.json({ error: "idempotency_key is required" }, { status: 400 });
-    }
-    // Only the watch knows its random keys, and only the watch's trackers can be undone this way.
+    const key = watchKey(body?.idempotency_key);
+    if (!key) return Response.json({ error: "idempotency_key is required" }, { status: 400 });
     const row = await env.DB.prepare("SELECT tracker_id FROM event WHERE id = ?").bind(`k_${key}`).first<{ tracker_id: string }>();
     if (!row || !LOGGABLE.has(row.tracker_id)) return new Response(null, { status: 404 });
     return Response.json(await deleteEvent(env.DB, { event_id: `k_${key}` }, { now }));
   }
   const body = await request.json().catch(() => null) as { tracker_id?: unknown; at?: unknown; idempotency_key?: unknown } | null;
   if (!body || typeof body.tracker_id !== "string" || !LOGGABLE.has(body.tracker_id)
-    || typeof body.at !== "string" || typeof body.idempotency_key !== "string") {
+    || typeof body.at !== "string" || !watchKey(body.idempotency_key)) {
     return Response.json({ error: "tracker_id, at and idempotency_key are required" }, { status: 400 });
   }
   try {
-    const result = await logEvent(env.DB, { tracker_id: body.tracker_id, at: body.at, idempotency_key: body.idempotency_key },
+    const result = await logEvent(env.DB, { tracker_id: body.tracker_id, at: body.at, idempotency_key: watchKey(body.idempotency_key)! },
       { now, tz: env.USER_TZ });
+    // A replay (or a lost insert race) returns the stored event: only hand it back if it is this tap's tracker.
+    if (result.event.tracker_id !== body.tracker_id) return new Response(null, { status: 409 });
     return Response.json(result, { status: result.created ? 201 : 200 });
   } catch (e) {
     if (e instanceof RangeError) return Response.json({ error: e.message }, { status: 400 });
