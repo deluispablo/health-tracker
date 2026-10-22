@@ -38,11 +38,17 @@ const KEYSET_URL = "https://www.gstatic.com/googlehealthapi/webhooks/webhooks_pu
 
 export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps): Promise<void> {
   const now = deps.now();
+  const parts = dateTimeFormat("en-US", {
+    timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now * 1000);
+  const today = ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
+  const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
   if (cron === "30 4 * * *") {
     await enqueueReconcile(env.DB, now);
     await env.DB.prepare("DELETE FROM oauth_state WHERE expires_at < ?").bind(now).run();
     await env.DB.prepare("DELETE FROM audit_log WHERE ts < ?").bind(now - 90 * 86400).run();
     await env.DB.prepare("DELETE FROM analysis_log WHERE ts < ?").bind((now - 90 * 86400) * 1000).run();
+    await recomputeTrackerDaily(env.DB, addDays(today, -7), today);
     return;
   }
   if (cron !== "*/5 * * * *") throw new Error(`Unknown cron: ${cron}`);
@@ -77,22 +83,22 @@ export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps):
             last_ok_at = CASE WHEN excluded.last_error IS NULL THEN excluded.last_ok_at ELSE sync_state.last_ok_at END,
             last_error = excluded.last_error
         `).bind(syncedUntil, lastError === null ? now : null, lastError).run();
-      } catch { /* Watch persistence failures must not skip the rollups. */ }
+      } catch (error) {
+        // Watch persistence failures must not skip the rollups.
+        console.error("watch persistence", error instanceof Error ? error.message : String(error));
+      }
     }
   }
-  const parts = dateTimeFormat("en-US", {
-    timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(now * 1000);
-  const today = ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
-  const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
-  await env.DB.prepare(`DELETE FROM rollup_dirty WHERE (
-    local_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-    AND date(local_date, '+0 days') = local_date AND local_date BETWEEN '2000-01-01' AND '2099-12-31'
-  ) IS NOT TRUE`).run();
-  const { results: dirty } = await env.DB.prepare("SELECT local_date, version FROM rollup_dirty WHERE local_date <= ? ORDER BY local_date")
-    .bind(today).all<{ local_date: string; version: number }>();
+  const [, { results: dirty }, { results: existingToday }] = await env.DB.batch<{ local_date: string; version: number }>([
+    env.DB.prepare(`DELETE FROM rollup_dirty WHERE (
+      local_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+      AND date(local_date, '+0 days') = local_date AND local_date BETWEEN '2000-01-01' AND '2099-12-31'
+    ) IS NOT TRUE`),
+    env.DB.prepare("SELECT local_date, version FROM rollup_dirty WHERE local_date <= ? ORDER BY local_date").bind(today),
+    env.DB.prepare("SELECT 1 FROM daily_summary WHERE local_date = ?").bind(today),
+  ]);
   const dates = dirty.map((row) => row.local_date);
-  if (!await env.DB.prepare("SELECT 1 FROM daily_summary WHERE local_date = ?").bind(today).first()) dates.push(today);
+  if (!existingToday.length) dates.push(today);
   if (dates.length) {
     const from = dates[0];
     const to = [addDays(dates[dates.length - 1], 28), today, addDays(from, 365)].sort()[0];
@@ -106,7 +112,6 @@ export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps):
       SELECT json_extract(value, '$.local_date'), json_extract(value, '$.version') FROM json_each(?)
     )`).bind(JSON.stringify(cleared)).run();
   }
-  await recomputeTrackerDaily(env.DB, addDays(today, -2), today);
 }
 
 export async function route(request: Request, env: AppEnv, deps: AppDeps): Promise<Response> {
