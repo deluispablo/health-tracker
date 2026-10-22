@@ -82,6 +82,8 @@ describe("T25 AC2/AC3 daytime nap migration", () => {
 });
 
 describe("daytime nap migration v2", () => {
+  const upgrade = () => applyD1Migrations(env.DB, env.TEST_MIGRATIONS.filter((m) => m.name <= "0011_daytime_naps_v2.sql"));
+
   beforeEach(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.filter((m) => m.name < "0011_daytime_naps_v2.sql"));
   });
@@ -102,7 +104,7 @@ describe("daytime nap migration v2", () => {
       env.DB.prepare("UPDATE rollup_seq SET n = 7 WHERE id = 1"),
       env.DB.prepare("INSERT INTO rollup_dirty VALUES ('2026-07-19', 3), ('2026-06-01', 6)"),
     ]);
-    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+    await upgrade();
     expect((await env.DB.prepare("SELECT DISTINCT is_nap FROM sleep_session").all()).results).toEqual([{ is_nap: 1 }]);
     expect(await sequence()).toBe(8);
     expect(await dirty()).toEqual([
@@ -114,7 +116,7 @@ describe("daytime nap migration v2", () => {
     expect(await env.DB.prepare("SELECT sleep_min, bedtime_local, waketime_local FROM v_daily WHERE local_date = '2026-07-19'").first())
       .toEqual({ sleep_min: null, bedtime_local: null, waketime_local: null });
     await env.DB.prepare("DELETE FROM d1_migrations WHERE name = '0011_daytime_naps_v2.sql'").run();
-    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+    await upgrade();
     expect(await sequence()).toBe(8);
   });
 
@@ -128,7 +130,7 @@ describe("daytime nap migration v2", () => {
     await seed("known-long-duration", "2026-07-19", "13:37:00", 420);
     await seed("already-nap", "2026-07-19", "13:37:00", null, 120, 1);
     const before = (await env.DB.prepare("SELECT * FROM sleep_session ORDER BY source_id").all()).results;
-    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+    await upgrade();
     expect((await env.DB.prepare("SELECT * FROM sleep_session ORDER BY source_id").all()).results).toEqual(before);
     expect(await sequence()).toBe(0);
     expect(await dirty()).toEqual([]);
