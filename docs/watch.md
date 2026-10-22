@@ -83,7 +83,7 @@ The first sync runs when the app starts, then every 60 minutes while the watch h
 
 ## 6. Edge complications
 
-The four slots sit on the diagonals of the bezel. By default the top-right slot shows battery (`WATCH_BATTERY`, `RANGED_VALUE`) and the bottom-right slot shows steps (`STEP_COUNT`, `GOAL_PROGRESS`); both left slots start empty. Long-press the face (or use the phone's watch app) and choose **Edit** to change them. Edge slots only show providers with progress (`RANGED_VALUE` or `GOAL_PROGRESS`), drawn as a progress arc without text. They hide in ambient mode, which shows only the bezel, the hands and the night's sleep.
+The four slots sit on the diagonals of the bezel. By default the top-right slot shows battery (`WATCH_BATTERY`, `RANGED_VALUE`) and the bottom-right slot shows steps (`STEP_COUNT`, `GOAL_PROGRESS`); both left slots start empty. Long-press the face (or use the phone's watch app) and choose **Edit** to change them. Edge slots accept providers with progress (`RANGED_VALUE` or `GOAL_PROGRESS`), shown as icon, value and a progress arc on one curved line, and short text (`SHORT_TEXT`), shown as icon and text centred on the diagonal. The lower slots read upright. They hide in ambient mode, which shows only the bezel, the hands and the night's sleep.
 
 ## Troubleshooting
 

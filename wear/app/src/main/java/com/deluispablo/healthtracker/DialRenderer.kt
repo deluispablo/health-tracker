@@ -26,13 +26,13 @@ private val AMBIENT_SLEEP = Color.parseColor("#2a3363")
 
 // Ring radii in the 360 design box: the log ring sits at R_LOG, the night band fills R_LOG..R_BEZEL
 // and every state arc (sleep, nap, workout) is centred in that gap with one width.
-private const val SCALE = 1.40f
+private const val SCALE = 1.30f
 private const val R_BEZEL = 150f
 private const val R_LOG = 118f
 private const val R_TRACK = (R_LOG + R_BEZEL) / 2
 private const val TRACK_W = (R_BEZEL - R_LOG) * 0.45f
 private const val R_PULSE = 50f
-private const val MARK = 1.5f  // log marks enlarged so diamonds and mood rings read as shapes at 41 mm
+private const val MARK = 1.1f  // log marks enlarged so diamonds and mood rings read as shapes at 41 mm
 
 /**
  * Draws the data layers of the dial (night band, states, logs, pulse) on a transparent bitmap.
