@@ -22,7 +22,7 @@ class LogQueueTest {
             Tap("2", "mood_triste", at("2026-10-22T11:00:00")),
             Tap("3", "caffeine", at("2026-10-21T23:50:00")),
         )
-        assertEquals(listOf(Mark(570, "cigarro"), Mark(600, "cafe"), Mark(660, "animo", "triste")), withTaps(day, taps).events)
+        assertEquals(listOf(Mark(570, "cigarro", i = "1"), Mark(600, "cafe"), Mark(660, "animo", "triste", "2")), withTaps(day, taps).events)
         assertEquals(day, withTaps(day, emptyList()))
     }
 
@@ -46,21 +46,33 @@ class UndoTest {
         assertEquals(listOf(log.copy(undo = true)), parseTaps(tapsJson(listOf(log.copy(undo = true)))))
     }
 
+    private fun dial(vararg keys: String) = day.copy(events = keys.map { Mark(570, "cigarro", i = it) })
+
     @Test
     fun anUndoTappedWhileItsLogIsInFlightSurvivesTheAck() {
         val log = Tap("x-1", "cigarettes", at)
         val undone = undoTaps(listOf(log), log)
-        assertEquals(undone, ackTap(undone, log, 1_000))
-        assertEquals(undone, confirmedBy(ackTap(undone, log, 1_000), 2_000))
+        assertEquals(undone, ackTap(undone, log))
+        // The log landed and shows on the dial: the undo still has to go out.
+        assertEquals(undone, confirmedBy(undone, dial("x-1")))
+        assertEquals(undone, confirmedBy(undone, dial()))
+        assertEquals(emptyList<Tap>(), confirmedBy(ackTap(undone, undone[0]), dial()))
     }
 
     @Test
-    fun onlyADialFetchedAfterTheAckConfirmsATap() {
-        val acked = Tap("x-1", "cigarettes", at, acked = 1_000)
-        val pending = Tap("y-2", "caffeine", at)
-        assertEquals(listOf(acked, pending), confirmedBy(listOf(acked, pending), 999))
-        assertEquals(listOf(pending), confirmedBy(listOf(acked, pending), 1_000))
-        assertEquals(listOf(acked), parseTaps(tapsJson(listOf(acked))))
+    fun aLogLeavesTheQueueOnceTheDialShowsItsKey() {
+        val log = Tap("x-1", "cigarettes", at)
+        assertEquals(listOf(log), confirmedBy(listOf(log), dial("y-2")))
+        assertEquals(emptyList<Tap>(), confirmedBy(listOf(log), dial("x-1")))
+        // A refresh that already has the log never draws it twice, whatever the timing.
+        assertEquals(dial("x-1"), withTaps(dial("x-1"), listOf(log.copy(acked = true))))
+        assertEquals(listOf(log.copy(acked = true)), parseTaps(tapsJson(listOf(log.copy(acked = true)))))
+    }
+
+    @Test
+    fun anUndoRemovesItsOwnMarkByKey() {
+        assertEquals(dial("y-2"), withTaps(day.copy(events = listOf(Mark(570, "cigarro", i = "y-2"), Mark(570, "cigarro", i = "x-1"))),
+            listOf(Tap("x-1", "cigarettes", at, undo = true))))
     }
 
     @Test
@@ -74,6 +86,6 @@ class SendOutcomeTest {
     fun aMissingEndpointNeverDropsALog() {
         assertEquals(false, settled(404, undo = false))
         assertEquals(true, settled(404, undo = true))
-        assertEquals(listOf(true, true, true, false, false, false), listOf(200, 201, 400, 401, 500, -1).map { settled(it, false) })
+        assertEquals(listOf(true, true, true, true, false, false, false), listOf(200, 201, 400, 409, 401, 500, -1).map { settled(it, false) })
     }
 }
