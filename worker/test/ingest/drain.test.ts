@@ -2,6 +2,7 @@ import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RollUpPoint } from "../../src/google/client";
+import { createGoogleClient } from "../../src/google/client";
 import { drainSyncPending } from "../../src/ingest/drain";
 import { dateTimeFormat } from "../../src/lib/time";
 
@@ -194,26 +195,100 @@ describe("AC1 heart-rate upsert", () => {
   });
 });
 
-describe("AC2 one 60-minute window per invocation", () => {
-  it("fetches only the first hour of a long interval and keeps the rest queued", async () => {
+describe("AC2 one 24-hour window per invocation", () => {
+  it("stores 1,440 minutes through the Google client and drains every other type with query headroom", async () => {
+    const start = at("2026-07-01T22:00:00Z");
+    const types = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
+      "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"];
+    for (const type of types) await queue(type, start, start + (type === "heart-rate" ? 1 : 31) * 86400);
+    const fetch = vi.fn<typeof globalThis.fetch>(() => Promise.resolve(Response.json({
+      rollupDataPoints: Array.from({ length: 1440 }, (_, i) => ({
+        startTime: new Date((start + i * 60) * 1000).toISOString(),
+        heartRate: { beatsPerMinuteAvg: 61, beatsPerMinuteMin: 60, beatsPerMinuteMax: 62 },
+      })),
+    })));
+    const google = createGoogleClient({
+      fetch, kv: { get: () => Promise.resolve("access") } as unknown as KVNamespace,
+      clientId: "cid", clientSecret: "secret", refreshToken: "refresh", sleep: () => Promise.resolve(),
+    });
+    const dates = Array.from({ length: 31 }, (_, i) => new Date((start + 7200 + i * 86400) * 1000).toISOString().slice(0, 10));
+    const client: Parameters<typeof drainSyncPending>[1] = {
+      rollUpHeartRate: (a, b, window) => google.rollUpHeartRate(a, b, window),
+      rollUpSteps: (a, b) => Promise.resolve(Array.from({ length: (at(b) - at(a)) / 3600 }, (_, i) => ({ ts: at(a) + i * 3600, steps: 10 }))),
+      dailyRollUp: (type) => Promise.resolve(dates.map((date) => ({ date, value: type === "steps" ? { countSum: 100 } : { sumInFatBurnHeartZone: 10 } }))),
+      listDaily: (type) => Promise.resolve(dates.map((date) => {
+        const [year, month, day] = date.split("-").map(Number);
+        const payload = type.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+        return { [payload]: { date: { year, month, day }, beatsPerMinute: 60, averageHeartRateVariabilityMilliseconds: 40,
+          averagePercentage: 97, breathsPerMinute: 16, nightlyTemperatureCelsius: 34, baselineTemperatureCelsius: 34 } };
+      })),
+      reconcile: (type, a) => Promise.resolve(Array.from({ length: 7 }, (_, i) => {
+        const begin = at(a) + i * 86400;
+        const interval = { startTime: new Date(begin * 1000).toISOString(), endTime: new Date((begin + 3600) * 1000).toISOString(),
+          startUtcOffset: "7200s", endUtcOffset: "7200s" };
+        return type === "sleep" ? { dataPointName: `sleep-${String(i)}`, sleep: { interval, stages: [{ ...interval, type: "LIGHT" }] } }
+          : { dataPointName: `exercise-${String(i)}`, exercise: { interval, exerciseType: "RUNNING" } };
+      })),
+    };
+    const batchSizes: number[] = [];
+    const db = { prepare: (sql: string) => env.DB.prepare(sql), batch: (statements: D1PreparedStatement[]) => {
+      batchSizes.push(statements.length);
+      return env.DB.batch(statements);
+    } } as D1Database;
+    expect(await drainSyncPending({ ...drainEnv(), DB: db }, client, { now: () => NOW })).toEqual({ processed: 10, failed: 0 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetch.mock.calls[0][1]?.body as string)).toEqual({
+      range: { startTime: "2026-07-01T22:00:00.000Z", endTime: "2026-07-02T22:00:00.000Z" }, windowSize: "60s",
+    });
+    const hr = (await minutes()).filter((row) => row.metric === "hr");
+    expect(hr).toHaveLength(1440);
+    expect(hr[0]).toMatchObject({ ts: start, value: 61, vmin: 60, vmax: 62 });
+    expect(hr.at(-1)?.ts).toBe(start + 86340);
+    expect(batchSizes).toHaveLength(10);
+    expect(batchSizes[0]).toBe(123);
+    // Count the head SELECT and every batched statement, leaving room for cron work.
+    expect(1 + batchSizes.reduce((sum, size) => sum + size, 0)).toBeLessThan(300);
+    expect((await pending()).some((row) => row.data_type === "heart-rate")).toBe(false);
+  });
+
+  it("prioritizes recent rows by receipt time over a historical backlog, one row per tick", async () => {
+    const old = at("2026-07-01T22:00:00Z");
+    for (let i = 0; i < 110; i++) await queue("heart-rate", old + i * 86400, old + (i + 1) * 86400, "UPSERT", NOW - 300 + i);
+    await queue("heart-rate", NOW - 120, NOW - 60, "UPSERT", NOW - 10);
+    await queue("heart-rate", NOW - 300, NOW - 240, "UPSERT", NOW - 5);
+    const { client, calls } = fakeClient();
+    for (let i = 0; i < 3; i++) {
+      expect(await drainSyncPending(drainEnv(), client, { now: () => NOW })).toEqual({ processed: 1, failed: 0 });
+      expect(await pending()).toHaveLength(111 - i);
+    }
+    expect(calls.map((call) => call.start)).toEqual([NOW - 120, NOW - 300, old].map((ts) => new Date(ts * 1000).toISOString()));
+  });
+
+  it("fetches only the first day of a long interval and keeps the rest queued", async () => {
     const start = at("2026-10-20T18:00:00Z");
-    await queue("heart-rate", start, start + 3 * 3600 + 30);
+    await queue("heart-rate", start, start + 3 * 86400 + 30);
     const { client, calls } = fakeClient();
     expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 1, failed: 0 });
-    expect(calls).toEqual([{ start: "2026-10-20T18:00:00.000Z", end: "2026-10-20T19:00:00.000Z", windowSec: 60 }]);
+    expect(calls).toEqual([{ start: "2026-10-20T18:00:00.000Z", end: "2026-10-21T18:00:00.000Z", windowSec: 60 }]);
     expect(await pending()).toEqual([
-      { data_type: "heart-rate", start_ts: start + 3600, end_ts: start + 3 * 3600 + 30, operation: "UPSERT", received_at: NOW - 60, attempts: 0 }]);
+      { data_type: "heart-rate", start_ts: start + 86400, end_ts: start + 3 * 86400 + 30, operation: "UPSERT", received_at: NOW - 60, attempts: 0 }]);
   });
 
   it("drains successive windows without gaps through the minute-rounded end, then removes the row", async () => {
     const start = at("2026-10-20T18:00:00Z");
-    await queue("heart-rate", start, start + 2 * 3600 + 30, "UPSERT", NOW - 60, 2);
+    await queue("heart-rate", start, start + 2 * 86400 + 30, "UPSERT", NOW - 60, 2);
     const { client, calls } = fakeClient();
-    for (let i = 0; i < 3; i++) await drainSyncPending(drainEnv(), client);
+    for (let i = 0; i < 3; i++) {
+      await drainSyncPending(drainEnv(), client);
+      if (i < 2) expect(await pending()).toEqual([{
+        data_type: "heart-rate", start_ts: start + (i + 1) * 86400, end_ts: start + 2 * 86400 + 30,
+        operation: "UPSERT", received_at: NOW - 60, attempts: 2,
+      }]);
+    }
     expect(calls.map((c) => [c.start, c.end])).toEqual([
-      ["2026-10-20T18:00:00.000Z", "2026-10-20T19:00:00.000Z"],
-      ["2026-10-20T19:00:00.000Z", "2026-10-20T20:00:00.000Z"],
-      ["2026-10-20T20:00:00.000Z", "2026-10-20T20:01:00.000Z"],
+      ["2026-10-20T18:00:00.000Z", "2026-10-21T18:00:00.000Z"],
+      ["2026-10-21T18:00:00.000Z", "2026-10-22T18:00:00.000Z"],
+      ["2026-10-22T18:00:00.000Z", "2026-10-22T18:01:00.000Z"],
     ]);
     expect(await pending()).toEqual([]);
     expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 0, failed: 0 });
@@ -221,11 +296,11 @@ describe("AC2 one 60-minute window per invocation", () => {
 
   it("merges an advanced row into an already queued remainder (latest receipt, fewest attempts)", async () => {
     const start = at("2026-10-20T18:00:00Z");
-    await queue("heart-rate", start, start + 7200, "UPSERT", NOW - 300, 3);
-    await queue("heart-rate", start + 3600, start + 7200, "UPSERT", NOW - 30, 4);
+    await queue("heart-rate", start, start + 2 * 86400, "UPSERT", NOW - 300, 3);
+    await queue("heart-rate", start + 86400, start + 2 * 86400, "UPSERT", NOW - 30, 4);
     await drainSyncPending(drainEnv(), fakeClient().client);
     expect(await pending()).toEqual([
-      { data_type: "heart-rate", start_ts: start + 3600, end_ts: start + 7200, operation: "UPSERT", received_at: NOW - 30, attempts: 3 }]);
+      { data_type: "heart-rate", start_ts: start + 86400, end_ts: start + 2 * 86400, operation: "UPSERT", received_at: NOW - 30, attempts: 3 }]);
   });
 
   it("applies a DELETE before an UPSERT of the same interval and receipt time", async () => {
@@ -313,6 +388,31 @@ describe("AC3 heart-rate delete", () => {
 });
 
 describe("AC4 failures", () => {
+  it("keeps the whole queued interval and writes no partial minutes when Google page 2 fails", async () => {
+    const start = at("2026-10-20T00:00:00Z");
+    await queue("heart-rate", start, start + 2 * 86400);
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json({
+        rollupDataPoints: [{ startTime: new Date(start * 1000).toISOString(),
+          heartRate: { beatsPerMinuteAvg: 61, beatsPerMinuteMin: 60, beatsPerMinuteMax: 62 } }],
+        nextPageToken: "page-2",
+      }))
+      .mockImplementation(() => Promise.resolve(Response.json({}, { status: 503 })));
+    const google = createGoogleClient({
+      fetch, kv: { get: () => Promise.resolve("access") } as unknown as KVNamespace,
+      clientId: "cid", clientSecret: "secret", refreshToken: "refresh", sleep: () => Promise.resolve(),
+    });
+    expect(await drainSyncPending(drainEnv(), google)).toEqual({ processed: 0, failed: 1 });
+    expect(fetch).toHaveBeenCalledTimes(5);
+    const body = { range: { startTime: "2026-10-20T00:00:00.000Z", endTime: "2026-10-21T00:00:00.000Z" }, windowSize: "60s" };
+    expect(fetch.mock.calls.map((call): unknown => JSON.parse(call[1]?.body as string))).toEqual([
+      body, ...Array.from({ length: 4 }, () => ({ ...body, pageToken: "page-2" })),
+    ]);
+    expect(await pending()).toEqual([{ data_type: "heart-rate", start_ts: start, end_ts: start + 2 * 86400,
+      operation: "UPSERT", received_at: NOW - 60, attempts: 1 }]);
+    expect(await minutes()).toEqual([]);
+  });
+
   it("keeps the row and counts an attempt when Google fails, writing nothing", async () => {
     const t = at("2026-10-20T21:00:00Z");
     await queue("heart-rate", t, t + 60);

@@ -171,6 +171,30 @@ describe("AC3 heart-rate rollUp", () => {
       range: { startTime: "2026-10-20T18:00:00Z", endTime: "2026-10-20T21:00:00Z" }, windowSize: "60s" });
   });
 
+  it("returns every point across two pages with the same range and windowSize", async () => {
+    const { fetch, calls } = scripted(token(),
+      json({ rollupDataPoints: [item(18, 70, 72, 68)], nextPageToken: "a+b/c=" }),
+      json({ rollupDataPoints: [item(25, 71, 73, 69)] }));
+    expect(await client(fetch).rollUpHeartRate("2026-10-20T18:00:00Z", "2026-10-20T21:00:00Z", 300)).toEqual([
+      { ts: Date.UTC(2026, 9, 20, 20, 18) / 1000, avg: 70, min: 68, max: 72 },
+      { ts: Date.UTC(2026, 9, 20, 20, 25) / 1000, avg: 71, min: 69, max: 73 },
+    ]);
+    const body = { range: { startTime: "2026-10-20T18:00:00Z", endTime: "2026-10-20T21:00:00Z" }, windowSize: "300s" };
+    expect(calls.slice(1).map((call): unknown => JSON.parse(call.body))).toEqual([body, { ...body, pageToken: "a+b/c=" }]);
+    expect(calls.slice(1).every((call) => call.url === `${API}/dataTypes/heart-rate/dataPoints:rollUp` && call.method === "POST")).toBe(true);
+  });
+
+  it.each([false, true])("caps pagination at 10 pages (more pages: %s), including empty pages", async (more) => {
+    const { fetch, calls } = scripted(token(), ...Array.from({ length: 10 }, (_, i) => json({
+      ...(i === 9 ? { rollupDataPoints: [item(25, 71, 73, 69)] } : {}),
+      ...(i < 9 || more ? { nextPageToken: `page-${String(i + 2)}` } : {}),
+    })));
+    const result = client(fetch).rollUpHeartRate("2026-10-20T18:00:00Z", "2026-10-20T21:00:00Z", 60);
+    if (more) await expect(result).rejects.toThrow("Heart-rate rollUp exceeded 10 pages");
+    else expect(await result).toEqual([{ ts: Date.UTC(2026, 9, 20, 20, 25) / 1000, avg: 71, min: 69, max: 73 }]);
+    expect(calls).toHaveLength(11);
+  });
+
   it("T23 AC2 drops points unless timestamp and all three HR values are finite numbers", async () => {
     const valid = item(25, 0, 0, 0);
     const invalid = [null, {}, { ...valid, heartRate: undefined }, { ...valid, heartRate: null },
