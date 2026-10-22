@@ -69,7 +69,7 @@ try {
      Under 600: one-row header, bottom tab bar, quick log docked above it.
      600-1199: 80 px rail, quick log sticky at the top of the content.
      1200 and up: sidebar and content. One markup; only CSS moves it. */
-  html { -webkit-text-size-adjust: 100%; scroll-padding: calc(var(--qtop, 0px) + 16px) 0 calc(var(--dock-h, 176px) + 16px); }
+  html { -webkit-text-size-adjust: 100%; scroll-padding: calc(var(--qtop, 0px) + var(--ptop, 0px) + var(--page-h, 48px) + 16px) 0 calc(var(--dock-h, 176px) + 16px); }
   .app { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; align-items: center; gap: 12px; min-height: 100vh;
     padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(var(--dock-h, 176px) + 24px) max(16px, env(safe-area-inset-left, 0px)); }
   .top { display: contents; }
@@ -79,7 +79,9 @@ try {
   .top-r { order: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
   main { order: 2; grid-column: 1 / -1; min-width: 0; container: main / inline-size; }
   .qw { order: 1; grid-column: 1 / -1; }
-  .page-h { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin: 0 0 12px; min-height: 48px; }
+  .page-sentinel { width: 0; height: 0; margin: 0; padding: 0; border: 0; outline: none; visibility: hidden; pointer-events: none; }
+  .page-h { position: sticky; top: calc(var(--qtop, 0px) + var(--ptop, 0px)); z-index: 4; background: var(--bg); border-bottom: 1px solid transparent; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin: 0 0 12px; min-height: 48px; }
+  .page-h.is-stuck { border-bottom-color: var(--line); }
   .page-t { font-size: 22px; line-height: 28px; font-weight: var(--w-title); letter-spacing: -.01em; }
   .page-d { font: 400 13px/18px var(--font-sans); color: var(--muted); }
   .today-grid { display: grid; align-items: start; gap: 12px; }
@@ -89,6 +91,9 @@ try {
     .col { gap: 16px; }
   }
   @media (max-width: 599px) {
+    .ht-wordmark { position: sticky; top: 0; z-index: 6; background: var(--bg); }
+    .top-r { position: sticky; top: 0; z-index: 6; min-height: 64px; background: var(--bg); }
+    .ht-wordmark::before, .page-h::before { content: ""; position: absolute; inset: 0 auto 0 calc(-1 * max(16px, env(safe-area-inset-left, 0px))); width: 100vw; z-index: -1; background: var(--bg); }
     .ht-wordmark-t { display: none; }
     .page-h { margin-bottom: 0; }
     /* the page title already names the day and the dial shows the time: keep the heading for screen readers only */
@@ -417,6 +422,8 @@ try {
 
   /* ==== Sleep tab ==== */
   .sl-nav { display: flex; align-items: center; gap: 2px; }
+  .sl-nav .ht-btn { min-height: 40px; padding: 0 12px; border: 0; border-radius: var(--radius-full); background: var(--surface-2); font: var(--w-strong) 14px/20px var(--font-sans); }
+  @media (max-width: 599px) { .sl-nav .ht-btn { min-height: 36px; } }
   .sl-nav-l { font: 500 13px/18px var(--font-mono); color: var(--muted); padding: 0 4px; white-space: nowrap; }
   .sl-nav .ht-icon-btn[aria-disabled="true"] { opacity: .35; cursor: default; }
   .sl-big { font: 500 40px/44px var(--font-sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -460,7 +467,7 @@ try {
   .hv-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 8px; }
   .hv-ctl-g { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
   .hv-ctl-l { font-size: 12px; line-height: 16px; color: var(--muted); }
-  @container main (min-width: 700px) { #hv-grid > section:last-child { position: sticky; top: 16px; } }
+  @container main (min-width: 700px) { #hv-grid > section:last-child { position: sticky; top: calc(var(--qtop, 0px) + var(--ptop, 0px) + var(--page-h, 48px) + 16px); } }
   .hv-seg { display: inline-flex; flex-wrap: wrap; background: var(--surface-2); border-radius: var(--radius-md); }
   .hv-seg button { min-height: 48px; min-width: 48px; padding: 0 12px; border: 0; background: none; border-radius: var(--radius-md); cursor: pointer; font: 500 13px/16px var(--font-sans); color: var(--muted); }
   .hv-row { padding: 14px 0 10px; border-top: 1px solid var(--line); }
@@ -544,10 +551,10 @@ try {
   }
   /* ==== end Routine tab ==== */
 
-  /* Short windows (landscape phones, 400 % zoom): nothing stays fixed, so the content can scroll. */
+  /* Short windows (landscape phones, 400 % zoom): the docked controls scroll with the content. */
   @media (max-height: 500px) {
     .ht-tabbar { grid-column: 1 / -1; }
-    .ht-tabbar, .qw { position: static !important; }
+    .ht-tabbar, .qw, .ht-wordmark, .top-r { position: static !important; }
     .ht-tabbar { order: 5; width: 100%; height: auto; border: 0; padding: 0; }
     .ht-tabs { grid-template-columns: repeat(5, 1fr); grid-template-rows: none; grid-auto-rows: auto; }
     .app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-bottom: 24px; }
@@ -600,6 +607,7 @@ try {
     <div id="page-notice" class="notice" role="alert" data-t-aria="st.pageR" hidden></div>
     <p id="live" class="ht-sr" role="status" aria-live="polite"></p>
     <section id="p-today" role="tabpanel" aria-labelledby="tab-today">
+      <div class="page-sentinel" aria-hidden="true"></div>
       <div class="page-h"><h1 class="page-t" id="today-t"></h1><div class="sl-nav" id="day-nav" role="group" data-t-aria="day.navR"></div></div>
       <div class="today" id="today-grid">
         <section class="dialcol" aria-labelledby="h-dial">
@@ -616,7 +624,8 @@ try {
     </section>
     <!-- ==== Sleep tab ==== -->
     <section id="p-sleep" role="tabpanel" aria-labelledby="tab-sleep" hidden>
-      <div class="page-h"><h1 class="page-t" data-t="tab.sleep"></h1><div class="sl-nav" id="sl-nav" role="group" data-t-aria="sl.navR"></div></div>
+      <div class="page-sentinel" aria-hidden="true"></div>
+      <div class="page-h"><h1 class="page-t" data-t="tab.sleep"></h1><div class="sl-nav" id="sl-nav" role="group" data-t-aria="day.navR"></div></div>
       <div class="today-grid" id="sl-grid">
         <div class="col">
           <section class="ht-card" aria-labelledby="sl-h-night"><div class="ht-card-h"><h2 class="ht-card-t" id="sl-h-night" tabindex="-1"></h2><span class="ht-card-s" id="sl-night-d"></span></div><div id="sl-night" data-fb="#sl-h-night"></div></section>
@@ -630,7 +639,8 @@ try {
     <!-- ==== end Sleep tab ==== -->
     <!-- ==== Health tab ==== -->
     <section id="p-health" role="tabpanel" aria-labelledby="tab-health" hidden>
-      <div class="page-h"><h1 class="page-t" data-t="tab.health"></h1><span class="page-d" id="hv-date"></span></div>
+      <div class="page-sentinel" aria-hidden="true"></div>
+      <div class="page-h"><h1 class="page-t" data-t="tab.health"></h1><div class="sl-nav" id="hv-nav" role="group" data-t-aria="day.navR"></div></div>
       <div class="hv-grid" id="hv-grid">
         <section class="ht-card" aria-labelledby="h-hv">
           <div class="ht-card-h"><h2 class="ht-card-t" id="h-hv" tabindex="-1" data-t="hv.title"></h2><span class="ht-card-s" data-t="hv.bandNote"></span></div>
@@ -646,7 +656,8 @@ try {
     <!-- ==== end Health tab ==== -->
     <section id="p-activity" role="tabpanel" aria-labelledby="tab-activity" hidden>
       <!-- ==== Activity tab ==== -->
-      <div class="page-h"><h1 class="page-t" data-t="tab.activity"></h1><span class="page-d" id="act-date"></span></div>
+      <div class="page-sentinel" aria-hidden="true"></div>
+      <div class="page-h"><h1 class="page-t" data-t="tab.activity"></h1><div class="sl-nav" id="act-nav" role="group" data-t-aria="day.navR"></div></div>
       <div class="act-grid" id="act-grid">
         <div class="col">
           <section class="ht-card" aria-labelledby="h-act-today"><div class="ht-card-h"><h2 class="ht-card-t" id="h-act-today" tabindex="-1"></h2></div><div id="act-today-body" data-fb="#h-act-today"></div><div id="act-hour-body" data-fb="#h-act-today"></div></section>
@@ -661,6 +672,7 @@ try {
       <!-- ==== end Activity tab ==== -->
     </section>
     <section id="p-routine" role="tabpanel" aria-labelledby="tab-routine" hidden>
+      <div class="page-sentinel" aria-hidden="true"></div>
       <div class="page-h"><h1 class="page-t" data-t="tab.routine"></h1><div class="sl-nav" id="rt-nav" role="group" data-t-aria="day.navR"></div></div>
       <div class="rt-grid" id="rt-grid">
         <section class="ht-card rt-days" aria-labelledby="h-rt-days"><div class="ht-card-h"><h2 class="ht-card-t" id="h-rt-days" tabindex="-1" data-t="rt.days"></h2><div class="rt-controls" id="rt-controls"></div></div><p class="sl-cap" data-t="rt.daysCap"></p><div id="rt-days" data-fb="#h-rt-days"></div></section>
@@ -1762,9 +1774,9 @@ try {
       if (token === s.token && !stopped) receive(name, r, Date.now(), issued);
     } catch (e) {
       if (e?.code === 'user_changed') stopAll(); else if (token === s.token && !stopped) fail(name, e);
-    } finally { s.busy = false; if (!stopped) render(); }
+    } finally { if (token === s.token) s.busy = false; if (!stopped) render(); }
   }
-  /* Calendar rollover: the other tabs move to the new date; Today moves only when its own rule says so. */
+  /* Calendar rollover updates the shared day when its own rule says so. */
   function setDate(d) {
     if (d === viewDate || stopped) return;
     viewDate = d; target = null;
@@ -1788,8 +1800,15 @@ try {
     if (pin) dayPinned = d !== autoDay(now());
     if (d === dayDate) return render();
     dayDate = d; hide(true); setHot(null); tlOpen.clear();
-    DAY_SRC.forEach((n) => { const s = S[n]; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); subscribe(n); });
-    healthDate();   /* Health and Activity follow the shown day */
+    SL.night = d; RT.day = d; hvFocus = null;
+    const detail = S.hrev; detail.token++; detail.unsubscribe?.(); detail.unsubscribe = null; reset(detail);
+    Object.keys(S).filter((n) => n !== 'hrev' && (S[n].input || DAY_SRC.includes(n))).forEach((n) => {
+      const s = S[n];
+      if (JSON.stringify(s.input) === JSON.stringify(inputOf(n))) return;
+      s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); subscribe(n);
+    });
+    ACT_SRC.forEach((n) => { if (S[n].input) S[n].day = d; });
+    if (RT.on) RT.key = RT.day + ':' + RT.span;
     syncNow(); render();
     say(t('day.shown', { x: $('today-t').textContent + ', ' + fmt.day(dayDate, lang) }));
   }
@@ -1971,7 +1990,7 @@ try {
     return kids;
   }
   /* The night behind a sleep mark or row opens on the Sleep tab. */
-  const seeNight = (d) => h('button', { type: 'button', class: 'det-go', 'data-fk': 'see-night', onclick: () => { slSetNight(d); go('sleep', true); } }, t('det.seeNight'));
+  const seeNight = (d) => h('button', { type: 'button', class: 'det-go', 'data-fk': 'see-night', onclick: () => { setDay(d, true); go('sleep', true); } }, t('det.seeNight'));
 
   /* ---- detail panel: a fixed slot under the dial, so it never covers what you point at.
      Hover (mouse) shows, a tap or Enter pins, Esc / a tap elsewhere / focus leaving the dial closes. ---- */
@@ -2319,11 +2338,6 @@ try {
   }
   let hvOn = false, hvDays = 30, hvMark = null, hvFocus = null, hvWidth = 0;
 
-  /* Called from setDate: drop the old day's sources; they restart on the next render of the tab. */
-  function healthDate() {
-    ['vitals', 'hr', 'hrev'].forEach((n) => { const s = S[n]; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); });
-    hrOn = false; hvOn = false; hvFocus = null;
-  }
   function hvFocusOn(e) {
     const s = S.hrev, to = e.min + 90;
     hvFocus = e; s.token++; s.busy = false; s.data = null; s.error = null; s.halted = false;
@@ -2487,7 +2501,6 @@ try {
     const panel = $('p-health');
     if (panel.hidden) return;
     if (!hvOn && connector && !stopped) { hvOn = true; subscribe('vitals'); startHr(); }
-    $('hv-date').textContent = fmt.day(dayDate, lang);
     $('h-hr').textContent = dayTitle('hr.title');
     $('hv-grid').hidden = pageLevel();
     hvWidth = Math.max(240, Math.round($('hv-body').clientWidth || 320));
@@ -2660,7 +2673,6 @@ try {
     if (stopped || active === 'activity') actEnsure();
     if (active !== 'activity') return;   // rendered when the tab opens
     const n = now();
-    $('act-date').textContent = fmt.day(dayDate, lang);
     $('act-grid').hidden = pageLevel();
     renderActToday(n); renderActHourly(n); renderActTrend(); renderActAzm(); renderActWorkouts(); renderActEffect();
   }
@@ -2675,7 +2687,7 @@ try {
     sync.replaceChildren(h('span', { class: 'ht-sync-dot', 'aria-hidden': 'true' }), m ? h('span', {}, h('span', { class: 'sync-p', text: m[1] }), h('span', { class: 'ht-mono', text: m[2] })) : h('span', { text: s.text }));
     renderDayNav();
   }
-  /* Today's title and day stepper: "Today", "Yesterday" or the date; the next button stops at the calendar day. */
+  /* Shared title and day stepper: "Today", "Yesterday" or the date; the next button stops at the calendar day. */
   function renderDayNav() {
     const word = (d) => d === viewDate ? t('day.today') : d === L.shiftDate(viewDate, -1) ? t('day.yesterday') : fmt.day(d, lang);
     $('today-t').textContent = word(dayDate);
@@ -2683,8 +2695,10 @@ try {
     const b = (dir, key, d, dis) => { const x = h('button', { type: 'button', class: 'ht-icon-btn', 'data-fk': 'day-' + dir, 'aria-label': t(key, { d: fmt.day(d, lang) }), html: icon(dir) });
       if (dis) x.setAttribute('aria-disabled', 'true'); else x.addEventListener('click', () => setDay(d, true)); return x; };
     // after stepping back, one quiet jump to the current day
-    const back = !off && dayDate < home ? h('button', { type: 'button', class: 'ht-btn', 'data-fk': 'day-home', onclick: () => setDay(home, true) }, word(home)) : null;
-    swap($('day-nav'), back, b('prev', 'day.prev', L.shiftDate(dayDate, -1), off), h('span', { class: 'sl-nav-l', text: fmt.day(dayDate, lang) }), b('next', 'day.next', L.shiftDate(dayDate, 1), off || dayDate >= viewDate));
+    ['day-nav', 'sl-nav', 'hv-nav', 'act-nav', 'rt-nav'].forEach((id) => {
+      const back = !off && dayDate !== home ? h('button', { type: 'button', class: 'ht-btn', 'data-fk': 'day-home', onclick: () => setDay(home, true) }, word(home)) : null;
+      swap($(id), back, b('prev', 'day.prev', L.shiftDate(dayDate, -1), off), h('span', { class: 'sl-nav-l', text: fmt.day(dayDate, lang) }), b('next', 'day.next', L.shiftDate(dayDate, 1), off || dayDate >= viewDate));
+    });
   }
   function renderPageNotice() {
     const box = $('page-notice');
@@ -2809,6 +2823,7 @@ try {
     if (name === 'routine') renderRoutine();
     if (name === 'activity') renderActivity();   // Activity tab hook
     if (changed) window.scrollTo(0, scrolls[name] || 0);
+    fit();
     if (focus) $('tab-' + name).focus();
   }
   const go = (name, focus) => { if (location.hash !== '#' + name) { try { history.replaceState(null, '', '#' + name); } catch (e) { /* sandboxed */ } } activate(name, focus); };
@@ -2843,7 +2858,7 @@ try {
 
   /* ==== Sleep tab ==== */
   /* Three sources of its own, registered with the shared watch/retry/consent machinery; they follow the chosen night. */
-  const SL = { night: dayDate, follow: true, span: 14 };
+  const SL = { night: dayDate, span: 14 };
   const SL_SRC = { slsleep: 'health_sleep', sldaily: 'health_daily', sllate: 'health_sql' };
   const slQuery = (a, b) => "SELECT local_date, tracker_id, ((ts + tz_offset_min * 60) % 86400) / 60 AS m FROM v_events" +
     " WHERE tracker_id IN ('caffeine', 'alcohol', 'cigarettes') AND local_date BETWEEN '" + a + "' AND '" + b + "'" +
@@ -2863,12 +2878,6 @@ try {
   const txt = (x, y, s, anchor, extra) => '<text x="' + r2(x) + '" y="' + r2(y) + '" text-anchor="' + (anchor || 'start') + '" font-family="var(--font-mono)" font-size="11" fill="var(--muted)"' + (extra || '') + '>' + s + '</text>';
   const hrs = (m) => fmt.dur(m, lang).replace(/ 0m$| 0 min$/, '');   // axis labels: "7h", "7 h"
 
-  function slSetNight(d, quiet) {
-    if (stopped || d === SL.night) return;
-    SL.night = d; SL.follow = d === dayDate;
-    Object.keys(SL_SRC).forEach((n) => { const s = S[n]; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); subscribe(n); });
-    if (!quiet) render();
-  }
   /* Hover and tap detail for a chart: find(x, y) in viewBox units returns {x, y, lines} or null. */
   function slTip(fig, w, find) {
     const svg = fig.querySelector('svg'), tip = h('div', { class: 'sl-tip', hidden: true, 'aria-hidden': 'true' });
@@ -2887,15 +2896,6 @@ try {
   const slFinite = (v) => typeof v === 'number' && Number.isFinite(v);
   const slRangeText = (r) => fmt.dur(r.low, lang) + '–' + fmt.dur(r.high, lang);
 
-  function renderSlNav() {
-    const box = $('sl-nav'), latest = SL.night >= autoDay(now()) || SL.night >= dayDate;
-    const b = (dir, key, d, off) => { const x = h('button', { type: 'button', class: 'ht-icon-btn', 'data-fk': 'sl-' + dir, 'aria-label': t(key), html: icon(dir) });
-      if (off) x.setAttribute('aria-disabled', 'true'); else x.addEventListener('click', () => slSetNight(d)); return x; };
-    const off = stopped || pageLevel();
-    swap(box, b('prev', 'sl.prev', L.shiftDate(SL.night, -1), off),
-      h('span', { class: 'sl-nav-l', text: t('sl.nightOf', { a: fmt.day(L.shiftDate(SL.night, -1), lang), b: fmt.day(SL.night, lang) }) }),
-      b('next', 'sl.next', L.shiftDate(SL.night, 1), latest || off));
-  }
   function slHypnogram(sess, late) {
     const g = L.hypnogram(sess);
     if (!g || !g.bars.length) return h('p', { class: 'sl-sub', text: t('sl.hypEmpty') });
@@ -2924,7 +2924,7 @@ try {
     return fig;
   }
   function renderSlNight() {
-    const latest = SL.night >= dayDate;
+    const latest = SL.night >= autoDay(now());
     $('sl-h-night').textContent = t(latest ? 'hyp.title' : 'sl.nightT');
     $('sl-night-d').textContent = fmt.day(SL.night, lang);
     const box = $('sl-night'), st = sourceState('slsleep', 'slnight', 3);
@@ -2956,7 +2956,7 @@ try {
     const box = $('sl-stages'), st = sourceState('slsleep', 'slstages', 3, 'slnight');
     if (st) return swap(box, st);
     const sessions = S.slsleep.data.sessions ?? [], s = L.mainSession(sessions, SL.night);
-    if (!s) return swap(box, h('p', { class: 'ht-state-b', text: t(SL.night >= dayDate ? 'st.emptyT' : 'sl.emptyOldT') }));
+    if (!s) return swap(box, h('p', { class: 'ht-state-b', text: t(SL.night >= autoDay(now()) ? 'st.emptyT' : 'sl.emptyOldT') }));
     const tbl = L.sleepTable(sessions, Object.values(SL_STAGE).map((x) => x[0]));
     swap(box, h('ul', {}, ['DEEP', 'REM', 'LIGHT', 'AWAKE'].map((stage) => {
       const [field, col] = SL_STAGE[stage], v = s[field], r = L.typicalRange(tbl, field, SL.night), flag = L.rangeFlag(v, L.typicalRange(tbl, field, SL.night, true));
@@ -3042,14 +3042,13 @@ try {
       staleNote('sldaily', 'sltrend'));
   }
   function renderSleepTab() {
-    if (SL.follow && SL.night !== dayDate && !stopped) slSetNight(dayDate, true);
     $('sl-grid').hidden = pageLevel();
-    renderSlNav(); renderSlSpan(); renderSlNight(); renderSlStages(); renderSlTrend();
+    renderSlSpan(); renderSlNight(); renderSlStages(); renderSlTrend();
   }
   /* ==== end Sleep tab ==== */
 
   /* ==== Routine tab ==== */
-  const RT = { day: dayDate, follow: true, span: 14, on: false, key: '', widths: [], filters: new Set(['caffeine', 'cigarettes', 'alcohol', 'workout']) };
+  const RT = { day: dayDate, span: 14, on: false, key: '', widths: [], filters: new Set(['caffeine', 'cigarettes', 'alcohol', 'workout']) };
   const RT_SRC = ['rtSleep', 'rtWork', 'rtLogs'];
   Object.assign(TOOLS, { rtSleep: 'health_sleep', rtWork: 'health_workouts', rtLogs: 'health_sql' });
   Object.assign(INPUTS, {
@@ -3068,11 +3067,7 @@ try {
     RT.on = true; RT.key = key;
     RT_SRC.forEach((n) => { const s = S[n]; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); subscribe(n); });
   }
-  function rtSetDay(d) { if (stopped) return; RT.day = d; RT.follow = d === dayDate; renderRoutine(); }
   function renderRtNav() {
-    const b = (dir, delta, off) => h('button', { type: 'button', class: 'ht-icon-btn', 'data-fk': 'rt-' + dir, 'aria-label': t(delta < 0 ? 'day.prev' : 'day.next', { d: fmt.day(L.shiftDate(RT.day, delta), lang) }),
-      'aria-disabled': String(off), html: icon(dir), onclick: () => { if (!off) rtSetDay(L.shiftDate(RT.day, delta)); } });
-    swap($('rt-nav'), b('prev', -1, stopped || pageLevel()), h('span', { class: 'sl-nav-l', text: fmt.day(RT.day, lang) }), b('next', 1, stopped || pageLevel() || RT.day >= dayDate));
     swap($('rt-controls'), h('div', { class: 'sl-seg', role: 'group', 'aria-label': t('rt.filters') }, RT_KEYS.map(([id, key]) => h('button', {
       type: 'button', 'data-fk': 'rt-filter-' + id, 'aria-pressed': String(RT.filters.has(id)), onclick: () => { RT.filters.has(id) ? RT.filters.delete(id) : RT.filters.add(id); renderRoutine(); }
     }, t('trk.' + key)))), h('div', { class: 'sl-seg', role: 'group', 'aria-label': t('rt.span') }, [14, 30].map((n) => h('button', {
@@ -3165,7 +3160,6 @@ try {
     swap($('rt-short'), facts.map(([label, value, note]) => h('dl', { class: 'rt-fact' }, h('dt', { text: label }), h('dd', { text: value }), h('dd', {}, h('p', { text: note })))));
   }
   function renderRoutine() {
-    if (RT.follow) RT.day = dayDate;
     rtEnsure();
     if (active !== 'routine') return;
     $('rt-grid').hidden = pageLevel(); renderRtNav();
@@ -3208,13 +3202,25 @@ try {
 
   /* Keep content and focused controls clear of the docked quick log (phones) or the sticky quick row (rail widths). */
   const qw = $('qw'), nav = document.querySelector('.ht-tabbar'), tablist = document.querySelector('[role="tablist"]'), root = document.documentElement;
+  let headerObserver = null, headerTop = null;
   const fit = () => {
     const short = matchMedia('(max-height: 500px)').matches, phone = !short && matchMedia('(max-width: 599px)').matches, rail = !short && !phone && matchMedia('(max-width: 1199px)').matches;
     root.style.setProperty('--dock-h', phone ? qw.offsetHeight + nav.offsetHeight + 'px' : '0px');
-    root.style.setProperty('--qtop', rail ? qw.offsetHeight + 'px' : '0px');
+    const qtop = rail ? qw.offsetHeight : 0, ptop = phone ? Math.max($('wordmark').offsetHeight, document.querySelector('.top-r').offsetHeight) : 0;
+    root.style.setProperty('--qtop', qtop + 'px');
+    root.style.setProperty('--ptop', ptop + 'px');
+    const header = $('p-' + (active || 'today')).querySelector('.page-h');
+    root.style.setProperty('--page-h', header.offsetHeight + 'px');
+    if (headerTop !== qtop + ptop) {
+      headerTop = qtop + ptop; headerObserver?.disconnect();
+      headerObserver = new IntersectionObserver((entries) => entries.forEach((e) => {
+        e.target.nextElementSibling.classList.toggle('is-stuck', !e.isIntersecting && e.boundingClientRect.top < headerTop);
+      }), { rootMargin: '-' + headerTop + 'px 0px 0px 0px', threshold: 0 });
+      document.querySelectorAll('.page-sentinel').forEach((n) => headerObserver.observe(n));
+    }
     tablist.setAttribute('aria-orientation', phone || short || innerWidth < 600 ? 'horizontal' : 'vertical');
   };
-  try { new ResizeObserver(fit).observe(qw); } catch (e) { /* older engines: the resize listener still runs */ }
+  try { const observer = new ResizeObserver(fit); [qw, $('wordmark'), document.querySelector('.top-r'), ...document.querySelectorAll('.page-h')].forEach((n) => observer.observe(n)); } catch (e) { /* older engines: the resize listener still runs */ }
   window.addEventListener('resize', fit); fit();
 
   /* Clock: the hands and "time since" move each minute; midnight re-subscribes for the new date. */
