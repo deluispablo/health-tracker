@@ -1,11 +1,11 @@
 package com.deluispablo.healthtracker
 
-import java.time.ZonedDateTime
+import java.time.LocalDateTime
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LogQueueTest {
-    private fun at(local: String) = ZonedDateTime.parse("${local}+02:00[Europe/Madrid]").toEpochSecond()
+    private fun at(local: String) = LocalDateTime.parse(local).atZone(USER_ZONE).toEpochSecond()
     private val day = DialData("2026-10-22", 0, emptyList(), emptyList(), listOf(Mark(600, "cafe")), List(96) { null })
 
     @Test
@@ -35,7 +35,7 @@ class LogQueueTest {
 
 class UndoTest {
     private val day = DialData("2026-10-22", 0, emptyList(), emptyList(), listOf(Mark(570, "cigarro")), List(96) { null })
-    private val at = java.time.ZonedDateTime.parse("2026-10-22T09:30:00+02:00[Europe/Madrid]").toEpochSecond()
+    private val at = LocalDateTime.parse("2026-10-22T09:30:00").atZone(USER_ZONE).toEpochSecond()
 
     @Test
     fun undoReplacesTheQueuedLogWithItsDeletion() {

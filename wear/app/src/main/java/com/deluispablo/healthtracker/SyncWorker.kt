@@ -77,7 +77,7 @@ fun refreshCache(ctx: Context, body: String?, fetchTicket: Long = 0) = synchroni
     val newData = chooseCached(body, null)?.takeIf { fetchOrder.accept(fetchTicket) }
     val data = newData ?: chooseCached(null, jsonFile.takeIf { it.exists() }?.readText()) ?: return
     if (newData != null) readTaps(ctx).let { taps -> confirmedBy(taps, newData, fetchTicket).takeIf { it != taps }?.let { writeTaps(ctx, it) } }
-    val now = ZonedDateTime.now(MADRID)
+    val now = ZonedDateTime.now(USER_ZONE)
     val today = withTaps(dataForToday(data, now), readTaps(ctx))
     val minutes = minutesSince(today.date, now)
     val png = renderDial(today, minutes, ambient = false).png()

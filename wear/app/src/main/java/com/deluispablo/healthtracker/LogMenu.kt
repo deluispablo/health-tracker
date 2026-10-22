@@ -24,7 +24,7 @@ fun logMenu(data: DialData?, taps: List<Tap>): LogMenu {
     // Only a Worker without the catalog gets the built-in trackers; an empty catalog means none.
     val catalog = data?.trackers?.filterNot { it.id.startsWith("mood_") } ?: FALLBACK
     val shown = data?.events?.mapNotNull { it.i }?.toSet() ?: emptySet()
-    val date = data?.date ?: java.time.LocalDate.now(MADRID).toString()
+    val date = data?.date ?: java.time.LocalDate.now(USER_ZONE).toString()
     val day = taps.filter { tapDate(it) == date }
     val items = catalog.map { t ->
         // Unsent logs count at once; an unsent undo takes back a log the dial already shows (on a dial
@@ -48,7 +48,7 @@ fun logMenu(data: DialData?, taps: List<Tap>): LogMenu {
     return LogMenu(face.map { it.second }, supplements.map { it.second })
 }
 
-private fun tapDate(tap: Tap) = java.time.Instant.ofEpochSecond(tap.at).atZone(MADRID).toLocalDate().toString()
+private fun tapDate(tap: Tap) = java.time.Instant.ofEpochSecond(tap.at).atZone(USER_ZONE).toLocalDate().toString()
 
 private fun litres(ml: Double) = if (ml >= 1000) String.format(Locale("es"), "%.1f L", ml / 1000) else "${ml.roundToInt()} ml"
 

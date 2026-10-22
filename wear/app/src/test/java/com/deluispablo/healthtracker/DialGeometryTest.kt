@@ -1,6 +1,7 @@
 package com.deluispablo.healthtracker
 
 import java.time.LocalDate
+import java.time.ZoneId
 import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -50,10 +51,13 @@ class DialGeometryTest {
     }
 
     @Test
-    fun madridSunTimes() {
-        // Reference: full NOAA solar calculator for Madrid on 2026-10-22, CEST.
-        val (rise, set) = sunTimes(LocalDate.of(2026, 10, 22))
-        assertTrue("sunrise $rise", abs(rise - 513) <= 3)
-        assertTrue("sunset $set", abs(set - 1165) <= 3)
+    fun sunTimesUseConfiguredZone() {
+        // Reference: full NOAA solar calculator for the default coordinates on 2026-10-22, UTC.
+        val date = LocalDate.of(2026, 10, 22)
+        val zone = ZoneId.of(BuildConfig.USER_TZ)
+        val offset = date.atTime(12, 0).atZone(zone).offset.totalSeconds / 60
+        val (rise, set) = sunTimes(date)
+        assertTrue("sunrise $rise", abs(rise - (393 + offset)) <= 3)
+        assertTrue("sunset $set", abs(set - (1045 + offset)) <= 3)
     }
 }

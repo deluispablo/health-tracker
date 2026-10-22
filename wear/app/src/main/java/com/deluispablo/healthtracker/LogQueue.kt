@@ -89,7 +89,7 @@ class FetchOrder {
 /** Applies the day's unsent taps to the dial, so a log or an undo shows before the Worker confirms it. */
 fun withTaps(data: DialData, taps: List<Tap>): DialData {
     val today = taps.mapNotNull { tap ->
-        val local = Instant.ofEpochSecond(tap.at).atZone(MADRID)
+        val local = Instant.ofEpochSecond(tap.at).atZone(USER_ZONE)
         if (local.toLocalDate().toString() == data.date) tap to Mark(minutesSince(data.date, local), kindOf(tap.tracker),
             which(tap.tracker), tap.id) else null
     }

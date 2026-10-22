@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.time.ZoneId
 
 plugins {
     alias(libs.plugins.android.application)
@@ -12,8 +13,10 @@ val localProps = Properties().apply {
 val preview = project.hasProperty("preview")
 val watchToken = if (preview) "" else localProps.getProperty("watchToken", "")
 val watchBaseUrl = if (preview) "https://preview.invalid" else localProps.getProperty("watchBaseUrl", "https://health.deluispablo.com")
+val userTz = localProps.getProperty("userTz", "Europe/Madrid")
 require(preview || watchToken.isNotBlank()) { "Set a non-blank watchToken in wear/local.properties" }
 require(watchBaseUrl.startsWith("https://")) { "watchBaseUrl in wear/local.properties must start with https://" }
+ZoneId.of(userTz)
 
 android {
     namespace = "com.deluispablo.healthtracker"
@@ -28,6 +31,7 @@ android {
         versionName = "1.0"
         buildConfigField("String", "WATCH_BASE_URL", "\"${watchBaseUrl}\"")
         buildConfigField("String", "WATCH_TOKEN", "\"${watchToken}\"")
+        buildConfigField("String", "USER_TZ", "\"${userTz}\"")
     }
 
     buildFeatures {

@@ -1,11 +1,11 @@
 package com.deluispablo.healthtracker
 
-import java.time.ZonedDateTime
+import java.time.LocalDateTime
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LogMenuTest {
-    private val at = ZonedDateTime.parse("2026-10-22T09:30:00+02:00[Europe/Madrid]").toEpochSecond()
+    private val at = LocalDateTime.parse("2026-10-22T09:30:00").atZone(USER_ZONE).toEpochSecond()
     private fun catalogJson(archivedProtein: Boolean = false) = sampleJson().replace("\"hr\":", """
         "water":{"ml":750,"goal_ml":2000},
         "trackers":[
@@ -95,7 +95,7 @@ class LogMenuTest {
 
     @Test
     fun aNewDayStartsTheTotalsAtZero() {
-        val tomorrow = ZonedDateTime.parse("2026-10-23T08:00:00+02:00[Europe/Madrid]")
+        val tomorrow = LocalDateTime.parse("2026-10-23T08:00:00").atZone(USER_ZONE)
         val d = dataForToday(parseDialData(catalogJson()), tomorrow)
         assertEquals(Water(0, 2000), d.water)
         assertEquals(listOf("0", "0", "0", "0 ml"), logMenu(d, emptyList()).face.map { it.today })

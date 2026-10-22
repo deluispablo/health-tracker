@@ -39,7 +39,7 @@ fun sunTimes(
     date: LocalDate,
     lat: Double = 40.4168,
     lon: Double = -3.7038,
-    zone: ZoneId = ZoneId.of("Europe/Madrid"),
+    zone: ZoneId = USER_ZONE,
 ): Pair<Int, Int> {
     val g = 2 * Math.PI / 365 * (date.dayOfYear - 1)
     val eqTime = 229.18 * (0.000075 + 0.001868 * cos(g) - 0.032077 * sin(g) -
@@ -56,22 +56,22 @@ fun sunTimes(
     return rise.roundToInt() to set.roundToInt()
 }
 
-val MADRID: ZoneId = ZoneId.of("Europe/Madrid")
+val USER_ZONE: ZoneId = ZoneId.of(BuildConfig.USER_TZ)
 
-fun belongsToToday(date: String, now: ZonedDateTime = ZonedDateTime.now(MADRID)): Boolean =
-    LocalDate.parse(date) == now.withZoneSameInstant(MADRID).toLocalDate()
+fun belongsToToday(date: String, now: ZonedDateTime = ZonedDateTime.now(USER_ZONE)): Boolean =
+    LocalDate.parse(date) == now.withZoneSameInstant(USER_ZONE).toLocalDate()
 
-fun dataForToday(data: DialData, now: ZonedDateTime = ZonedDateTime.now(MADRID)): DialData =
+fun dataForToday(data: DialData, now: ZonedDateTime = ZonedDateTime.now(USER_ZONE)): DialData =
     if (belongsToToday(data.date, now)) data else data.copy(
-        date = now.withZoneSameInstant(MADRID).toLocalDate().toString(),
+        date = now.withZoneSameInstant(USER_ZONE).toLocalDate().toString(),
         sleep = emptyList(), workouts = emptyList(), events = emptyList(), hr = List(96) { null },
         // Yesterday's totals do not carry over; the catalog and the goal do.
         water = data.water?.copy(ml = 0), trackers = data.trackers?.map { it.copy(today = 0.0) },
     )
 
 /** Calendar minutes keep dial angles tied to local time across DST changes. */
-fun minutesSince(date: String, now: ZonedDateTime = ZonedDateTime.now(MADRID)): Int {
-    val local = now.withZoneSameInstant(MADRID)
+fun minutesSince(date: String, now: ZonedDateTime = ZonedDateTime.now(USER_ZONE)): Int {
+    val local = now.withZoneSameInstant(USER_ZONE)
     return ChronoUnit.DAYS.between(LocalDate.parse(date), local.toLocalDate()).toInt() * 1440 +
         local.hour * 60 + local.minute
 }

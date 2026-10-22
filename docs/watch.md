@@ -48,9 +48,10 @@ Create `wear/local.properties` (git-ignored). Every Gradle task needs it, includ
 sdk.dir=/opt/homebrew/share/android-commandlinetools
 watchToken=<the WATCH_TOKEN value>
 watchBaseUrl=https://<your-domain>
+userTz=Europe/Madrid
 ```
 
-`watchToken` and `watchBaseUrl` are compiled into the `app` build. Never commit this file.
+`watchToken`, `watchBaseUrl` and `userTz` are compiled into the `app` build. `userTz` defaults to `Europe/Madrid`, must be a valid Java time-zone ID (for example, `UTC`) and must match the Worker's `USER_TZ`. Invalid zones fail the Gradle build. Never commit this file.
 
 ## 4. Pair the watch
 
@@ -81,7 +82,7 @@ adb shell am broadcast -a com.google.android.wearable.app.DEBUG_SURFACE \
 
 You can also pick **Health Tracker** from the watch's face picker or the phone's watch app.
 
-The first sync runs when the app starts, then every 60 minutes while the watch has a connection. Until the first image arrives the face shows "Toca para activar". Tapping the centre of the face opens the log menu, which also requests a best-effort immediate sync, since the hourly job can be deferred while the screen is off; swipe back to close it without logging. A separate job redraws the cache every 15 minutes without needing a connection, keeps stale dimming current and clears yesterday's data after local midnight in Europe/Madrid. WorkManager timing is approximate. The hands update once per minute.
+The first sync runs when the app starts, then every 60 minutes while the watch has a connection. Until the first image arrives the face shows "Toca para activar". Tapping the centre of the face opens the log menu, which also requests a best-effort immediate sync, since the hourly job can be deferred while the screen is off; swipe back to close it without logging. A separate job redraws the cache every 15 minutes without needing a connection, keeps stale dimming current and clears yesterday's data after local midnight in `userTz`. WorkManager timing is approximate. The hands update once per minute.
 
 ## 6. Edge complications and logging
 
