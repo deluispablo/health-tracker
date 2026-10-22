@@ -9,7 +9,7 @@ import type { BeforeBedId, BehaviorTiming, Condition, Envelope, EvalOptions, Exp
 import { loadDayTable, originRange, rangeFromOrigin, resolveRange } from "./units";
 
 const metricLimit = Object.keys(METRICS).length;
-const behavior = z.enum(["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "workout", "steps", "short_sleep"]);
+const behavior = z.enum(["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "workout", "steps", "short_sleep", "water", "melatonin", "protein", "creatine"]);
 const exposure = z.enum(["bedtime", "sleep_min", "hrv", "steps", "workout_min"]);
 const condition = z.strictObject({ behavior: behavior.optional(), metric: exposure.optional(), op: z.enum([">", ">=", "=", "<", "<="]),
   value: z.number(), scale: z.enum(["value", "z"]).optional(), timing: z.enum(["day", "before_bed"]).optional() });

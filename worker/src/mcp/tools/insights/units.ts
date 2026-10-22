@@ -41,14 +41,15 @@ export interface DayTable {
   beforeBed: Record<BeforeBedId, (0 | 1 | null)[]>;
   metric: Record<Exclude<MetricId, "hr_delta">, (number | null)[]>;
   moodTaps: Record<MoodId, number[]>;
-  first: Record<"cigarettes" | "caffeine" | "alcohol" | "mood", { ts: number; bday: string } | null>;
+  first: Record<typeof TRACKERS[number], { ts: number; bday: string } | null>;
   tests_last_24h: number;
 }
 const MOOD_IDS = Object.values(MOODS).flat();
 const MOOD_GROUPS = Object.entries(MOODS) as [keyof typeof MOODS,MoodId[]][];
 const BED_IDS = Object.keys(BEFORE_BED_HOURS) as BeforeBedId[];
-const TRACKERS = ["cigarettes","caffeine","alcohol","mood"] as const;
-const BEHAVIORS: BehaviorId[] = ["cigarettes","caffeine","alcohol","mood_negative","mood_tired","workout","steps","short_sleep"];
+const AMOUNT_IDS = ["cigarettes","caffeine","alcohol","water","melatonin","protein","creatine"] as const;
+const TRACKERS = [...AMOUNT_IDS,"mood"] as const;
+const BEHAVIORS: BehaviorId[] = ["cigarettes","caffeine","alcohol","mood_negative","mood_tired","workout","steps","short_sleep","water","melatonin","protein","creatine"];
 const quoteList = (ids: string[]) => ids.map(id=> "'" + id + "'").join(",");
 const negative = quoteList(MOODS.negative);
 const moods = quoteList(MOOD_IDS);
@@ -64,7 +65,7 @@ WITH RECURSIVE dates(local_date) AS (
   SELECT *, ${BDAY} AS bday FROM event WHERE deleted_at IS NULL
 ), taps AS (
   SELECT bday, COUNT(*) AS active,
-    ${["cigarettes","caffeine","alcohol"].map(id=>`SUM(CASE WHEN tracker_id = '${id}' THEN value ELSE 0 END) AS ${id}`).join(",")},
+    ${AMOUNT_IDS.map(id=>`SUM(CASE WHEN tracker_id = '${id}' THEN value ELSE 0 END) AS ${id}`).join(",")},
     ${MOOD_IDS.map(id=>`SUM(tracker_id = '${id}') AS ${id}`).join(",")}
   FROM live WHERE local_date BETWEEN date(?1, '-1 day') AND date(?2, '+1 day')
     AND bday BETWEEN date(?1, '-1 day') AND ?2 GROUP BY bday
@@ -80,7 +81,7 @@ WITH RECURSIVE dates(local_date) AS (
   ]).join(",")} FROM firsts
 )
 SELECT d.local_date, f.*, COALESCE(a.active, 0) AS active, COALESCE(prev.active, 0) AS previous_active,
-  ${["cigarettes","caffeine","alcohol",...MOOD_IDS].map(id=>`COALESCE(a.${id}, 0) AS ${id}`).join(",")},
+  ${[...AMOUNT_IDS,...MOOD_IDS].map(id=>`COALESCE(a.${id}, 0) AS ${id}`).join(",")},
   ds.rhr, ds.ln_rmssd AS hrv, ds.spo2_avg, ds.skin_temp_dev, ds.resp_rate,
   ds.steps, ds.workout_min, ds.hr_wear_min,
   s.start_ts AS bed, s.minutes_asleep AS sleep_min, s.deep_min, s.rem_min, s.light_min, s.awake_min,
@@ -123,7 +124,7 @@ export function shapeDayTable(rows: Row[], range: ResolvedRange): DayTable {
     beforeBed:Object.fromEntries(Object.keys(BEFORE_BED_HOURS).map(b=>[b,[] as (0|1|null)[]])) as DayTable["beforeBed"],
     metric:Object.fromEntries(Object.keys(METRICS).filter(m=>m!=="hr_delta").map(m=>[m,[] as (number|null)[]])) as DayTable["metric"],
     moodTaps:Object.fromEntries(MOOD_IDS.map(m=>[m,[] as number[]])) as DayTable["moodTaps"],
-    first:{cigarettes:null,caffeine:null,alcohol:null,mood:null},tests_last_24h:0,
+    first:{cigarettes:null,caffeine:null,alcohol:null,water:null,melatonin:null,protein:null,creatine:null,mood:null},tests_last_24h:0,
   };
   for (const id of TRACKERS) {
     const row=rows[0], ts=row["first_"+id+"_ts"], bday=row["first_"+id+"_bday"];
@@ -148,7 +149,7 @@ export function shapeDayTable(rows: Row[], range: ResolvedRange): DayTable {
     const worn=wear===null ? null : wear>=600;
     t.metric.steps[i] = worn ? t.metric.steps[i] : null;
     t.metric.workout_min[i] = worn ? t.metric.workout_min[i] ?? 0 : null;
-    for (const id of ["cigarettes","caffeine","alcohol"] as const) t.behavior[id].push(known(id) ? numberAt(row, id) ?? 0 : null);
+    for (const id of AMOUNT_IDS) t.behavior[id].push(known(id) ? numberAt(row, id) ?? 0 : null);
     const moodCount=MOOD_IDS.reduce((sum,id)=>sum+(numberAt(row, id) ?? 0),0);
     const moodKnown=known("mood") && moodCount>0;
     for (const id of MOOD_IDS) { t.moodTaps[id].push(numberAt(row, id) ?? 0); t.metric[id][i] = moodKnown ? Number((numberAt(row, id) ?? 0)>0) : null; }

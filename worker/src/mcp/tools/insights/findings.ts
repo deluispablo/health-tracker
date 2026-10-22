@@ -21,7 +21,7 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(sorted(value, 0));
 }
 
-const behavior = z.enum(["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "workout", "steps", "short_sleep"]);
+const behavior = z.enum(["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "workout", "steps", "short_sleep", "water", "melatonin", "protein", "creatine"]);
 const exposureMetric = z.enum(["bedtime", "sleep_min", "hrv", "steps", "workout_min"]);
 const metric = z.enum(["sleep_min", "deep_min", "rem_min", "light_min", "awake_min", "deep_pct", "rem_pct", "efficiency", "latency_min",
   "awakenings", "bedtime", "rhr", "hrv", "spo2_avg", "skin_temp_dev", "resp_rate", "steps", "workout_min", "mood_positive", "mood_negative",

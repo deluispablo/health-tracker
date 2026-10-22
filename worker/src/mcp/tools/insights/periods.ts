@@ -8,7 +8,7 @@ import type { BehaviorId, Envelope, EvalOptions, FamilyResult, MetricId, MoodId,
 import { loadDayTable, originRange, rangeFromOrigin, resolveRange } from "./units";
 import type { DayTable } from "./units";
 
-const LOGGED: readonly BehaviorId[] = ["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired"];
+const LOGGED: readonly BehaviorId[] = ["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "water", "melatonin", "protein", "creatine"];
 const DAY = 86400000;
 const dayNumber = (date: string): number => Date.parse(date + "T00:00:00Z") / DAY;
 

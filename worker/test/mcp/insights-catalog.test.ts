@@ -3,11 +3,19 @@ import { describe, expect, it } from "vitest";
 import { BEFORE_BED_HOURS, BEHAVIOR_OUTCOMES, METRICS, MOODS, NIGHT_ANCHORED, NIGHT_METRICS, PHRASES, PLANNED, SCAN_PAIRS, behaviorExcluded, refusedMetricPair } from "../../src/mcp/tools/insights/catalog";
 
 describe("insight catalogue", () => {
-  it("has exactly 253 allowed scan pairs with the specified timing counts", () => {
-    expect(SCAN_PAIRS).toHaveLength(253);
-    expect(Object.keys(BEHAVIOR_OUTCOMES).map(t => SCAN_PAIRS.filter(p => p.timing === t).length)).toEqual([117, 80, 35, 21]);
+  it("has exactly 365 allowed scan pairs with the specified timing counts", () => {
+    expect(SCAN_PAIRS).toHaveLength(365);
+    expect(Object.keys(BEHAVIOR_OUTCOMES).map(t => SCAN_PAIRS.filter(p => p.timing === t).length)).toEqual([181, 96, 55, 33]);
     expect(SCAN_PAIRS.every(p => !behaviorExcluded(p.behavior, p.metric))).toBe(true);
-    expect(new Set(SCAN_PAIRS.map(p => JSON.stringify(p))).size).toBe(253);
+    expect(new Set(SCAN_PAIRS.map(p => JSON.stringify(p))).size).toBe(365);
+  });
+  it("includes water and supplement outcomes with melatonin before bed", () => {
+    for (const behavior of ["water", "melatonin", "protein", "creatine"] as const) {
+      expect(SCAN_PAIRS).toContainEqual({behavior,timing:"following_night",metric:"rhr"});
+      expect(SCAN_PAIRS).toContainEqual({behavior,timing:"next_day",metric:"steps"});
+      expect(SCAN_PAIRS.some(p=>p.behavior===behavior && p.timing==="before_bed")).toBe(behavior==="melatonin");
+    }
+    expect(SCAN_PAIRS).toContainEqual({behavior:"melatonin",timing:"before_bed",metric:"latency_min"});
   });
   it("excludes every self comparison", () => {
     for (const m of NIGHT_METRICS) expect(behaviorExcluded("short_sleep", m)).toBe(true);
@@ -55,7 +63,7 @@ describe("insight catalogue", () => {
       skin_temp_dev:0.2, resp_rate:0.5, steps:1000, workout_min:10, mood_positive:0.15,
       mood_negative:0.15, mood_tired:0.15, ...Object.fromEntries(Object.values(MOODS).flat().map(m => [m,0.15])), hr_delta:2,
     });
-    expect(BEFORE_BED_HOURS).toEqual({cigarettes:2,caffeine:6,alcohol:3,mood_negative:4,workout:3});
+    expect(BEFORE_BED_HOURS).toEqual({cigarettes:2,caffeine:6,alcohol:3,mood_negative:4,workout:3,melatonin:3});
   });
   it("preserves the required phrases verbatim", () => {
     expect(PHRASES).toEqual({

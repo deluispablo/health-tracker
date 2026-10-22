@@ -1,6 +1,6 @@
 import type { BeforeBedId, BehaviorId, BehaviorTiming, CalibrationCaps, Expected, ExposureMetric, Label, MetricId, MetricTiming, MoodId } from "./types";
 
-export const BEFORE_BED_HOURS: Record<BeforeBedId, number> = { cigarettes: 2, caffeine: 6, alcohol: 3, mood_negative: 4, workout: 3 };
+export const BEFORE_BED_HOURS: Record<BeforeBedId, number> = { cigarettes: 2, caffeine: 6, alcohol: 3, mood_negative: 4, workout: 3, melatonin: 3 };
 export const MOODS: { positive: MoodId[]; negative: MoodId[]; tired: MoodId[] } = {
   positive: ["mood_genial", "mood_bien", "mood_tranquilo"],
   negative: ["mood_estresado", "mood_ansioso", "mood_triste", "mood_enfadado"],
@@ -50,7 +50,7 @@ export function behaviorExcluded(b: BehaviorId, m: MetricId): boolean {
     || (b === "mood_negative" && (m === "mood_negative" || m === "mood_positive" || MOODS.negative.includes(m as MoodId)))
     || (b === "mood_tired" && (m === "mood_tired" || m === "mood_cansado"));
 }
-const BEHAVIORS: readonly BehaviorId[] = ["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "workout", "steps", "short_sleep"];
+const BEHAVIORS: readonly BehaviorId[] = ["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "workout", "steps", "short_sleep", "water", "melatonin", "protein", "creatine"];
 export const SCAN_PAIRS: readonly { behavior: BehaviorId; timing: BehaviorTiming; metric: MetricId }[] =
   (Object.keys(BEHAVIOR_OUTCOMES) as BehaviorTiming[]).flatMap(timing =>
     (timing === "before_bed" ? Object.keys(BEFORE_BED_HOURS) as BeforeBedId[] : BEHAVIORS)
@@ -97,6 +97,6 @@ export const PHRASES: Record<Label, string> = {
 export const BANNED = /\b(causa|causes|sin efecto|no effect)\b/i;
 export const RANGE = { defaultDays: 120, maxDays: 180, before: 43, after: 1 } as const;
 export const NEEDED_TEXT: { behavior: Record<BehaviorId, string>; night: string; day: string } = {
-  behavior: { cigarettes: "días con cigarro", caffeine: "días con cafeína", alcohol: "días con alcohol", mood_negative: "días con ánimo negativo", mood_tired: "días con cansancio", workout: "días con entrenamiento", steps: "días con pasos", short_sleep: "días con sueño corto" },
+  behavior: { water: "días con agua", melatonin: "días con melatonina", protein: "días con proteína", creatine: "días con creatina", cigarettes: "días con cigarro", caffeine: "días con cafeína", alcohol: "días con alcohol", mood_negative: "días con ánimo negativo", mood_tired: "días con cansancio", workout: "días con entrenamiento", steps: "días con pasos", short_sleep: "días con sueño corto" },
   night: "noches", day: "días",
 };
