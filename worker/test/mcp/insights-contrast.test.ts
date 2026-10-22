@@ -1,11 +1,14 @@
-import { applyD1Migrations } from "cloudflare:test";
+import { applyD1Migrations, createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { beforeAll, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it } from "vitest";
 import { evaluateContrast, healthContrast, validateContrastArgs } from "../../src/mcp/tools/insights/contrast";
 import { BANNED, METRICS } from "../../src/mcp/tools/insights/catalog";
 import { benjaminiHochberg } from "../../src/mcp/tools/stats";
 import { FIXTURE, seedInsightsFixture } from "../fixtures/insights";
 
+let ctx: ExecutionContext;
+beforeEach(() => { ctx = createExecutionContext(); });
+afterEach(async () => { await waitOnExecutionContext(ctx); });
 const deps = { nowSec: FIXTURE.now, tz: FIXTURE.tz };
 const dates = { start: FIXTURE.start, end: FIXTURE.end };
 const metricArgs = { ...dates, timing: "that_night", a: { where: [{ metric: "bedtime", scale: "z", op: ">=", value: 1 }] },
@@ -80,9 +83,10 @@ it("response stays within 20000 characters with long filters and records one log
     if (key === "prepare") return (sql: string) => { statements++; return target.prepare(sql); };
     return Reflect.get(target, key) as unknown;
   } });
-  const result = await healthContrast(db, { ...dates, a: { where }, b: { where, weekdays: [1, 2, 3] } }, deps);
+  const result = await healthContrast(db, { ...dates, a: { where }, b: { where, weekdays: [1, 2, 3] } }, deps, ctx);
   expect((Date.parse(dates.end) - Date.parse(dates.start)) / 86400000 + 1).toBe(180);
   expect(result.rows).not.toHaveLength(0);
+  await waitOnExecutionContext(ctx);
   expect(statements).toBe(2);
   expect(JSON.stringify(result).length).toBeLessThanOrEqual(20000);
   expect(BANNED.test(JSON.stringify(result))).toBe(false);
@@ -162,7 +166,7 @@ it("bounds metrics to the catalogue size before schema traversal and rejects dup
 });
 it("public metric rows serialize required nullable fields", async () => {
   await seedInsightsFixture(env.DB);
-  const result = JSON.parse(JSON.stringify(await healthContrast(env.DB, metricArgs, deps))) as { rows: Record<string, unknown>[] };
+  const result = JSON.parse(JSON.stringify(await healthContrast(env.DB, metricArgs, deps, ctx))) as { rows: Record<string, unknown>[] };
   expect(result.rows).toHaveLength(3);
   for (const row of result.rows) expect(row).toMatchObject({ planned_id: null, expected: null });
 });

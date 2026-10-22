@@ -1091,16 +1091,21 @@ describe("AC3 stateless read tools and audit", () => {
   });
 
   it("returns the generic error and failed audit when a tracker insert fails", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
     google();
     const token = await accessToken();
     await initialize(token);
     const before = (await audit()).length;
-    await env.DB.prepare("CREATE TRIGGER fail_connector_event BEFORE INSERT ON event BEGIN SELECT RAISE(ABORT, 'private D1 error'); END").run();
+    await env.DB.prepare("CREATE TRIGGER fail_connector_event BEFORE INSERT ON event BEGIN SELECT RAISE(ABORT, 'private D1 error weight_kg=72.4'); END").run();
     try {
       const args = { tracker_id: "caffeine", note: "owner's note" };
       const msg = await rpc(token, "tools/call", { name: "health_log_event", arguments: args });
       expect(msg.error).toBeUndefined();
       expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: "Unable to read health data" }] });
+      expect(log).toHaveBeenCalledExactlyOnceWith("health_log_event", "Error");
+      expect(JSON.stringify(log.mock.calls)).not.toContain("weight_kg=72.4");
+      expect(JSON.stringify(log.mock.calls)).not.toContain(args.note);
+      expect(JSON.stringify(log.mock.calls)).not.toContain(token);
       await toolAudit("health_log_event", args, 0, before);
       expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
       expect(await env.DB.prepare("SELECT count(*) AS n FROM event").first("n")).toBe(0);
@@ -1401,7 +1406,8 @@ describe("T11 AC5 health_sql through the authenticated connector", () => {
     const token = await accessToken();
     const args = { query: "SELECT * FROM v_daily" };
     const before = (await audit()).length;
-    const message = "D1 sentinel: ".padEnd(length, "x");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const message = "D1 sentinel: weight_kg=72.4 ".padEnd(length, "x");
     const db = new Proxy(env.DB, { get(target, property) {
       if (property === "prepare") return (sql: string) => {
         if (sql.startsWith("SELECT * FROM (\n")) {
@@ -1414,6 +1420,8 @@ describe("T11 AC5 health_sql through the authenticated connector", () => {
       return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
     } });
     const msg = await rpc(token, "tools/call", { name: "health_sql", arguments: args }, 1, { ...connectorEnv, DB: db });
+    expect(log).toHaveBeenCalledExactlyOnceWith("health_sql", "Error");
+    expect(JSON.stringify(log.mock.calls)).not.toContain("weight_kg=72.4");
     const error = `query failed: ${message.slice(0, 200)}`;
     expect(msg.error).toBeUndefined();
     expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: error }] });
@@ -1921,12 +1929,15 @@ describe("insight tool contracts", () => {
 
   it.each([
     ["health_scan", { limit: 1.5 }, "limit"],
+    ["health_contrast", { a: {}, b: {}, "weight_kg=72.4": true }, "weight_kg=72.4"],
     ["health_contrast", { a: { where: [{ behavior: "invalid", op: ">", value: 0 }] }, b: {} }, "contrast"],
     ["health_findings", { action: "save", statement: "Pattern", ref: { mode: "prospective" } }, "ref"],
   ])("forwards domain validation errors for %s", async (name, args, field) => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
     google();
     const msg = await rpc(await accessToken(), "tools/call", { name, arguments: args });
     expect(msg.result?.isError).toBe(true);
     expect(msg.result?.content?.[0].text).toContain(field);
+    expect(log).not.toHaveBeenCalled();
   });
 });

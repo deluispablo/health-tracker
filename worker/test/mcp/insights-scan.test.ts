@@ -1,6 +1,6 @@
-import { applyD1Migrations } from "cloudflare:test";
+import { applyD1Migrations, createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { computeScan, evaluateScan, healthScan, validateScanArgs } from "../../src/mcp/tools/insights/scan";
 import { BANNED, BEFORE_BED_HOURS, METRICS, METRIC_TIMINGS, NIGHT_METRICS, PLANNED, SCAN_PAIRS, behaviorExcluded, refusedMetricPair } from "../../src/mcp/tools/insights/catalog";
 import { acuteDays, loadAcuteInput, type AcuteDays } from "../../src/mcp/tools/insights/event";
@@ -10,6 +10,9 @@ import { evaluateMetricPair, finalizeMetricLabel } from "../../src/mcp/tools/ins
 import { loadDayTable, resolveRange, type DayTable } from "../../src/mcp/tools/insights/units";
 import type { EvalOptions, FamilyResult, InsightRow, Origin } from "../../src/mcp/tools/insights/types";
 import { FIXTURE, seedInsightsFixture } from "../fixtures/insights";
+let ctx: ExecutionContext;
+beforeEach(() => { ctx = createExecutionContext(); });
+afterEach(async () => { await waitOnExecutionContext(ctx); });
 const opts: EvalOptions = { nowSec: FIXTURE.now, tz: FIXTURE.tz };
 const origin: Extract<Origin, {
     tool: "health_scan";
@@ -43,7 +46,7 @@ it.each([
     expect(() => validateScanArgs(args, opts.nowSec, opts.tz)).toThrow(field);
 });
 it("scan on an empty database returns sin_datos rows and no error", async () => {
-    const r = await healthScan(env.DB, {}, opts);
+    const r = await healthScan(env.DB, {}, opts, ctx);
     expect(publicRows(r)).toHaveLength(10);
     expect(publicRows(r).every(row => row.label === "sin_datos" && row.diff === null)).toBe(true);
     expect(r.skipped).toEqual(expect.arrayContaining(["cigarettes", "caffeine", "alcohol"]));
@@ -149,10 +152,11 @@ describe("main fixture", () => {
         const previous = await env.DB.prepare("SELECT COALESCE(SUM(tests),0) AS n FROM analysis_log WHERE ts >= ?").bind(opts.nowSec * 1000 - 86400000).first<{
             n: number;
         }>();
-        const r = await healthScan(env.DB, { ...origin.args, limit: 3 }, opts);
+        const r = await healthScan(env.DB, { ...origin.args, limit: 3 }, opts, ctx);
         expect(publicRows(r)).toHaveLength(3);
         expect(r.truncated).toBe(true);
         expect(r.tests_last_24h).toBe(present(previous).n + family.tests);
+        await waitOnExecutionContext(ctx);
         const log = await env.DB.prepare("SELECT * FROM analysis_log").all();
         expect(log.results).toHaveLength(1);
         expect(log.results[0]).toMatchObject({ tests: 264, tool: "health_scan", ts: opts.nowSec * 1000 });
@@ -163,7 +167,7 @@ describe("main fixture", () => {
     it("statements are day table plus acute plus log; only non-acute skips acute SQL", async () => {
         const prepare = vi.spyOn(env.DB, "prepare");
         try {
-            await healthScan(env.DB, origin.args, opts);
+            await healthScan(env.DB, origin.args, opts, ctx);
             expect(prepare).toHaveBeenCalledTimes(3);
             prepare.mockClear();
             await evaluateScan(env.DB, origin, { ...opts, only: present(family.rows[0].ref).key });

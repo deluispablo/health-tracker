@@ -1,6 +1,6 @@
-import { applyD1Migrations } from "cloudflare:test";
+import { applyD1Migrations, createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { CONTEXT_MAX_CHARS, CONTEXT_TEXT, healthContext } from "../../src/mcp/tools/insights/context";
 import { createEvaluator } from "../../src/mcp/tools/insights/evaluator";
 import { METRICS, PHRASES } from "../../src/mcp/tools/insights/catalog";
@@ -16,6 +16,9 @@ function present<T>(value: T | null | undefined): T {
   if (value === null || value === undefined) throw new Error("Expected a value");
   return value;
 }
+let ctx: ExecutionContext;
+beforeEach(() => { ctx = createExecutionContext(); });
+afterEach(async () => { await waitOnExecutionContext(ctx); });
 const deps = { nowSec: FIXTURE.now, tz: FIXTURE.tz };
 const scan: Origin = { tool: "health_scan", args: { window_days: 120, behaviors: ["workout"], metrics: ["sleep_min"], timings: ["following_night"] } };
 const evaluator = () => createEvaluator(env.DB, deps);
@@ -40,8 +43,8 @@ it("keeps context within 9000 characters with every phrase, metric and prohibiti
   expect(CONTEXT_TEXT).toContain("M7");
 });
 it("every tool response carries the shared envelope fields", async () => {
-  const results = [healthContext(), await healthScan(env.DB, {}, deps), await healthPeriods(env.DB, {}, deps),
-    await healthContrast(env.DB, { a: {}, b: {}, metrics: ["rhr"] }, deps)];
+  const results = [healthContext(), await healthScan(env.DB, {}, deps, ctx), await healthPeriods(env.DB, {}, deps, ctx),
+    await healthContrast(env.DB, { a: {}, b: {}, metrics: ["rhr"] }, deps, ctx)];
   for (const result of results) {
     expect(result).toHaveProperty("range");
     expect(result).toHaveProperty("tests_last_24h");
@@ -70,7 +73,7 @@ describe("real findings evaluator", () => {
     const before = await count();
     const family = await e.family(origin, {});
     expect(await count()).toBe(before);
-    const result = await healthScan(env.DB, { behaviors: ["workout"], metrics: ["sleep_min"], timings: ["following_night"] }, deps);
+    const result = await healthScan(env.DB, { behaviors: ["workout"], metrics: ["sleep_min"], timings: ["following_night"] }, deps, ctx);
     expect(result.rows).toEqual(family.rows.map(publicRow));
   });
   it("replays a relative origin three days later with the same length and key", async () => {
