@@ -47,7 +47,15 @@ function calendarDate(date: unknown): date is string {
 
 export async function healthProfile(db: D1Database, options: Options) {
   const year = Number(localToday(options).slice(0, 4));
-  const { results: rows } = await db.prepare("SELECT key, value FROM profile").all<{ key: string; value: string }>();
+  const [profileResult, weightsResult] = await db.batch<{ key: string; value: string } | { local_date: string; kg: number }>([
+    db.prepare("SELECT key, value FROM profile"),
+    db.prepare(`SELECT local_date, kg FROM weight_log
+      WHERE local_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+        AND date(local_date, '+0 days') = local_date
+        AND typeof(kg) IN ('integer', 'real') AND kg BETWEEN 30 AND 300
+      ORDER BY local_date DESC LIMIT 90`),
+  ]);
+  const rows = profileResult.results as { key: string; value: string }[];
   const values = new Map(rows.map(({ key, value }) => [key, value]));
   const get = <K extends keyof ProfileValues>(field: K): ProfileValues[K] | null => {
     const stored = values.get(field);
@@ -58,12 +66,8 @@ export async function healthProfile(db: D1Database, options: Options) {
       return null;
     }
   };
-  const { results: weights } = await db.prepare("SELECT local_date, kg FROM weight_log ORDER BY local_date DESC")
-    .all<{ local_date: string; kg: number }>();
-  // Filter corrupt rows before the history limit so they cannot hide valid weights.
-  const weight_history = weights.filter(({ local_date, kg }) => calendarDate(local_date)
-    && typeof kg === "number" && Number.isFinite(kg) && kg >= 30 && kg <= 300)
-    .slice(0, 90).map(({ local_date, kg }) => ({ date: local_date, kg }));
+  const weights = weightsResult.results as { local_date: string; kg: number }[];
+  const weight_history = weights.map(({ local_date, kg }) => ({ date: local_date, kg }));
   const birth_year = get("birth_year");
   const age = birth_year === null ? null : year - birth_year;
   const measured = get("max_hr");
