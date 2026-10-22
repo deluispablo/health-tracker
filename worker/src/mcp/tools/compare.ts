@@ -1,3 +1,4 @@
+import { isCalendarDate } from "../../lib/time";
 import { mean, sampleSd, welch } from "./stats";
 
 export const BEHAVIORS: readonly string[] = ["cigarettes", "alcohol_g", "caffeine_mg"];
@@ -20,12 +21,10 @@ export function caveats(n: number): string {
 }
 
 function calendarTime(date: string): number {
-  const time = Date.parse(`${date}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(time)
-    || new Date(time).toISOString().slice(0, 10) !== date || date < "2000-01-01" || date > "2099-12-31") {
+  if (!isCalendarDate(date) || date < "2000-01-01" || date > "2099-12-31") {
     throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
   }
-  return time;
+  return Date.parse(`${date}T00:00:00Z`);
 }
 
 // Callers validate column names before interpolation; dates always use bound parameters.

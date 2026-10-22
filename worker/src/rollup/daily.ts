@@ -1,3 +1,5 @@
+import { isCalendarDate } from "../lib/time";
+
 const DAY_MS = 86_400_000;
 
 const BASE_COLUMNS = [
@@ -88,12 +90,10 @@ WHERE local_date BETWEEN ?1 AND ?2
 `;
 
 function calendarTime(date: string): number {
-  const time = Date.parse(`${date}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(time)
-    || new Date(time).toISOString().slice(0, 10) !== date) {
+  if (!isCalendarDate(date)) {
     throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
   }
-  return time;
+  return Date.parse(`${date}T00:00:00Z`);
 }
 
 /** Replace daily bases and scores atomically; histories include stored summaries outside the range. */

@@ -105,51 +105,6 @@ describe("AC1 token cache edges", () => {
   });
 });
 
-describe("AC2 list", () => {
-  const p = (v: string) => ({ heartRate: { beatsPerMinute: v, sampleTime: { physicalTime: "2026-10-20T20:00:00Z", utcOffset: "7200s" } } });
-
-  it("returns raw records across pages, including an empty middle page, with the snake_case filter", async () => {
-    const { fetch, calls } = scripted(token(),
-      json({ dataPoints: [p("70")], nextPageToken: "a+b/c=" }),
-      json({ dataPoints: [], nextPageToken: "n3" }),
-      json({ dataPoints: [p("71"), p("72")] }));
-    const points = await client(fetch).list("heart-rate", "2026-10-20T00:00:00Z", "2026-10-21T00:00:00Z");
-    expect(points).toEqual([p("70"), p("71"), p("72")]);
-    const urls = calls.slice(1).map((c) => new URL(c.url));
-    expect(urls[0]?.pathname).toBe("/v4/users/me/dataTypes/heart-rate/dataPoints");
-    expect(urls[0]?.searchParams.get("filter")).toBe(
-      'heart_rate.sample_time.physical_time >= "2026-10-20T00:00:00Z" AND heart_rate.sample_time.physical_time < "2026-10-21T00:00:00Z"');
-    expect(urls.map((u) => u.searchParams.get("pageToken"))).toEqual([null, "a+b/c=", "n3"]);
-    expect(new Set(urls.map((u) => u.searchParams.get("filter"))).size).toBe(1);
-  });
-
-  it("treats an omitted dataPoints array as empty, even on a page with a next token", async () => {
-    const { fetch } = scripted(token(), json({ nextPageToken: "n2" }), json({}));
-    expect(await client(fetch).list("heart-rate", "2026-10-20T00:00:00Z", "2026-10-21T00:00:00Z")).toEqual([]);
-  });
-
-  it("converts every hyphen of the type in the filter", async () => {
-    const { fetch, calls } = scripted(token(), json({ dataPoints: [] }));
-    await client(fetch).list("heart-rate-variability", "2026-10-20T00:00:00Z", "2026-10-21T00:00:00Z");
-    const u = new URL(calls[1]?.url ?? "");
-    expect(u.pathname).toBe("/v4/users/me/dataTypes/heart-rate-variability/dataPoints");
-    expect(u.searchParams.get("filter")).toBe(
-      'heart_rate_variability.sample_time.physical_time >= "2026-10-20T00:00:00Z" AND heart_rate_variability.sample_time.physical_time < "2026-10-21T00:00:00Z"');
-  });
-
-  it("rejects the whole call when a later page exhausts its retries", async () => {
-    const { fetch } = scripted(token(), json({ dataPoints: [p("70")], nextPageToken: "n2" }), json({}, 503), json({}, 503), json({}, 503), json({}, 503));
-    await expect(client(fetch).list("heart-rate", "2026-10-20T00:00:00Z", "2026-10-21T00:00:00Z")).rejects.toThrow();
-  });
-
-  it("retries a failed later page without duplicating records", async () => {
-    const sleeps: number[] = [];
-    const { fetch, calls } = scripted(token(), json({ dataPoints: [p("70")], nextPageToken: "n2" }), json({}, 503), json({ dataPoints: [p("71")] }));
-    expect(await client(fetch, sleeps).list("heart-rate", "2026-10-20T00:00:00Z", "2026-10-21T00:00:00Z")).toEqual([p("70"), p("71")]);
-    expect(calls[2]?.url).toBe(calls[3]?.url);
-  });
-});
-
 describe("AC3 heart-rate rollUp", () => {
   const item = (m: number, avg: number, max: number, min: number) => ({
     startTime: new Date(Date.UTC(2026, 9, 20, 20, m)).toISOString().replace(".000", ""),

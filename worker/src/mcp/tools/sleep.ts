@@ -1,3 +1,5 @@
+import { isCalendarDate } from "../../lib/time";
+
 type Stage = [number, number, string];
 
 interface Session {
@@ -33,12 +35,10 @@ interface StageRow {
 }
 
 function calendarTime(date: string): number {
-  const time = Date.parse(`${date}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(time)
-    || new Date(time).toISOString().slice(0, 10) !== date) {
+  if (!isCalendarDate(date)) {
     throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
   }
-  return time;
+  return Date.parse(`${date}T00:00:00Z`);
 }
 
 function localTime(timestamp: number, offset: number): string {

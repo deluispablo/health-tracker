@@ -1,3 +1,4 @@
+import { isCalendarDate } from "../../lib/time";
 import { roundOneDecimal as round } from "./stats";
 
 interface WorkoutRow {
@@ -16,12 +17,10 @@ interface WorkoutRow {
 }
 
 function calendarTime(date: string): number {
-  const time = Date.parse(`${date}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(time)
-    || new Date(time).toISOString().slice(0, 10) !== date) {
+  if (!isCalendarDate(date)) {
     throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
   }
-  return time;
+  return Date.parse(`${date}T00:00:00Z`);
 }
 
 const localTime = (ts: number, offset: number): string => new Date((ts + offset * 60) * 1000).toISOString().slice(0, 16);

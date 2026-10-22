@@ -1,3 +1,5 @@
+import { isCalendarDate } from "../lib/time";
+
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const API = "https://health.googleapis.com/v4/users/me";
 const KV_KEY = "google_access_token";
@@ -21,11 +23,10 @@ interface Device { deviceVersion?: string; lastSyncTime?: string }
 interface CivilDate { year: number; month: number; day: number }
 
 function parseCivilDate(s: string): Date {
-  const date = new Date(`${s}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== s) {
+  if (!isCalendarDate(s)) {
     throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
   }
-  return date;
+  return new Date(`${s}T00:00:00Z`);
 }
 
 function civilRange(start: string, end: string, maxDays = Infinity) {
@@ -52,8 +53,7 @@ function parseInstant(s: string): number {
 /** Returned exercise instants accept arbitrary fractions, truncated to milliseconds. */
 export function parseExerciseInstant(value: unknown): number {
   if (typeof value !== "string" || !RFC3339.test(value)) return NaN;
-  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
-  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value.slice(0, 10)
+  if (!isCalendarDate(value.slice(0, 10))
     || Number(value.slice(11, 13)) > 23 || Number(value.slice(14, 16)) > 59 || Number(value.slice(17, 19)) > 59) return NaN;
   return Date.parse(value);
 }
@@ -118,11 +118,6 @@ export function createGoogleClient(o: GoogleClientOptions) {
   }
 
   return {
-    /** Raw dataPoints of a sample-based type over [start, end), following every page. */
-    async list(type: string, start: string, end: string): Promise<unknown[]> {
-      return listPages(type, "sample_time.physical_time", start, end);
-    },
-
     async reconcile(type: string, start: string, end: string): Promise<unknown[]> {
       if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(type)) throw new RangeError("invalid data type");
       const a = parseInstant(start);

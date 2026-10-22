@@ -1,7 +1,8 @@
 import type { createGoogleClient, DailyRollUpPoint } from "../google/client";
 import { parseExerciseInstant } from "../google/client";
 import { upsertStatements } from "../lib/d1";
-import { dateTimeFormat, sleepLocalDate } from "../lib/time";
+import { dateTimeFormat, isCalendarDate, sleepLocalDate } from "../lib/time";
+import { RECONCILE_TYPES } from "./poll";
 
 interface DrainEnv { DB: D1Database; USER_TZ: string }
 interface PendingRow {
@@ -45,11 +46,6 @@ function localMidnight(date: string, formatter: Intl.DateTimeFormat): number {
 
 const midnight = (date: string): number => Date.parse(`${date}T00:00:00Z`) / 1000;
 const addDays = (date: string, days: number): string => new Date((midnight(date) + days * 86400) * 1000).toISOString().slice(0, 10);
-
-function validDate(date: unknown): date is string {
-  return typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)
-    && Number.isFinite(midnight(date)) && addDays(date, 0) === date;
-}
 
 function sleepInterval(value: unknown): [number, number] | undefined {
   const interval = object(value);
@@ -111,18 +107,16 @@ export async function drainSyncPending(
   });
   let processed = 0;
   let failed = 0;
-  const types = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
-    "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"];
   const cutoff = (opts.now?.() ?? Math.floor(Date.now() / 1000)) - 86400;
   let remaining = 799; // Include the queue read in the 800-statement budget.
   // Admit at most one historical heart-rate row; drain all types oldest-first.
   const { results: pending } = await db.prepare(`SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY data_type, (end_ts < ?1)
       ORDER BY received_at, start_ts, operation, end_ts) AS rank
-    FROM sync_pending WHERE attempts < 5 AND data_type IN (${types.map(() => "?").join(", ")})
+    FROM sync_pending WHERE attempts < 5 AND data_type IN (${RECONCILE_TYPES.map(() => "?").join(", ")})
   ) WHERE data_type != 'heart-rate' OR end_ts >= ?1 OR rank = 1
     ORDER BY received_at, start_ts, operation, end_ts,
-      CASE data_type ${types.map((type, i) => `WHEN '${type}' THEN ${String(i)}`).join(" ")} END`).bind(cutoff, ...types).all<PendingRow>();
+      CASE data_type ${RECONCILE_TYPES.map((type, i) => `WHEN '${type}' THEN ${String(i)}`).join(" ")} END`).bind(cutoff, ...RECONCILE_TYPES).all<PendingRow>();
   for (const row of pending) {
     if (Date.now() >= deadline || remaining < 4) break;
     const type = row.data_type;
@@ -290,7 +284,7 @@ export async function drainSyncPending(
               .filter((field) => field in zones).map((field) => readNumber(zones[field]) ?? NaN);
             value = parts.length ? parts.reduce((sum, part) => sum + part, 0) : NaN;
           }
-          if (!validDate(point.date) || point.date < first || point.date >= end || value === null || !Number.isFinite(value)) return [];
+          if (!isCalendarDate(point.date) || point.date < first || point.date >= end || value === null || !Number.isFinite(value)) return [];
           return [[metric, point.date, value, "gh", null, now]];
         });
         statements.push(...dirtyStatements(db, first, addDays(end, -1)), db.prepare(`DELETE FROM metric_daily

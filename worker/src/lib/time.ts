@@ -2,6 +2,12 @@ const RFC3339_Z = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/
 
 const dateOf = (epochSeconds: number): string => new Date(epochSeconds * 1000).toISOString().slice(0, 10);
 
+export function isCalendarDate(date: unknown): date is string {
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const time = Date.parse(`${date}T00:00:00Z`);
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === date;
+}
+
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
 export function dateTimeFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {

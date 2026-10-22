@@ -1,4 +1,4 @@
-import { dateTimeFormat } from "../../lib/time";
+import { dateTimeFormat, isCalendarDate } from "../../lib/time";
 import { trackerDailyStatements } from "../../rollup/trackers";
 
 interface Tracker {
@@ -31,10 +31,7 @@ function eventOutput(row: EventRow) {
 }
 
 export async function healthTrackers(db: D1Database, { date }: { date: string }) {
-  const midnight = Date.parse(`${date}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(midnight)
-    || new Date(midnight).toISOString().slice(0, 10) !== date
-    || date < "2000-01-01" || date > "2099-12-31") {
+  if (!isCalendarDate(date) || date < "2000-01-01" || date > "2099-12-31") {
     throw new RangeError("date must be a real YYYY-MM-DD date between 2000-01-01 and 2099-12-31");
   }
   const [totalsResult, eventsResult] = await db.batch<Tracker & { total: number; n: number } | EventRow>([
@@ -74,9 +71,7 @@ function logOutput(event: EventRow, created: boolean, total: D1Result<{ total: n
 }
 
 function storedDateRefresh(db: D1Database, date: string) {
-  const midnight = Date.parse(`${date}T00:00:00Z`);
-  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(midnight)
-    && new Date(midnight).toISOString().slice(0, 10) === date && date >= "2000-01-01" && date <= "2099-12-31";
+  const validDate = isCalendarDate(date) && date >= "2000-01-01" && date <= "2099-12-31";
   return validDate ? trackerDailyStatements(db, date, date) : [];
 }
 
@@ -91,8 +86,7 @@ function eventTime(at: string, now: number): number {
   const match = typeof at === "string"
     ? /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(at) : null;
   if (!match) throw new RangeError("at must be a strict RFC 3339 instant with at most 3 fractional digits");
-  const midnight = Date.parse(`${match[1]}T00:00:00Z`);
-  if (!Number.isFinite(midnight) || new Date(midnight).toISOString().slice(0, 10) !== match[1]
+  if (!isCalendarDate(match[1])
     || Number(match[2]) > 23 || Number(match[3]) > 59 || Number(match[4]) > 59
     || Number(match[5]) > 14 || Number(match[6]) > 59) {
     throw new RangeError("at must have a real date and valid clock and offset fields");
