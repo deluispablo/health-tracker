@@ -2,7 +2,6 @@ package com.deluispablo.healthtracker
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertThrows
 import org.junit.Test
 
 internal fun sampleJson(hrSize: Int = 96): String {
@@ -32,7 +31,8 @@ class DialDataTest {
     }
 
     @Test
-    fun rejectsMalformedSpans() {
+    fun skipsMalformedSpansAndKeepsTheRest() {
+        val good = parseDialData(sampleJson())
         for (span in listOf(
             "{\"start\":1140,\"end\":1080}",
             "{\"start\":1080,\"end\":1080}",
@@ -40,13 +40,12 @@ class DialDataTest {
             "{\"start\":\"1080\",\"end\":1140}",
             "{\"start\":1080}",
         )) {
-            assertThrows(Exception::class.java) {
-                parseDialData(sampleJson().replace("{\"start\":1080,\"end\":1140}", span))
-            }
+            val parsed = parseDialData(sampleJson().replace("{\"start\":1080,\"end\":1140}", span))
+            assertEquals(good.workouts.size - 1, parsed.workouts.size)
+            assertEquals(good.sleep, parsed.sleep)
+            assertEquals(good.events, parsed.events)
         }
-        assertThrows(IllegalArgumentException::class.java) {
-            parseDialData(sampleJson().replace("\"end\":430", "\"end\":-30"))
-        }
+        assertEquals(good.sleep.size - 1, parseDialData(sampleJson().replace("\"end\":430", "\"end\":-30")).sleep.size)
     }
 
     @Test(expected = IllegalArgumentException::class)

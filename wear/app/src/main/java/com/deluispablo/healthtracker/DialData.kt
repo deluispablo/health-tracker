@@ -27,11 +27,14 @@ fun parseDialData(json: String): DialData {
     return DialData(
         date = date,
         generatedAt = o.getLong("generatedAt"),
-        sleep = o.getJSONArray("sleep").objects().map {
-            it.span(it.getBoolean("nap"))
+        // A malformed item is skipped so one bad row cannot blank the whole day.
+        sleep = o.getJSONArray("sleep").objects().mapNotNull {
+            runCatching { it.span(it.getBoolean("nap")) }.getOrNull()
         },
-        workouts = o.getJSONArray("workouts").objects().map { it.span() },
-        events = o.getJSONArray("events").objects().map { Mark(it.minute("t"), it.getString("k")) },
+        workouts = o.getJSONArray("workouts").objects().mapNotNull { runCatching { it.span() }.getOrNull() },
+        events = o.getJSONArray("events").objects().mapNotNull {
+            runCatching { Mark(it.minute("t"), it.getString("k")) }.getOrNull()
+        },
         hr = List(96) { i -> if (hr.isNull(i)) null else hr.getInt(i) },
     )
 }
