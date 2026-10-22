@@ -164,10 +164,14 @@
   .ht-key { width: 3px; height: 12px; border-radius: 2px; background: var(--k); }
   .ht-key-dia { width: 8px; height: 8px; transform: rotate(45deg); background: var(--m-cig); }
   .ht-key-tri { width: 10px; height: 10px; background: var(--m-alcohol); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
-  .ht-key-grp { width: 12px; height: 12px; border-radius: var(--radius-full); box-shadow: inset 0 0 0 2px var(--ink); font: 600 8px/12px var(--font-sans); text-align: center; color: var(--ink); }
   .ht-key-ring { width: 10px; height: 10px; border-radius: var(--radius-full); box-shadow: inset 0 0 0 2px var(--m-mood); }
   .ht-key-arc { width: 14px; height: 5px; border-radius: var(--radius-full); background: var(--m-steps); }
-  .ht-key-wedge { width: 10px; height: 10px; border-radius: 10px 0 0 0; background: var(--m-deep); }
+  .ht-key-sleep, .ht-key-nap { width: 16px; height: 9px; border-top: 5px solid var(--m-deep); border-radius: 50%; box-sizing: border-box; }
+  .ht-key-nap { border-top-color: var(--m-light); filter: drop-shadow(0 -1px var(--m-deep)); }
+  .ht-key-night { width: 14px; height: 9px; background: var(--band); border-radius: 2px; }
+  .ht-key-pulse { width: 15px; height: 10px; background: repeating-linear-gradient(90deg, var(--m-hr) 0 2px, transparent 2px 5px); opacity: .7; }
+  .ht-dial-legend[hidden] { display: none; }
+  .ht-dial-legend-toggle { display: block; margin: 8px auto 0; padding: 6px 10px; border: 0; border-radius: var(--radius-full); background: var(--surface-2); color: var(--muted); font: 400 12px/16px var(--font-sans); cursor: pointer; }
   .ht-key-other { width: 9px; height: 9px; box-shadow: inset 0 0 0 2px var(--ink); }
   .ht-skel.dial-skel { aspect-ratio: 1; border-radius: var(--radius-full); max-width: 260px; margin: 20px auto; }
 
@@ -237,7 +241,7 @@
   .fring { display: none; fill: none; stroke: var(--focus); stroke-width: 2; }
   .mk.is-focus .fring { display: inline; }
   .vis { transition: opacity var(--dur-base) var(--ease-standard); }
-  svg.has-hot .mk:not(.is-hot) .vis { opacity: .28; }
+  svg.has-hot .mk:not(.is-hot) .vis, svg.has-hot .dial-ambient { opacity: .35; }
   .dd { position: relative; margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--surface); font-size: 14px; line-height: 20px; }
   .dd.is-idle { padding: 0; background: none; text-align: center; font-size: 12px; line-height: 16px; color: var(--muted); }
   @media (hover: none) { .dd.is-idle { display: none; } }
@@ -818,7 +822,10 @@
     'dial.now': ['now {t}', 'ahora {t}'],
     'dial.ariaNoSleep': ['24-hour dial. No sleep recorded last night. Now {now}.', 'Esfera de 24 horas. Sin sueño registrado anoche. Ahora {now}.'],
     'dial.legendSleep': ['Sleep', 'Sueño'],
-    'dial.legendGroup': ['Several logs', 'Varios registros'],
+    'dial.legendToggle': ['What each mark means', 'Qué es cada marca'],
+    'dial.legendNight': ['Night', 'Noche'],
+    'dial.legendPulse': ['Heart rate', 'Pulso'],
+    'dial.ariaPulse': ['Heart rate from {lo} to {hi} bpm.', 'Pulso de {lo} a {hi} ppm.'],
     'dd.hint': ['Point at the dial or a timeline row for details.', 'Señala la esfera o una fila de la cronología para ver el detalle.'],
     'det.seeNight': ['See night →', 'Ver la noche →'],
     'dial.legendOther': ['Other', 'Otro'],
@@ -1049,6 +1056,38 @@
     const a1 = dialAngle(a), a2 = dialAngle(b);
     return { a1, a2, sweep: ((a2 - a1) % 360 + 360) % 360 };
   }
+  function sunTimes(dateISO, lat, lon) {
+    const date = new Date(dateISO + 'T12:00:00'), jd = Date.parse(dateISO + 'T00:00:00Z') / 86400000 + 2440587.5, rad = Math.PI / 180;
+    if (!Number.isFinite(jd) || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    const solar = (minutes) => {
+      const c = (jd + minutes / 1440 - 2451545) / 36525, l = (280.46646 + c * (36000.76983 + c * .0003032)) % 360;
+      const m = (357.52911 + c * (35999.05029 - .0001537 * c)) * rad, e = .016708634 - c * (.000042037 + .0000001267 * c);
+      const center = Math.sin(m) * (1.914602 - c * (.004817 + .000014 * c)) + Math.sin(2 * m) * (.019993 - .000101 * c) + .000289 * Math.sin(3 * m);
+      const omega = (125.04 - 1934.136 * c) * rad, apparent = (l + center - .00569 - .00478 * Math.sin(omega)) * rad;
+      const ob = (23 + (26 + (21.448 - c * (46.815 + c * (.00059 - c * .001813))) / 60) / 60 + .00256 * Math.cos(omega)) * rad;
+      const dec = Math.asin(Math.sin(ob) * Math.sin(apparent)), y = Math.tan(ob / 2) ** 2, lr = l * rad;
+      const eq = 4 / rad * (y * Math.sin(2 * lr) - 2 * e * Math.sin(m) + 4 * e * y * Math.sin(m) * Math.cos(2 * lr) - .5 * y * y * Math.sin(4 * lr) - 1.25 * e * e * Math.sin(2 * m));
+      const ha = Math.acos(Math.cos(90.833 * rad) / (Math.cos(lat * rad) * Math.cos(dec)) - Math.tan(lat * rad) * Math.tan(dec)) / rad;
+      return { eq, ha };
+    };
+    const event = (sign) => {
+      let minutes = 720 - 4 * lon;
+      for (let i = 0; i < 3; i++) { const { eq, ha } = solar(minutes); minutes = 720 - 4 * lon - eq + sign * 4 * ha; }
+      return ((minutes - date.getTimezoneOffset()) % 1440 + 1440) % 1440;
+    };
+    const sunrise = event(-1), sunset = event(1);
+    return Number.isFinite(sunrise) && Number.isFinite(sunset) ? { sunrise, sunset } : null;
+  }
+  function pulseBuckets(points, until) {
+    const buckets = new Map();
+    for (const p of points ?? []) {
+      const min = localMinutes(p[0]);
+      if (min == null || min > until || !Number.isFinite(p[1]) || p[1] <= 0) continue;
+      const key = Math.floor(min / 15) * 15, b = buckets.get(key) ?? { min: key, sum: 0, n: 0 };
+      b.sum += p[1]; b.n++; buckets.set(key, b);
+    }
+    return [...buckets.values()].sort((a, b) => a.min - b.min).map((b) => ({ min: b.min, bpm: b.sum / b.n }));
+  }
   function clipWorkout(w, date) {
     const s = w?.start_local, e = w?.end_local;
     if (typeof s !== 'string' || typeof e !== 'string') return null;
@@ -1127,13 +1166,13 @@
     }
     return { runs, bridges };
   }
-  /* Logs of any kind within `gap` minutes of a group's first log share one dial mark; its detail lists every member. */
-  const GROUP_MIN = 8;
+  /* Logs of any kind no more than `gap` minutes apart chain into one dial mark; its detail lists every member. */
+  const GROUP_MIN = 20;
   function clusterEvents(events, gap) {
     const out = [];
     for (const e of events.slice().sort((a, b) => a.min - b.min)) {
       const g = out[out.length - 1];
-      if (g && e.min - g.min <= gap) { g.n++; g.last = e.min; g.members.push(e); continue; }
+      if (g && e.min - g.last <= gap) { g.n++; g.last = e.min; g.members.push(e); continue; }
       out.push({ ...e, n: 1, last: e.min, members: [e] });
     }
     return out;
@@ -1200,7 +1239,7 @@
 
   window.HTLogic = {
     COPY, t, tn, pickLang, fmt: { num, signed, dur, ago, day, vital, range }, VITALS, shiftDate, dayValue, typicalRange, rangeStatus, rangeFlag, outliers,
-    recovery, stepGoal, expectedSteps, dialAngle, localMinutes, sleepWedge, clipWorkout, mainSession, CHIPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
+    recovery, stepGoal, expectedSteps, sunTimes, pulseBuckets, dialAngle, localMinutes, sleepWedge, clipWorkout, mainSession, CHIPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
     available, summary, dialEvents, dayItems, stageMinutes, gapRuns, GROUP_MIN, clusterEvents, writeQueue, doubleTap, NIGHT_END, dayFor, bridgeEvents,
     applyLog, applyUndo, acceptSnapshot, syncLabel, errorKind
   };
@@ -1479,7 +1518,6 @@
   const pt = (c, r, a) => { const q = a * Math.PI / 180; return [r2(c + r * Math.sin(q)), r2(c - r * Math.cos(q))]; };
   const sweep = (a1, a2) => ((a2 - a1) % 360 + 360) % 360;
   const arc = (c, r, a1, a2) => { const s = sweep(a1, a2), p = pt(c, r, a1), q = pt(c, r, a2); return 'M' + p + 'A' + r + ' ' + r + ' 0 ' + (s > 180 ? 1 : 0) + ' 1 ' + q; };
-  const sector = (c, r, a1, a2) => 'M' + c + ' ' + c + 'L' + pt(c, r, a1) + arc(c, r, a1, a2).replace(/^M[^A]+/, '') + 'Z';
   const mark = (size) => '<svg viewBox="0 0 64 64" width="' + size + '" height="' + size + '" aria-hidden="true" focusable="false"><circle cx="32" cy="32" r="26" fill="none" stroke="var(--ink)" stroke-width="2.4"/><path d="M22.25 15.11A19.5 19.5 0 0 1 50.84 37.05" fill="none" stroke="var(--m-deep)" stroke-width="5" stroke-linecap="round"/><path d="M17.0 37L25.7 37L27.5 34.8L29.3 37L30.5 37L31.4 39.42L32.9 26L34.55 42.28L35.9 37L39.2 37L41.6 34.36L44.0 37L47.0 37" fill="none" stroke="var(--ink)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   /* ---- DOM helper: text always through text nodes; html only for trusted icon markup ---- */
@@ -1558,7 +1596,7 @@
     error = error && typeof error.code === 'string' ? error : { code: 'upstream_error', message: String(error?.message ?? '') };
     const kind = L.errorKind(error.code), s = S[name];
     if (kind === 'user_changed') return stopAll();
-    if (!s.error && ERR_CARD[name] && !pageLevel()) say(t('st.errX', { x: t('card.' + ERR_CARD[name]) }));   // announce once, when the source first fails
+    if (!s.error && ERR_CARD[name] && (name !== 'hr' || active === 'health') && !pageLevel()) say(t('st.errX', { x: t('card.' + ERR_CARD[name]) }));   // announce once, when the source first fails
     s.error = error;
     if (kind === 'consent') s.data = null;                       // retract while consent is pending; the watch stays
     if (kind === 'denied') { s.data = null; s.halted = true; s.token++; s.unsubscribe?.(); s.unsubscribe = null; }
@@ -1566,7 +1604,7 @@
   }
   function stopAll() {
     stopped = true;
-    SOURCES.forEach((n) => { const s = S[n]; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); s.halted = true; s.error = { code: 'user_changed', message: '' }; });
+    [...SOURCES, 'hr'].forEach((n) => { const s = S[n]; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); s.halted = true; s.error = { code: 'user_changed', message: '' }; });
     { const s = S.trackersNow; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); }
     Q.clear(); target = undone = null; closeMood(false); render();
   }
@@ -1760,7 +1798,7 @@
     if (m.kind === 'cluster') {
       const e0 = m.members[0], same = m.members.every((e) => e.tracker_id === e0.tracker_id) && e0.k !== 'animo';
       kids.push(...head('', tn('tip.logs', m.members.length), hhmm(m.min) + ' – ' + hhmm(m.last)),
-        h('dl', {}, m.members.flatMap((e) => [h('dt', {}, shapeMark(e.k), evTitle(e)), h('dd', {}, h('span', { class: 'ht-mono', text: e.local_time }), evValue(e) ? ': ' + evValue(e) : '')])));
+        h('dl', {}, m.members.flatMap((e) => [h('dt', {}, shapeMark(e.k), evTitle(e)), h('dd', {}, h('span', { class: 'ht-mono', text: e.local_time }), evValue(e) ? [' ', h('span', { text: evValue(e) })] : null)])));
       if (same) { const tot = m.members.reduce((a, e) => a + (finiteNum(e.value) ? e.value : 0), 0); kids.push(h('p', { class: 'det-sm', text: t('tip.total', { x: fmt.num(tot, lang, tot % 1 ? 1 : 0) + unitText(e0.unit) }) })); }
       m.members.forEach((e) => { if (e.note_untrusted != null) kids.push(note(e.local_time + ': ' + e.note_untrusted)); });
       return kids;
@@ -1844,7 +1882,10 @@
   /* Event id -> the dial mark that draws it (logs within GROUP_MIN minutes share one mark). */
   const markIds = (snap) => new Map(L.clusterEvents(L.dialEvents(snap), L.GROUP_MIN).flatMap((m) => m.members.map((e) => [e.id, 'm:' + m.id])));
 
+  const DIAL_LOCATION = { lat: 40.4168, lon: -3.7038 };
+  let dialLegendOpen = false;
   function renderDial(n) {
+    startHr();
     const past = isPast();
     $('dial-now').textContent = past ? '' : t('dial.now', { t: hhmm(n.min) });
     const box = $('dial-body'), parts = [S.sleep, S.trackers, S.workouts];
@@ -1858,9 +1899,7 @@
     const naps = (sessions ?? []).filter((s) => s.is_nap && s.local_date === dayDate && (L.localMinutes(s.start_local) ?? 1440) <= until).map((s) => ({ s, w: L.sleepWedge(s.start_local, s.end_local) })).filter((x) => x.w);
     const events = L.dialEvents(S.trackers.data), marks = L.clusterEvents(events, L.GROUP_MIN);
     const works = (S.workouts.data?.workouts ?? []).map((w) => ({ w, c: L.clipWorkout(w, dayDate) })).filter((x) => x.c && x.c.from <= until);
-    const C = 180, RT = 112, IN = RT - 22, OUT = RT + 26, nowA = L.dialAngle(n.min), under = [], out = [], mk = [], M = new Map();
-    const label = (p, a, txt, size) => '<text x="' + p[0] + '" y="' + (p[1] + size / 3) + '" text-anchor="' + (Math.sin(a * Math.PI / 180) > 0.1 ? 'start' : Math.sin(a * Math.PI / 180) < -0.1 ? 'end' : 'middle') +
-      '" font-family="var(--font-mono)" font-size="' + size + '" fill="var(--muted)">' + txt + '</text>';
+    const C = 180, under = [], out = [], mk = [], hands = [], M = new Map();
     /* A ring sector from a1 clockwise to a2 between radii r1 and r2: the invisible hit area of a ring mark. */
     const band = (r1, r2, a1, a2) => { const lg = sweep(a1, a2) > 180 ? 1 : 0;
       return 'M' + pt(C, r2, a1) + 'A' + r2 + ' ' + r2 + ' 0 ' + lg + ' 1 ' + pt(C, r2, a2) + 'L' + pt(C, r1, a2) + 'A' + r1 + ' ' + r1 + ' 0 ' + lg + ' 0 ' + pt(C, r1, a1) + 'Z'; };
@@ -1869,67 +1908,99 @@
     const add = (id, m, vis, fring, hit, low) => { M.set(id, m);
       (low ? under : mk).push('<g class="mk" data-ref="' + esc(id) + '"><g class="vis">' + vis + '</g>' + fring + hit.replace('/>', ' class="hit" role="button" tabindex="-1" aria-describedby="dd-body" data-hit="' + esc(id) + '" data-o="' + (m.o ?? 0) +
         '" data-fk="dk-' + esc(id) + '" aria-label="' + esc(markLabel(m)) + '"/>') + '</g>'); };
-    if (wedge) add('s:' + session.start_local, { kind: 'sleep', s: session, o: -1 }, '<path d="' + sector(C, 100, wedge.a1, wedge.a2) + '" fill="var(--m-deep)"/>',
-      '<path class="fring" d="' + sector(C, 104, wedge.a1 - 1, wedge.a2 + 1) + '"/>', '<path d="' + sector(C, 100, wedge.a1, wedge.a2) + '"/>', true);
-    naps.forEach(({ s, w }) => add('n:' + s.start_local, { kind: 'nap', s, o: L.localMinutes(s.start_local) }, '<path d="' + sector(C, 92, w.a1, w.a2) + '" fill="var(--m-light)" stroke="var(--m-deep)" stroke-width="1.5" stroke-linejoin="round"/>',
-      '<path class="fring" d="' + sector(C, 98, w.a1 - 2, w.a2 + 2) + '"/>', '<path d="' + sector(C, 100, w.a1 - 3, w.a2 + 3) + '"/>', true));
-    out.push('<circle cx="180" cy="180" r="' + RT + '" fill="none" stroke="var(--line)" stroke-width="3"/>');
-    if (past) out.push('<circle cx="180" cy="180" r="' + RT + '" fill="none" stroke="var(--muted)" stroke-width="3"/>');   // a past day is complete
-    else if (nowA > 0.5) out.push('<path d="' + arc(C, RT, 0.01, nowA) + '" fill="none" stroke="var(--muted)" stroke-width="3" stroke-linecap="round"/>');
-    [0, 6, 12, 18].forEach((hr) => {
-      const a = hr * 15, p1 = pt(C, hr ? 106 : 118, a), p2 = pt(C, hr ? 118 : 128, a), l = pt(C, 150, a);   // midnight is marked outside the ring, so marks at 00:xx stay visible
-      out.push('<path d="M' + p1 + 'L' + p2 + '" stroke="' + (hr ? 'var(--line-strong)' : 'var(--ink)') + '" stroke-width="' + (hr ? 2 : 3.5) + '" stroke-linecap="round"/>');
-      out.push('<text x="' + l[0] + '" y="' + (l[1] + 4.5) + '" text-anchor="middle" font-family="var(--font-mono)" font-size="13.5" fill="var(--muted)">' + String(hr).padStart(2, '0') + '</text>');
+    const strokeArc = (r, a1, a2, width, color) => '<path d="' + arc(C, r, a1, a2) + '" fill="none" stroke="var(--' + color + ')" stroke-width="' + width + '" stroke-linecap="round"/>';
+    out.push('<circle cx="180" cy="180" r="150" fill="none" stroke="var(--line-strong)" stroke-width="1.5"/>');
+    for (let hr = 0; hr < 24; hr++) {
+      const a = hr * 15, major = hr % 6 === 0, length = major ? 12 : hr % 3 === 0 ? 7 : 4;
+      out.push('<path d="M' + pt(C, 150, a) + 'L' + pt(C, 150 - length, a) + '" stroke="var(--' + (major ? 'ink' : 'line-strong') + ')" stroke-width="' + (major ? 2.5 : 1.25) + '"/>');
+      if (major) { const p = pt(C, 166, a); out.push('<text x="' + p[0] + '" y="' + (p[1] + 4.3) + '" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="500" fill="var(--ink)">' + String(hr).padStart(2, '0') + '</text>'); }
+    }
+    const sun = L.sunTimes(dayDate, DIAL_LOCATION.lat, DIAL_LOCATION.lon);
+    if (sun) {
+      out.push('<g class="dial-ambient" aria-hidden="true"><path d="' + band(112, 140, L.dialAngle(sun.sunset), L.dialAngle(sun.sunrise)) + '" fill="var(--band)"/>');
+      [['sunrise', true], ['sunset', false]].forEach(([key, rise]) => {
+        const a = L.dialAngle(sun[key]), p = pt(C, 176, a);
+        out.push('<path d="M' + pt(C, 110, a) + 'L' + pt(C, 142, a) + '" stroke="var(--line-strong)" stroke-width="1.25"/><g transform="translate(' + p + ')" fill="none" stroke="var(--muted)" stroke-width="1.25">' +
+          (rise ? '<circle r="3"/><path d="M0 -5V-7M0 5V7M-5 0H-7M5 0H7M-3.5 -3.5L-5 -5M3.5 3.5L5 5M-3.5 3.5L-5 5M3.5 -3.5L5 -5"/>' : '<path d="M4 -5A6 6 0 1 0 5 4A5 5 0 0 1 4 -5Z"/>') + '</g><text x="' + p[0] + '" y="' + (p[1] + 18) + '" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--muted)">' + hhmm(Math.round(sun[key])) + '</text>');
+      });
+      out.push('</g>');
+    }
+    if (wedge) add('s:' + session.start_local, { kind: 'sleep', s: session, o: -1 }, strokeArc(126, wedge.a1, wedge.a2, 16, 'm-deep'),
+      '<path class="fring" d="' + band(116, 136, wedge.a1 - 1, wedge.a2 + 1) + '"/>', '<path d="' + band(114, 138, wedge.a1 - 3, wedge.a2 + 3) + '"/>', true);
+    naps.forEach(({ s, w }) => add('n:' + s.start_local, { kind: 'nap', s, o: L.localMinutes(s.start_local) }, strokeArc(126, w.a1, w.a2, 10, 'm-deep') + strokeArc(126, w.a1, w.a2, 7, 'm-light'),
+      '<path class="fring" d="' + band(119, 133, w.a1 - 2, w.a2 + 2) + '"/>', '<path d="' + band(114, 138, w.a1 - 3, w.a2 + 3) + '"/>', true));
+    out.push('<circle cx="180" cy="180" r="102" fill="none" stroke="var(--line)" stroke-width="1"/>');
+    works.forEach(({ w, c }) => {
+      const a2 = Math.min(360, Math.max(L.dialAngle(Math.min(c.to, until)), 4)), a1 = Math.min(L.dialAngle(c.from), a2 - 4);
+      add('w:' + w.start_local, { kind: 'workout', w, o: c.from }, strokeArc(126, a1, a2, 9, 'm-steps'),
+        '<path class="fring" d="' + band(119, 133, a1 - 2, a2 + 2) + '"/>', '<path d="' + band(114, 138, a1 - 3, a2 + 3) + '"/>');
     });
-    /* Workouts: an arc on the ring (at least 6 degrees); the hit band is wide, and its outer half stays theirs where a log sits on the arc. */
-    const spans = works.map(({ c }) => { const a1 = L.dialAngle(c.from); return [a1, Math.max(L.dialAngle(c.to), a1 + 6)]; });
-    const onArc = (a) => spans.some(([a1, a2]) => gap(a1 - 3, a) <= a2 - a1 + 6);
-    works.forEach(({ w, c }, i) => { const [a1, a2] = spans[i], d = arc(C, RT, a1, a2);
-      add('w:' + w.start_local, { kind: 'workout', w, o: c.from }, '<path d="' + d + '" fill="none" stroke="var(--m-steps)" stroke-width="8" stroke-linecap="round"/>',
-        '<path class="fring" d="' + arc(C, RT + 9, a1 - 2, a2 + 2) + arc(C, RT - 9, a1 - 2, a2 + 2) + '"/>', '<path d="' + band(IN, OUT, a1 - 3, a2 + 3) + '"/>'); });
-    /* Logs: one shape per tracker; a group of logs is a ring with its count. Hit areas split the ring between neighbours (up to 12 degrees each side). */
-    const angs = marks.map((e) => L.dialAngle(e.min));
+    /* Logs keep one hit area per cluster, split between neighbours. */
+    const angs = marks.map((e) => L.dialAngle(e.members.reduce((sum, m) => sum + m.min, 0) / e.n));
+    const steps = marks.map(() => 6.5), fanAt = (i, step = steps[i]) => (marks[i].n - 1) * step / 2;
+    const extent = (i, step = steps[i]) => marks[i].n === 1 ? [angs[i], angs[i]]
+      : [Math.min(angs[i] - fanAt(i, step) - 1, L.dialAngle(marks[i].min)), Math.max(angs[i] + fanAt(i, step) + 1, L.dialAngle(marks[i].last))];
+    /* Reserve 4.5° around member centres for their shapes, including the surface stroke. */
+    const reach = (i, right, step = steps[i]) => Math.max(fanAt(i, step) + 4.5, (right ? extent(i, step)[1] - angs[i] : angs[i] - extent(i, step)[0]) + .5);
+    if (marks.length > 1) marks.forEach((e, i) => {
+      const j = (i + 1) % marks.length, space = gap(angs[i], angs[j]) - .2;
+      const left = reach(i, true), right = reach(j, false), lo = reach(i, true, 3), ro = reach(j, false, 3);
+      if (left + right <= space) return;
+      const scale = Math.max(0, (space - lo - ro) / (left + right - lo - ro || 1));
+      [[i, lo + (left - lo) * scale], [j, ro + (right - ro) * scale]].forEach(([k, room]) => {
+        if (marks[k].n > 1) steps[k] = Math.max(3, Math.min(steps[k], (room - 4.5) * 2 / (marks[k].n - 1)));
+      });
+    });
+    const extents = marks.map((e, i) => extent(i)), bounds = marks.map((e, i) => [angs[i] - reach(i, false), angs[i] + reach(i, true)]);
+    const logShape = (e, a) => {
+      const p = pt(C, 102, a), tr = 'translate(' + p + ') rotate(' + r2(a) + ')';
+      if (e.k === 'animo') return '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="4.25" fill="var(--surface)" stroke="var(--surface)" stroke-width="6"/><circle cx="' + p[0] + '" cy="' + p[1] + '" r="4.25" fill="none" stroke="var(--m-mood)" stroke-width="2"/>';
+      if (e.k === 'cigarro') return '<rect x="-4.25" y="-4.25" width="8.5" height="8.5" transform="' + tr + ' rotate(45)" fill="var(--m-cig)" stroke="var(--surface)" stroke-width="2" paint-order="stroke"/>';
+      if (e.k === 'alcohol') return '<path d="M0 -6.8L5.8 4.4L-5.8 4.4Z" transform="' + tr + '" fill="var(--m-alcohol)" stroke="var(--surface)" stroke-width="2" paint-order="stroke" stroke-linejoin="round"/>';
+      if (e.k === 'other') return '<rect x="-4" y="-4" width="8" height="8" transform="' + tr + '" fill="var(--ink)" stroke="var(--surface)" stroke-width="2" paint-order="stroke"/>';
+      const d = 'M' + pt(C, 95, a) + 'L' + pt(C, 109, a);
+      return '<path d="' + d + '" stroke="var(--surface)" stroke-width="6" stroke-linecap="round"/><path d="' + d + '" stroke="var(--m-caffeine)" stroke-width="3.25" stroke-linecap="round"/>';
+    };
     marks.forEach((e, i) => {
-      const a = angs[i], p = pt(C, RT, a), k = e.n > 1 ? 'group' : e.k;
-      const prev = angs.length > 1 ? gap(angs[(i + angs.length - 1) % angs.length], a) : 360, next = angs.length > 1 ? gap(a, angs[(i + 1) % angs.length]) : 360;
-      const half = Math.max(0.5, Math.min(12, prev / 2, next / 2) - 0.1), tr = 'translate(' + p + ') rotate(' + r2(a) + ')';
-      let v;
-      if (k === 'group') v = '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="9" fill="var(--surface)" stroke="var(--ink)" stroke-width="2"/><text x="' + p[0] + '" y="' + r2(p[1] + 3.8) + '" text-anchor="middle" font-family="var(--font-sans)" font-size="11" font-weight="600" fill="var(--ink)">' + e.n + '</text>';
-      else if (k === 'animo') v = '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="5" fill="var(--surface)" stroke="var(--m-mood)" stroke-width="2.25"/>';
-      else if (k === 'other') v = '<rect x="-4.5" y="-4.5" width="9" height="9" transform="' + tr + '" fill="var(--surface)" stroke="var(--ink)" stroke-width="2"/>';
-      else if (k === 'cigarro') v = '<rect x="-5" y="-5" width="10" height="10" transform="' + tr + ' rotate(45)" fill="var(--m-cig)" stroke="var(--surface)" stroke-width="2"/>';
-      else if (k === 'alcohol') v = '<path d="M0 -7.5L6.5 4.8L-6.5 4.8Z" transform="' + tr + '" fill="var(--m-alcohol)" stroke="var(--surface)" stroke-width="2" stroke-linejoin="round"/>';
-      else { const q1 = pt(C, 103, a), q2 = pt(C, 121, a);
-        v = '<path d="M' + q1 + 'L' + q2 + '" stroke="var(--surface)" stroke-width="6.5" stroke-linecap="round"/><path d="M' + q1 + 'L' + q2 + '" stroke="var(--m-caffeine)" stroke-width="3.5" stroke-linecap="round"/>'; }
+      const a = angs[i], fan = fanAt(i), [from, to] = extents[i], prev = (i + marks.length - 1) % marks.length, next = (i + 1) % marks.length;
+      const prevEnd = extents[prev][1] - (i === 0 ? 360 : 0), nextStart = extents[next][0] + (next === 0 ? 360 : 0);
+      const a1 = Math.min(bounds[i][0], Math.max(from - 12, (prevEnd + from) / 2 + .1, bounds[prev][1] - (i === 0 ? 360 : 0)));
+      const a2 = Math.max(bounds[i][1], Math.min(to + 12, (to + nextStart) / 2 - .1, bounds[next][0] + (next === 0 ? 360 : 0)));
+      let v = e.members.map((m, j) => logShape(m, a + j * steps[i] - fan)).join('');
+      if (e.n > 1) v += '<path d="' + arc(C, 89, a - fan - 1, a + fan + 1) + [...new Set(e.members.map((m) => m.min))].map((min) => 'M' + pt(C, 89, L.dialAngle(min)) + 'L' + pt(C, 85, L.dialAngle(min))).join('') + '" fill="none" stroke="var(--line-strong)" stroke-width="1.25"/>';
       add('m:' + e.id, e.n > 1 ? { kind: 'cluster', members: e.members, min: e.min, last: e.last, o: e.min } : { kind: 'event', e, o: e.min },
-        v, '<circle class="fring" cx="' + p[0] + '" cy="' + p[1] + '" r="' + (e.n > 1 ? 14 : 12) + '"/>', '<path d="' + band(IN, onArc(a) ? RT + 1 : OUT, a - half, a + half) + '"/>');
+        v, '<path class="fring" d="' + band(83, 115, a1, a2) + '"/>', '<path d="' + band(84, 114, a1, a2) + '"/>');
     });
-    /* Now: a primary ring with a centre dot on a surface halo; it steps outside the ring when a mark sits at the same time (around midnight, say). */
+    const pulse = !S.hr.error && S.hr.data?.date === dayDate ? L.pulseBuckets(S.hr.data.points, until) : [];
+    out.push('<g class="dial-ambient" aria-hidden="true"><g opacity=".7">' + pulse.map((p) => '<path d="M' + pt(C, 50, L.dialAngle(p.min)) + 'L' + pt(C, Math.max(50, Math.min(84, 52 + (p.bpm - 45) * .33)), L.dialAngle(p.min)) + '" stroke="var(--m-hr)" stroke-width="1.75" stroke-linecap="round"/>').join('') + '</g></g>');
     if (!past) {
-      const clash = angs.some((a) => Math.min(gap(a, nowA), gap(nowA, a)) < 7) || spans.some(([a1, a2]) => gap(a1 - 4, nowA) <= a2 - a1 + 8);
-      const np = pt(C, clash ? RT - 22 : RT, nowA);
-      out.push('<circle cx="' + np[0] + '" cy="' + np[1] + '" r="11" fill="var(--surface)"/><circle cx="' + np[0] + '" cy="' + np[1] + '" r="7.5" fill="none" stroke="var(--primary)" stroke-width="2.5"/><circle cx="' + np[0] + '" cy="' + np[1] + '" r="3" fill="var(--primary)"/>');
+      hands.push('<g class="dial-ambient" aria-hidden="true" pointer-events="none">');
+      [[n.min % 60 * 6, -10, 116, 4.25, 1.25, 'muted'], [L.dialAngle(n.min), -12, 94, 8, 4.5, 'primary']].forEach(([a, back, front, halo, width, color]) => {
+        const d = 'M' + pt(C, back, a) + 'L' + pt(C, front, a);
+        hands.push('<path d="' + d + '" stroke="var(--surface)" stroke-width="' + halo + '" stroke-linecap="round"/><path d="' + d + '" stroke="var(--' + color + ')" stroke-width="' + width + '" stroke-linecap="round"/>');
+      });
+      hands.push('<circle cx="180" cy="180" r="6" fill="var(--primary)" stroke="var(--surface)" stroke-width="2"/></g>');
     }
     const bed = session ? session.start_local.slice(11, 16) : null, wake = session ? session.end_local.slice(11, 16) : null;
-    if (wedge) {
-      // bed and wake sit on the hour-label circle in muted text, nudged clear of the hour labels
-      const clear = (a) => { for (const m of [0, 90, 180, 270, 360]) if (Math.abs(a - m) < 10) return a < m ? m - 10 : m + 10; return a; };
-      [[wedge.a1, bed], [wedge.a2, wake]].forEach(([a, txt]) => { const b = clear(a); out.push(label(pt(C, 150, b), b, txt, 12)); });
-    }
     dialMarks = M;
     const evName = (e) => e.k === 'animo' ? t('trk.animo').toLowerCase() + ' (' + t('mood.' + e.mood) + ')' : e.k !== 'other' ? t('trk.' + e.k).toLowerCase() : e.name;
     const aria = (wedge ? t('dial.aria', { bed, wake, d: session.minutes_asleep == null ? '—' : fmt.dur(session.minutes_asleep, lang), now: past ? '—' : hhmm(n.min) }) : t('dial.ariaNoSleep', { now: past ? '—' : hhmm(n.min) })) +
       (events.length ? ' ' + t('dial.ariaLogs', { x: events.map((e) => evName(e) + ' ' + hhmm(e.min)).join(', ') }) : '') +
-      (works.length ? ' ' + t('dial.ariaWorkout', { x: works.map(({ c }) => hhmm(c.from) + '–' + hhmm(Math.min(c.to, 1439))).join(', ') }) : '');
-    const wrap = h('div', { class: 'ht-dial', html: '<svg viewBox="12 12 336 336" role="group" tabindex="-1">' + under.join('') + out.join('') + mk.join('') + '</svg>' }), svg = wrap.firstChild;
+      (works.length ? ' ' + t('dial.ariaWorkout', { x: works.map(({ c }) => hhmm(c.from) + '–' + hhmm(Math.min(c.to, 1439))).join(', ') }) : '') +
+      (pulse.length ? ' ' + t('dial.ariaPulse', { lo: Math.round(Math.min(...pulse.map((p) => p.bpm))), hi: Math.round(Math.max(...pulse.map((p) => p.bpm))) }) : '');
+    const wrap = h('div', { class: 'ht-dial', html: '<svg viewBox="-16 -16 392 392" role="group" tabindex="-1">' + out.join('') + under.join('') + mk.join('') + hands.join('') + '</svg>' }), svg = wrap.firstChild;
     svg.setAttribute('aria-label', aria);
     // legend: only what is on the dial, in a fixed order, each with its own shape
-    const has = new Set(marks.map((e) => e.n > 1 ? 'group' : e.k)), key = (cls, txt, style) => h('span', {}, h('i', { class: cls, style }), txt);
-    swap(box, wrap, h('div', { class: 'ht-dial-legend', 'aria-hidden': 'true' },
-      wedge && key('ht-key-wedge', t('dial.legendSleep')), naps.length > 0 && key('ht-key-wedge', t('tip.nap'), 'background:var(--m-light);box-shadow:inset 0 0 0 1.5px var(--m-deep)'),
+    const has = new Set(events.map((e) => e.k)), key = (cls, txt, style) => h('span', {}, h('i', { class: cls, style, 'aria-hidden': 'true' }), txt);
+    const legend = h('div', { id: 'dial-legend', class: 'ht-dial-legend', role: 'region', 'aria-label': t('dial.legendToggle'), hidden: !dialLegendOpen },
+      wedge && key('ht-key-sleep', t('dial.legendSleep')), naps.length > 0 && key('ht-key-nap', t('tip.nap')),
       has.has('cafe') && key('ht-key', t('trk.cafe'), '--k:var(--m-caffeine)'), has.has('cigarro') && key('ht-key-dia', t('trk.cigarro')), has.has('alcohol') && key('ht-key-tri', t('trk.alcohol')),
-      has.has('animo') && key('ht-key-ring', t('trk.animo')), has.has('group') && key('ht-key-grp', t('dial.legendGroup')), works.length > 0 && key('ht-key-arc', t('trk.workout')),
-      has.has('other') && key('ht-key-other', t('dial.legendOther'))));
+      has.has('animo') && key('ht-key-ring', t('trk.animo')), works.length > 0 && key('ht-key-arc', t('trk.workout')),
+      has.has('other') && key('ht-key-other', t('dial.legendOther')), sun && key('ht-key-night', t('dial.legendNight')), pulse.length > 0 && key('ht-key-pulse', t('dial.legendPulse')));
+    const toggle = h('button', { type: 'button', class: 'ht-dial-legend-toggle', 'data-fk': 'dial-legend-toggle', 'aria-expanded': String(dialLegendOpen), 'aria-controls': 'dial-legend', onclick: () => {
+      dialLegendOpen = !dialLegendOpen; legend.hidden = !dialLegendOpen; toggle.setAttribute('aria-expanded', String(dialLegendOpen));
+    } }, t('dial.legendToggle'));
+    swap(box, wrap, toggle, legend);
     wire(svg);
     if (shown && !M.has(shown)) hide(true); else fillDetail();
     if (hot) setHot(dialMarks.has(hot) || document.querySelector('#ev-body [data-ref="' + CSS.escape(hot) + '"]') ? hot : null);
@@ -2082,12 +2153,16 @@
     hr: (d) => ({ metric: 'hr', date: d, resolution: '5m' })
   });
   ['vitals', 'hr', 'hrev'].forEach((n) => { S[n] = reset({ token: 0, unsubscribe: null }); });
+  let hrOn = false;
+  function startHr() {
+    if (!hrOn && connector && !stopped) { hrOn = true; subscribe('hr'); }
+  }
   let hvOn = false, hvDays = 30, hvMark = null, hvFocus = null, hvWidth = 0;
 
   /* Called from setDate: drop the old day's sources; they restart on the next render of the tab. */
   function healthDate() {
     ['vitals', 'hr', 'hrev'].forEach((n) => { const s = S[n]; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); });
-    hvOn = false; hvFocus = null;
+    hrOn = false; hvOn = false; hvFocus = null;
   }
   function hvFocusOn(e) {
     const s = S.hrev, to = e.min + 90;
@@ -2251,7 +2326,7 @@
   function renderHealth() {
     const panel = $('p-health');
     if (panel.hidden) return;
-    if (!hvOn && connector && !stopped) { hvOn = true; ['vitals', 'hr'].forEach(subscribe); }
+    if (!hvOn && connector && !stopped) { hvOn = true; subscribe('vitals'); startHr(); }
     $('hv-date').textContent = fmt.day(dayDate, lang);
     $('h-hr').textContent = dayTitle('hr.title');
     $('hv-grid').hidden = pageLevel();
@@ -2827,7 +2902,7 @@
   try { new ResizeObserver(fit).observe(qw); } catch (e) { /* older engines: the resize listener still runs */ }
   window.addEventListener('resize', fit); fit();
 
-  /* Clock: the now dot and "time since" move each minute; midnight re-subscribes for the new date. */
+  /* Clock: the hands and "time since" move each minute; midnight re-subscribes for the new date. */
   setInterval(() => {
     if (stopped) return;
     const n = now();
