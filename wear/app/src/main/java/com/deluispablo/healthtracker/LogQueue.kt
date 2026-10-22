@@ -15,10 +15,10 @@ import org.json.JSONObject
 
 /**
  * A log waiting for the Worker: [id] is its idempotency key, [at] the tap time in epoch seconds.
- * An [undo] tap asks the Worker to delete the already-sent log with the same id. [acked] once the
- * Worker took it; it stays queued until a dial shows the outcome.
+ * An [undo] tap asks the Worker to delete the already-sent log with the same id. [acked] is when the
+ * Worker took it (epoch ms); it stays queued until a dial shows the outcome.
  */
-data class Tap(val id: String, val tracker: String, val at: Long, val undo: Boolean = false, val acked: Boolean = false)
+data class Tap(val id: String, val tracker: String, val at: Long, val undo: Boolean = false, val acked: Long? = null)
 
 fun kindOf(tracker: String): String = when {
     tracker == "caffeine" -> "cafe"
@@ -32,7 +32,7 @@ fun parseTaps(json: String): List<Tap> = JSONArray(json).let { a ->
     List(a.length()) { i ->
         runCatching {
             a.getJSONObject(i).run {
-                Tap(getString("id"), getString("tracker"), getLong("at"), optBoolean("undo"), optBoolean("acked"))
+                Tap(getString("id"), getString("tracker"), getLong("at"), optBoolean("undo"), (opt("acked") as? Number)?.toLong())
             }
         }.getOrNull()
     }.filterNotNull()
@@ -40,19 +40,31 @@ fun parseTaps(json: String): List<Tap> = JSONArray(json).let { a ->
 
 fun tapsJson(taps: List<Tap>): String =
     JSONArray(taps.map {
-        JSONObject().put("id", it.id).put("tracker", it.tracker).put("at", it.at).put("undo", it.undo).put("acked", it.acked)
+        JSONObject().put("id", it.id).put("tracker", it.tracker).put("at", it.at).put("undo", it.undo).putOpt("acked", it.acked)
     }).toString()
 
 /** Marks exactly [tap] as taken by the Worker; an undo queued for it meanwhile is a different entry and stays. */
-fun ackTap(taps: List<Tap>, tap: Tap): List<Tap> = taps.map { if (it == tap) it.copy(acked = true) else it }
+fun ackTap(taps: List<Tap>, tap: Tap, nowMs: Long): List<Tap> = taps.map { if (it == tap) it.copy(acked = nowMs) else it }
 
 /**
- * Drops the taps [data] already shows: a log once its key is on the dial, an undo once the Worker took
- * it and the key is gone (an undo is never dropped before it is sent, in case its log is still in flight).
+ * Drops the taps [data], fetched from [fetchStartMs], already settles: a log once its key is on the dial;
+ * an undo once the Worker took it and the key is gone. Any tap acked before the fetch started goes too,
+ * since that dial reflects it even when the key is missing (deleted elsewhere, another day, archived).
+ * An undo is never dropped before it is sent, in case its log is still in flight.
  */
-fun confirmedBy(taps: List<Tap>, data: DialData): List<Tap> {
+fun confirmedBy(taps: List<Tap>, data: DialData, fetchStartMs: Long): List<Tap> {
     val shown = data.events.mapNotNull { it.i }.toSet()
-    return taps.filterNot { if (it.undo) it.acked && it.id !in shown else it.id in shown }
+    return taps.filterNot {
+        val acked = it.acked
+        (acked != null && acked <= fetchStartMs) || if (it.undo) acked != null && it.id !in shown else it.id in shown
+    }
+}
+
+/** Remembers the newest dial request applied, so a slower, older response cannot overwrite it. */
+class FetchOrder {
+    private var newestMs = Long.MIN_VALUE
+
+    @Synchronized fun accept(startMs: Long): Boolean = (startMs >= newestMs).also { if (it) newestMs = startMs }
 }
 
 /** Applies the day's unsent taps to the dial, so a log or an undo shows before the Worker confirms it. */

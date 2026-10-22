@@ -26,13 +26,13 @@ class LogWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, p
         val ctx = applicationContext
         val taps = synchronized(cacheLock) { readTaps(ctx) }
         var retry = false
-        for (tap in taps.filter { !it.acked }) {
+        for (tap in taps.filter { it.acked == null }) {
             val code = send(tap)
             if (!settled(code, tap.undo)) { Log.w(TAG, "/watch/log -> $code"); retry = true; break }
             synchronized(cacheLock) {
                 val queue = readTaps(ctx)
                 if (code >= 300) Log.w(TAG, "dropping tap ${tap.id} after $code")
-                writeTaps(ctx, if (code >= 300) queue - tap else ackTap(queue, tap))
+                writeTaps(ctx, if (code >= 300) queue - tap else ackTap(queue, tap, System.currentTimeMillis()))
             }
         }
         if (taps.isNotEmpty() && fetchToday(ctx) != 200) retry = true

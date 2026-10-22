@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 
 private const val TAG = "SyncWorker"
 internal val cacheLock = Any()
+private val fetchOrder = FetchOrder()
 
 /** The new body when it parses, else the last good one, else null. */
 fun chooseCached(newJson: String?, oldJson: String?): DialData? =
@@ -41,6 +42,7 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
  * already shows them. Returns the HTTP status, or -1 when the network failed.
  */
 fun fetchToday(ctx: Context): Int {
+    val start = System.currentTimeMillis()
     val conn = URL("${BuildConfig.WATCH_BASE_URL}/watch/today").openConnection() as HttpURLConnection
     try {
         conn.connectTimeout = 20_000
@@ -50,7 +52,7 @@ fun fetchToday(ctx: Context): Int {
         Log.i(TAG, "GET /watch/today -> $code")
         if (code == 401) Log.w(TAG, "token rejected; check watchToken in local.properties")
         // Redraw the cached day otherwise, so "now" and the stale dimming stay current.
-        refreshCache(ctx, if (code == 200) conn.inputStream.bufferedReader().use { it.readText() } else null)
+        refreshCache(ctx, if (code == 200) conn.inputStream.bufferedReader().use { it.readText() } else null, start)
         return code
     } catch (e: IOException) {
         Log.w(TAG, "fetch failed", e)
@@ -69,12 +71,12 @@ class RedrawWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 }
 
 /** Renders before saving a valid new body, then pokes the complication. */
-fun refreshCache(ctx: Context, body: String?) = synchronized(cacheLock) {
+fun refreshCache(ctx: Context, body: String?, fetchStartMs: Long = 0) = synchronized(cacheLock) {
     val dir = ctx.filesDir
     val jsonFile = File(dir, "dial.json")
-    val newData = chooseCached(body, null)
+    val newData = chooseCached(body, null)?.takeIf { fetchOrder.accept(fetchStartMs) }
     val data = newData ?: chooseCached(null, jsonFile.takeIf { it.exists() }?.readText()) ?: return
-    if (newData != null) readTaps(ctx).let { taps -> confirmedBy(taps, newData).takeIf { it != taps }?.let { writeTaps(ctx, it) } }
+    if (newData != null) readTaps(ctx).let { taps -> confirmedBy(taps, newData, fetchStartMs).takeIf { it != taps }?.let { writeTaps(ctx, it) } }
     val now = ZonedDateTime.now(MADRID)
     val today = withTaps(dataForToday(data, now), readTaps(ctx))
     val minutes = minutesSince(today.date, now)

@@ -52,21 +52,38 @@ class UndoTest {
     fun anUndoTappedWhileItsLogIsInFlightSurvivesTheAck() {
         val log = Tap("x-1", "cigarettes", at)
         val undone = undoTaps(listOf(log), log)
-        assertEquals(undone, ackTap(undone, log))
+        assertEquals(undone, ackTap(undone, log, 1_000))
         // The log landed and shows on the dial: the undo still has to go out.
-        assertEquals(undone, confirmedBy(undone, dial("x-1")))
-        assertEquals(undone, confirmedBy(undone, dial()))
-        assertEquals(emptyList<Tap>(), confirmedBy(ackTap(undone, undone[0]), dial()))
+        assertEquals(undone, confirmedBy(undone, dial("x-1"), 2_000))
+        assertEquals(undone, confirmedBy(undone, dial(), 2_000))
+        assertEquals(emptyList<Tap>(), confirmedBy(ackTap(undone, undone[0], 1_000), dial(), 500))
     }
 
     @Test
     fun aLogLeavesTheQueueOnceTheDialShowsItsKey() {
         val log = Tap("x-1", "cigarettes", at)
-        assertEquals(listOf(log), confirmedBy(listOf(log), dial("y-2")))
-        assertEquals(emptyList<Tap>(), confirmedBy(listOf(log), dial("x-1")))
+        assertEquals(listOf(log), confirmedBy(listOf(log), dial("y-2"), 2_000))
+        assertEquals(emptyList<Tap>(), confirmedBy(listOf(log), dial("x-1"), 2_000))
         // A refresh that already has the log never draws it twice, whatever the timing.
-        assertEquals(dial("x-1"), withTaps(dial("x-1"), listOf(log.copy(acked = true))))
-        assertEquals(listOf(log.copy(acked = true)), parseTaps(tapsJson(listOf(log.copy(acked = true)))))
+        assertEquals(dial("x-1"), withTaps(dial("x-1"), listOf(log.copy(acked = 3_000))))
+        assertEquals(listOf(log.copy(acked = 3_000)), parseTaps(tapsJson(listOf(log.copy(acked = 3_000)))))
+    }
+
+    @Test
+    fun aDialFetchedAfterTheAckSettlesALogItDoesNotShow() {
+        // Deleted elsewhere, logged on another day or on an archived tracker: the key never shows up.
+        val acked = Tap("x-1", "cigarettes", at, acked = 1_000)
+        assertEquals(listOf(acked), confirmedBy(listOf(acked), dial(), 999))
+        assertEquals(emptyList<Tap>(), confirmedBy(listOf(acked), dial(), 1_000))
+        assertEquals(listOf(Tap("y-2", "caffeine", at)), confirmedBy(listOf(Tap("y-2", "caffeine", at)), dial(), 9_000))
+    }
+
+    @Test
+    fun anOlderResponseArrivingLateIsIgnored() {
+        val inOrder = FetchOrder()
+        assertEquals(listOf(true, true), listOf(1_000L, 2_000L).map(inOrder::accept))
+        val late = FetchOrder()
+        assertEquals(listOf(true, false), listOf(2_000L, 1_000L).map(late::accept))
     }
 
     @Test
