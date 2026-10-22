@@ -13,6 +13,7 @@ const KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
 const appEnv = (DB = env.DB) => ({
   DB, OAUTH_KV: env.OAUTH_KV, USER_TZ: "Europe/Madrid", WEBHOOK_SECRET: "secret",
   GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "secret", ALLOWED_EMAIL: "owner@example.com", TOKEN_ENC_KEY: KEY,
+  WATCH_TOKEN: "watch-token-0123456789abcdef0123456789",
 });
 const deps = (now = NOW) => ({ now: () => now, sleep: () => Promise.resolve(),
   fetch: () => Promise.reject(new Error("unexpected Google call")) });

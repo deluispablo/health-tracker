@@ -12,6 +12,7 @@ const KEY = btoa(String.fromCharCode(...new Uint8Array(32).map((_, i) => i + 1))
 const appEnv = () => ({
   DB: env.DB, OAUTH_KV: env.OAUTH_KV, USER_TZ: "Europe/Madrid", WEBHOOK_SECRET: "Bearer hook-secret-0123456789",
   GOOGLE_CLIENT_ID: "client-id", GOOGLE_CLIENT_SECRET: "client-secret", ALLOWED_EMAIL: "owner@example.com", TOKEN_ENC_KEY: KEY,
+  WATCH_TOKEN: "watch-token-0123456789abcdef0123456789",
 });
 
 interface Call { url: string; method: string; body: string }

@@ -9,6 +9,7 @@ import { FAVICON_PNG } from "./favicon";
 import { homepage, pageResponse, privacy, terms } from "./pages";
 import { recomputeDailySummary } from "./rollup/daily";
 import { recomputeTrackerDaily } from "./rollup/trackers";
+import { handleWatchToday } from "./watch";
 
 export interface AppEnv {
   DB: D1Database;
@@ -19,6 +20,7 @@ export interface AppEnv {
   GOOGLE_CLIENT_SECRET: string;
   ALLOWED_EMAIL: string;
   TOKEN_ENC_KEY: string;
+  WATCH_TOKEN: string;
 }
 
 export interface AppDeps {
@@ -128,6 +130,8 @@ export async function route(request: Request, env: AppEnv, deps: AppDeps): Promi
     case "/google/callback":
       if (request.method !== "GET") return new Response(null, { status: 405 });
       return finishGoogleConnect(request, env, deps);
+    case "/watch/today":
+      return handleWatchToday(request, env, deps.now());
     default:
       return new Response(null, { status: 404 });
   }
