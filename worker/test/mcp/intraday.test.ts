@@ -256,7 +256,7 @@ describe("QA1 intraday response bounds", () => {
     expect(result.points).toHaveLength(150);
     expect(result.points[149]).toEqual(["2026-10-07T02:29", 60, 60, 60]);
     expect(result.coverage).toEqual({ minutes_with_data: 688 });
-    expect(result).toMatchObject({ truncated: true, hint: expect.stringMatching(/narrow.*5m.*1h/i) });
+    expect(result).toMatchObject({ truncated: true, hint: expect.stringMatching(/narrow.*5m.*1h/i) as unknown });
     const small = await healthIntraday(env.DB, { metric: "hr", date: "2026-10-07", resolution: "1m", to: "00:02" });
     expect(small.points).toEqual(result.points.slice(0, 2));
     expect(small).not.toHaveProperty("hint");

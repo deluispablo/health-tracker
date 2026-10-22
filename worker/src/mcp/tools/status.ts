@@ -99,7 +99,7 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
       gap.push(date);
     } else if (gap.length >= 3) {
       alerts.push({ code: "hr_coverage_gap",
-        message: `Cobertura de frecuencia cardíaca casi nula (≤1 min/día) desde ${gap[0]} hasta ${gap.at(-1)}.` });
+        message: `Cobertura de frecuencia cardíaca casi nula (≤1 min/día) desde ${gap[0]} hasta ${gap.at(-1) ?? gap[0]}.` });
       break;
     } else {
       gap = [];

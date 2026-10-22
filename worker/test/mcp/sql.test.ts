@@ -119,7 +119,7 @@ describe("T11 AC4 health_sql execution", () => {
     expect(await healthSql(db, { query: sql })).toEqual({ columns: ["local_date", "steps"],
       rows: dates.slice(0, 200).map((date, i) => [date, i]), row_count: Math.min(count, 200),
       truncated: count > 200, notes_untrusted: false,
-      ...(count > 200 ? { hint: expect.stringContaining("LIMIT") } : {}) });
+      ...(count > 200 ? { hint: expect.stringContaining("LIMIT") as unknown } : {}) });
     expect(calls).toEqual([["prepare", `SELECT * FROM (\n${sql}\n) LIMIT 201`], ["all"],
       ...(count ? [] : [["raw", { columnNames: true }]])]);
   });
@@ -199,11 +199,11 @@ describe("T26 AC2 serialized row budget", () => {
     await env.DB.prepare("INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at) VALUES ('large', 'caffeine', 1, 0, '2026-10-21', 1, ?, 'mcp', 1)").bind(note).run();
     const result = await healthSql(env.DB, { query: "SELECT value, note FROM v_events" });
     expect(result).toEqual({ columns: ["value", "note"], rows: extra ? [] : [[1, note]], row_count: extra ? 0 : 1,
-      truncated: Boolean(extra), notes_untrusted: true, ...(extra ? { hint: expect.any(String) } : {}) });
+      truncated: Boolean(extra), notes_untrusted: true, ...(extra ? { hint: expect.any(String) as unknown } : {}) });
     if (!extra) {
       await env.DB.prepare("INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at) VALUES ('small', 'caffeine', 2, 0, '2026-10-21', 2, 'small', 'mcp', 2)").run();
       expect(await healthSql(env.DB, { query: "SELECT value, note FROM v_events ORDER BY ts" }))
-        .toEqual({ ...result, truncated: true, hint: expect.any(String) });
+        .toEqual({ ...result, truncated: true, hint: expect.any(String) as unknown });
     }
   });
 
@@ -212,14 +212,14 @@ describe("T26 AC2 serialized row budget", () => {
     expect(JSON.stringify(notes.slice(0, 2).map((note) => [note])).length).toBe(20000);
     await env.DB.batch(notes.map((note, i) => env.DB.prepare("INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at) VALUES (?, 'caffeine', ?, 0, '2026-10-21', 1, ?, 'mcp', 1)").bind(`budget-${String(i)}`, i, note)));
     expect(await healthSql(env.DB, { query: "SELECT note FROM v_events ORDER BY ts" }))
-      .toEqual({ columns: ["note"], rows: notes.slice(0, 2).map((note) => [note]), row_count: 2, truncated: true, notes_untrusted: true, hint: expect.any(String) });
+      .toEqual({ columns: ["note"], rows: notes.slice(0, 2).map((note) => [note]), row_count: 2, truncated: true, notes_untrusted: true, hint: expect.any(String) as unknown });
     // One more character makes the comma between rows the one that crosses the budget.
     await env.DB.prepare("UPDATE event SET note = ? WHERE id = 'budget-1'").bind("y".repeat(9996)).run();
     expect(await healthSql(env.DB, { query: "SELECT note FROM v_events ORDER BY ts" }))
-      .toEqual({ columns: ["note"], rows: [[notes[0]]], row_count: 1, truncated: true, notes_untrusted: true, hint: expect.any(String) });
+      .toEqual({ columns: ["note"], rows: [[notes[0]]], row_count: 1, truncated: true, notes_untrusted: true, hint: expect.any(String) as unknown });
     await env.DB.prepare("UPDATE event SET note = ? WHERE id = 'budget-0'").bind("x".repeat(20000)).run();
     expect(await healthSql(env.DB, { query: "SELECT note FROM v_events ORDER BY ts" }))
-      .toEqual({ columns: ["note"], rows: [], row_count: 0, truncated: true, notes_untrusted: true, hint: expect.any(String) });
+      .toEqual({ columns: ["note"], rows: [], row_count: 0, truncated: true, notes_untrusted: true, hint: expect.any(String) as unknown });
   });
 });
 
@@ -235,9 +235,9 @@ describe("QA1 SQL windows and response bounds", () => {
   ])("executes %s with SQLite window semantics", async (expression, expected) => {
     await env.DB.batch([10, 20, 30].map((steps, i) => env.DB.prepare(
       "INSERT INTO daily_summary (local_date, steps, computed_at) VALUES (?, ?, 1)",
-    ).bind(`2026-10-0${i + 1}`, steps)));
+    ).bind(`2026-10-0${String(i + 1)}`, steps)));
     const result = await healthSql(env.DB, { query: `SELECT local_date, ${expression} AS value FROM v_daily ORDER BY local_date` });
-    expect(result.rows).toEqual((expected as unknown[]).map((value, i) => [`2026-10-0${i + 1}`, value]));
+    expect(result.rows).toEqual((expected as unknown[]).map((value, i) => [`2026-10-0${String(i + 1)}`, value]));
   });
 
   it("names an unsupported token with a relevant syntax hint", async () => {
