@@ -201,8 +201,11 @@ describe("T10f AC3 exercise queue and failures", () => {
     await queue(START + 7 * 86400, START + 19 * 86400, "DELETE", NOW - 30, 4);
     const { client, calls } = fakeClient();
     await drainSyncPending(drainEnv(), client, opts);
-    expect(calls).toEqual([{ type: "exercise", start: "2026-10-02T00:00:00.000Z", end: "2026-10-09T00:00:00.000Z" }]);
-    expect(await pending()).toEqual([{ start_ts: START + 7 * 86400, end_ts: START + 19 * 86400, operation: "DELETE", received_at: NOW - 30, attempts: 2 }]);
+    expect(calls).toEqual([
+      { type: "exercise", start: "2026-10-02T00:00:00.000Z", end: "2026-10-09T00:00:00.000Z" },
+      { type: "exercise", start: "2026-10-09T00:00:00.000Z", end: "2026-10-16T00:00:00.000Z" },
+    ]);
+    expect(await pending()).toEqual([{ start_ts: START + 14 * 86400, end_ts: START + 19 * 86400, operation: "DELETE", received_at: NOW - 30, attempts: 2 }]);
   });
 
   it.each([7 * 86400 - 60, 7 * 86400, 15 * 86400])("covers a %i-second row over successive capped windows with the final minute", async (span) => {
@@ -217,14 +220,14 @@ describe("T10f AC3 exercise queue and failures", () => {
     expect(await pending()).toEqual([]);
   });
 
-  it("processes only the oldest eligible exercise row, leaving exhausted rows", async () => {
+  it("processes all eligible exercise rows, leaving exhausted rows", async () => {
     await queue(START, END, "UPSERT", NOW - 900, 5);
     await queue(END, END + 60, "UPSERT", NOW - 30);
     await queue(END + 60, END + 120, "UPSERT", NOW - 90);
     const { client, calls } = fakeClient();
-    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 1, failed: 0 });
-    expect(calls.map((c) => c.start)).toEqual(["2026-10-03T00:01:00.000Z"]);
-    expect((await pending()).map((r) => r.attempts)).toEqual([5, 0]);
+    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 2, failed: 0 });
+    expect(calls.map((c) => c.start)).toEqual(["2026-10-03T00:01:00.000Z", "2026-10-03T00:00:00.000Z"]);
+    expect((await pending()).map((r) => r.attempts)).toEqual([5]);
   });
 
   it.each([86400, 19 * 86400])("preserves a row re-received during a %i-second fetch without creating a remainder", async (span) => {

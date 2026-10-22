@@ -374,7 +374,7 @@ describe("AC2 window and queue", () => {
     await queue(start, at("2026-09-20T00:00:00Z"), "UPSERT", NOW - 300, 2);
     await queue(start + 7 * 86400, at("2026-09-20T00:00:00Z"), "UPSERT", NOW - 30, 4);
     await drainSyncPending(drainEnv(), fakeClient().client, opts);
-    expect(await pending()).toEqual([{ start_ts: start + 7 * 86400, end_ts: at("2026-09-20T00:00:00Z"), operation: "UPSERT", received_at: NOW - 30, attempts: 2 }]);
+    expect(await pending()).toEqual([{ start_ts: start + 14 * 86400, end_ts: at("2026-09-20T00:00:00Z"), operation: "UPSERT", received_at: NOW - 30, attempts: 2 }]);
     await env.DB.prepare("DELETE FROM sync_pending").run();
     await queue(start, at("2026-09-20T00:00:00Z"));
     const racing = fakeClient();
@@ -386,14 +386,14 @@ describe("AC2 window and queue", () => {
     expect(await pending()).toEqual([{ start_ts: start, end_ts: at("2026-09-20T00:00:00Z"), operation: "UPSERT", received_at: NOW, attempts: 0 }]);
   });
 
-  it("drains only the oldest eligible sleep row, skipping exhausted ones", async () => {
+  it("drains all eligible sleep rows, skipping exhausted ones", async () => {
     await queue(at("2026-09-01T00:00:00Z"), at("2026-09-02T00:00:00Z"), "UPSERT", NOW - 900, 5);
     await queue(at("2026-09-05T00:00:00Z"), at("2026-09-06T00:00:00Z"), "UPSERT", NOW - 30);
     await queue(at("2026-09-03T00:00:00Z"), at("2026-09-04T00:00:00Z"), "UPSERT", NOW - 90);
     const { client, calls } = fakeClient();
-    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 1, failed: 0 });
-    expect(calls.map((c) => c.start)).toEqual(["2026-09-03T00:00:00.000Z"]);
-    expect((await pending()).map((r) => r.attempts)).toEqual([5, 0]);
+    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 2, failed: 0 });
+    expect(calls.map((c) => c.start)).toEqual(["2026-09-03T00:00:00.000Z", "2026-09-05T00:00:00.000Z"]);
+    expect((await pending()).map((r) => r.attempts)).toEqual([5]);
   });
 
   it("still drains sleep after another type's Google failure", async () => {

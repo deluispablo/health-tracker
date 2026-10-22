@@ -125,7 +125,7 @@ describe("AC1 steps daily totals", () => {
     await queue("steps", at("2026-08-31T10:00:00Z"), at("2026-10-01T10:00:00Z"), "UPSERT", NOW - 30, 4);
     await drainSyncPending(drainEnv(), fakeClient().client, opts);
     expect(await pending()).toEqual([
-      { data_type: "steps", start_ts: at("2026-08-31T10:00:00Z"), end_ts: at("2026-10-01T10:00:00Z"), operation: "UPSERT", received_at: NOW - 30, attempts: 2 }]);
+      { data_type: "steps", start_ts: at("2026-09-30T10:00:00Z"), end_ts: at("2026-10-01T10:00:00Z"), operation: "UPSERT", received_at: NOW - 30, attempts: 2 }]);
   });
 
   it("skips days whose total is not a number or that fall outside the range, keeping valid and zero totals", async () => {
@@ -185,15 +185,15 @@ describe("AC1/AC2 impossible dates", () => {
   });
 });
 
-describe("AC3 one row per type per run", () => {
-  it("drains one row of each daily type, oldest first", async () => {
+describe("AC3 queued rows", () => {
+  it("drains all daily rows globally oldest first", async () => {
     await queue("steps", at("2026-10-18T10:00:00Z"), at("2026-10-18T11:00:00Z"), "UPSERT", NOW - 30);
     await queue("steps", at("2026-10-17T10:00:00Z"), at("2026-10-17T11:00:00Z"), "UPSERT", NOW - 90);
     await queue("daily-resting-heart-rate", at("2026-10-18T10:00:00Z"), at("2026-10-18T11:00:00Z"));
     const { client, calls } = fakeClient();
-    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 2, failed: 0 });
-    expect(calls.map((c) => [c.method, c.start])).toEqual([["dailyRollUp", "2026-10-17"], ["listDaily", "2026-10-18"]]);
-    expect((await pending()).map((r) => r.start_ts)).toEqual([at("2026-10-18T10:00:00Z")]);
+    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 3, failed: 0 });
+    expect(calls.map((c) => [c.method, c.start])).toEqual([["dailyRollUp", "2026-10-17"], ["listDaily", "2026-10-18"], ["dailyRollUp", "2026-10-18"]]);
+    expect(await pending()).toEqual([]);
   });
 
   it("counts a failure per type and keeps going with the other types", async () => {

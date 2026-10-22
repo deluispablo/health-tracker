@@ -151,9 +151,9 @@ describe.each(VITALS)("AC1 inherited daily rules: $type", (t) => {
     await queue(t.type, "2026-03-31T10:00:00Z", "2026-04-15T10:00:00Z", NOW - 30, "UPSERT", 4);
     const { client, calls } = answering(t, []);
     await drainSyncPending(drainEnv(), client, opts);
-    expect(calls.map((c) => [c.start, c.end])).toEqual([["2026-03-01", "2026-04-01"]]);
-    expect(await pending()).toEqual([{ data_type: t.type, start_ts: at("2026-03-31T10:00:00Z"), end_ts: at("2026-04-15T10:00:00Z"),
-      operation: "UPSERT", received_at: NOW - 30, attempts: 2 }]);
+    expect(calls.map((c) => [c.start, c.end])).toEqual([["2026-03-01", "2026-04-01"], ["2026-03-31", "2026-04-16"]]);
+    expect(await pending()).toEqual([]);
+    await queue(t.type, "2026-03-01T22:30:00Z", "2026-04-15T10:00:00Z", NOW - 30);
     const racing = answering(t, []);
     const key = t.via === "list" ? "listDaily" : "dailyRollUp";
     const original = racing.client[key].bind(racing.client);
@@ -227,7 +227,7 @@ describe("AC1 value edge cases", () => {
 });
 
 describe("AC2 order and isolation", () => {
-  it("runs all ten types in order, the oldest eligible row of each", async () => {
+  it("runs all ten types globally oldest first", async () => {
     const all = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability", "daily-oxygen-saturation",
       "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"];
     for (const t of all) {
@@ -241,15 +241,16 @@ describe("AC2 order and isolation", () => {
     client.dailyRollUp = record("rollup", client.dailyRollUp.bind(client));
     client.reconcile = record("reconcile", () => Promise.resolve([] as never));
     client.rollUpHeartRate = record("hr", () => Promise.resolve([] as never));
-    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 10, failed: 0 });
-    expect(order).toEqual([
+    expect(await drainSyncPending(drainEnv(), client, opts)).toEqual({ processed: 19, failed: 0 });
+    const first = [
       "hr:2026-10-06T10:00:00.000Z:2026-10-06T10:30:00.000Z", "rollup:steps:2026-10-06", "list:daily-resting-heart-rate:2026-10-06",
       "reconcile:sleep:2026-10-06T10:00:00.000Z", "list:daily-heart-rate-variability:2026-10-06", "list:daily-oxygen-saturation:2026-10-06",
-      "list:daily-respiratory-rate:2026-10-06", "list:daily-sleep-temperature-derivations:2026-10-06", "rollup:active-zone-minutes:2026-10-06", "reconcile:exercise:2026-10-06T10:00:00.000Z"]);
-    expect((await pending()).every((r) => r.start_ts === at("2026-10-07T10:00:00Z"))).toBe(true);
+      "list:daily-respiratory-rate:2026-10-06", "list:daily-sleep-temperature-derivations:2026-10-06", "rollup:active-zone-minutes:2026-10-06", "reconcile:exercise:2026-10-06T10:00:00.000Z"];
+    expect(order).toEqual([...first, ...first.slice(1).map((call) => call.replaceAll("2026-10-06", "2026-10-07"))]);
+    expect((await pending()).map((r) => [r.data_type, r.start_ts])).toEqual([["heart-rate", at("2026-10-07T10:00:00Z")]]);
   });
 
-  it("drains one row per type in the fixed order and isolates a failing type", async () => {
+  it("drains tied receipts in deterministic order and isolates a failing type", async () => {
     const all = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability", "daily-oxygen-saturation",
       "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes"];
     for (const t of all.slice(4)) await queue(t, "2026-10-07T10:00:00Z", "2026-10-07T11:00:00Z");

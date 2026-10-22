@@ -88,7 +88,7 @@ describe("T31 heads snapshot", () => {
     expect(reads).toEqual([[]]);
   });
 
-  it("AC1/AC4 returns only one eligible head per supported type from a backlog and drains in fixed order", async () => {
+  it("AC1/AC4 returns eligible rows from a backlog and drains in global receipt order", async () => {
     const start = at("2026-10-20T10:00:00Z");
     // Reverse insertion order, with ties exercising every ORDER BY column.
     for (const type of [...types].reverse()) {
@@ -107,20 +107,20 @@ describe("T31 heads snapshot", () => {
       rollUpHeartRate: () => answer("heart-rate"), dailyRollUp: answer, listDaily: answer, reconcile: answer,
     };
     const { db, reads } = countingDb();
-    expect(await drainSyncPending({ ...drainEnv(), DB: db }, client)).toEqual({ processed: 10, failed: 0 });
+    expect(await drainSyncPending({ ...drainEnv(), DB: db }, client)).toEqual({ processed: 46, failed: 0 });
     expect(reads).toHaveLength(1);
-    expect(reads[0]).toHaveLength(10);
-    expect(reads[0].map((r) => r.data_type).sort()).toEqual([...types].sort());
-    expect(reads[0].every((r) => r.start_ts === start && r.end_ts === start + 60 && r.operation === "DELETE"
-      && r.received_at === NOW - 60 && r.attempts === 0)).toBe(true);
-    // Heart-rate DELETE does not call Google; every other type still does.
-    expect(order).toEqual(types.slice(1));
-    expect(await pending()).toHaveLength(51);
+    expect(reads[0]).toHaveLength(46);
+    expect(reads[0].filter((r) => r.data_type === "heart-rate")).toHaveLength(1);
+    expect(reads[0].every((r) => r.attempts === 0)).toBe(true);
+    expect(order).toEqual(Array.from({ length: 5 }, () => types.slice(1)).flat());
+    expect(await pending()).toHaveLength(15);
+    expect((await pending()).filter((r) => r.attempts === 0 && r.data_type !== "weight"))
+      .toHaveLength(4);
   });
 
   it("AC1 preserves a later type re-received mid-drain and defers a newly arriving type to the next run", async () => {
     const start = at("2026-10-20T10:00:00Z");
-    await queue("heart-rate", start, start + 60);
+    await queue("heart-rate", start, start + 60, "UPSERT", NOW - 90);
     await queue("steps", start, start + 60);
     const order: string[] = [];
     const client = {
@@ -251,17 +251,15 @@ describe("AC2 one 24-hour window per invocation", () => {
     expect((await pending()).some((row) => row.data_type === "heart-rate")).toBe(false);
   });
 
-  it("prioritizes recent rows by receipt time over a historical backlog, one row per tick", async () => {
+  it("drains by receipt time including at most one historical row", async () => {
     const old = at("2026-07-01T22:00:00Z");
     for (let i = 0; i < 110; i++) await queue("heart-rate", old + i * 86400, old + (i + 1) * 86400, "UPSERT", NOW - 300 + i);
     await queue("heart-rate", NOW - 120, NOW - 60, "UPSERT", NOW - 10);
     await queue("heart-rate", NOW - 300, NOW - 240, "UPSERT", NOW - 5);
     const { client, calls } = fakeClient();
-    for (let i = 0; i < 3; i++) {
-      expect(await drainSyncPending(drainEnv(), client, { now: () => NOW })).toEqual({ processed: 1, failed: 0 });
-      expect(await pending()).toHaveLength(111 - i);
-    }
-    expect(calls.map((call) => call.start)).toEqual([NOW - 120, NOW - 300, old].map((ts) => new Date(ts * 1000).toISOString()));
+    expect(await drainSyncPending(drainEnv(), client, { now: () => NOW })).toEqual({ processed: 3, failed: 0 });
+    expect(await pending()).toHaveLength(109);
+    expect(calls.map((call) => call.start)).toEqual([old, NOW - 120, NOW - 300].map((ts) => new Date(ts * 1000).toISOString()));
   });
 
   it("fetches only the first day of a long interval and keeps the rest queued", async () => {
@@ -299,8 +297,7 @@ describe("AC2 one 24-hour window per invocation", () => {
     await queue("heart-rate", start, start + 2 * 86400, "UPSERT", NOW - 300, 3);
     await queue("heart-rate", start + 86400, start + 2 * 86400, "UPSERT", NOW - 30, 4);
     await drainSyncPending(drainEnv(), fakeClient().client);
-    expect(await pending()).toEqual([
-      { data_type: "heart-rate", start_ts: start + 86400, end_ts: start + 2 * 86400, operation: "UPSERT", received_at: NOW - 30, attempts: 3 }]);
+    expect(await pending()).toEqual([]);
   });
 
   it("applies a DELETE before an UPSERT of the same interval and receipt time", async () => {
