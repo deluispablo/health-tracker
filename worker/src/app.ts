@@ -9,7 +9,7 @@ import { FAVICON_PNG } from "./favicon";
 import { homepage, pageResponse, privacy, terms } from "./pages";
 import { recomputeDailySummary } from "./rollup/daily";
 import { recomputeTrackerDaily } from "./rollup/trackers";
-import { handleWatchToday } from "./watch";
+import { handleWatchLog, handleWatchToday } from "./watch";
 
 export interface AppEnv {
   DB: D1Database;
@@ -133,6 +133,9 @@ export async function route(request: Request, env: AppEnv, deps: AppDeps): Promi
     case "/watch/today":
       if (request.method !== "GET") return new Response(null, { status: 405 });
       return handleWatchToday(request, env, deps.now());
+    case "/watch/log":
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      return handleWatchLog(request, env, deps.now());
     default:
       return new Response(null, { status: 404 });
   }

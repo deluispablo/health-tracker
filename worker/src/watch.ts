@@ -1,17 +1,43 @@
 import type { AppEnv } from "./app";
 import { dateTimeFormat } from "./lib/time";
 import { healthSleep } from "./mcp/tools/sleep";
+import { logEvent } from "./mcp/tools/trackers";
 import { healthWorkouts } from "./mcp/tools/workouts";
 
 const encoder = new TextEncoder();
 const KINDS: Record<string, string> = { caffeine: "cafe", cigarettes: "cigarro", alcohol: "alcohol" };
+const MOODS = ["genial", "bien", "tranquilo", "cansado", "estresado", "ansioso", "triste", "enfadado"];
+// The watch token can only log the trackers the watch has buttons for.
+const LOGGABLE = new Set([...Object.keys(KINDS), ...MOODS.map((m) => `mood_${m}`)]);
 
-export async function handleWatchToday(request: Request, env: AppEnv, now: number): Promise<Response> {
+async function authorized(request: Request, env: AppEnv): Promise<boolean> {
   // Equal-length digests allow a constant-time comparison even when header lengths differ.
   const [actual, expected] = await Promise.all([request.headers.get("authorization") ?? "", `Bearer ${env.WATCH_TOKEN}`]
     .map((value) => crypto.subtle.digest("SHA-256", encoder.encode(value))));
-  if (typeof env.WATCH_TOKEN !== "string" || env.WATCH_TOKEN.length < 32 || !request.headers.has("authorization")
-    || !crypto.subtle.timingSafeEqual(actual, expected)) return new Response(null, { status: 401 });
+  return typeof env.WATCH_TOKEN === "string" && env.WATCH_TOKEN.length >= 32 && request.headers.has("authorization")
+    && crypto.subtle.timingSafeEqual(actual, expected);
+}
+
+/** Logs one tap from the watch; the idempotency key makes queue retries safe. */
+export async function handleWatchLog(request: Request, env: AppEnv, now: number): Promise<Response> {
+  if (!await authorized(request, env)) return new Response(null, { status: 401 });
+  const body = await request.json().catch(() => null) as { tracker_id?: unknown; at?: unknown; idempotency_key?: unknown } | null;
+  if (!body || typeof body.tracker_id !== "string" || !LOGGABLE.has(body.tracker_id)
+    || typeof body.at !== "string" || typeof body.idempotency_key !== "string") {
+    return Response.json({ error: "tracker_id, at and idempotency_key are required" }, { status: 400 });
+  }
+  try {
+    const result = await logEvent(env.DB, { tracker_id: body.tracker_id, at: body.at, idempotency_key: body.idempotency_key },
+      { now, tz: env.USER_TZ });
+    return Response.json(result, { status: result.created ? 201 : 200 });
+  } catch (e) {
+    if (e instanceof RangeError) return Response.json({ error: e.message }, { status: 400 });
+    throw e;
+  }
+}
+
+export async function handleWatchToday(request: Request, env: AppEnv, now: number): Promise<Response> {
+  if (!await authorized(request, env)) return new Response(null, { status: 401 });
 
   const parts = dateTimeFormat("en-US", {
     timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",

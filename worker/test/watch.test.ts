@@ -127,3 +127,42 @@ describe("GET /watch/today", () => {
     }
   });
 });
+
+const post = (body: unknown, authorization = `Bearer ${TOKEN}`) => route(
+  new Request("https://example.com/watch/log", { method: "POST", headers: { authorization }, body: JSON.stringify(body) }),
+  appEnv(), { fetch, now: () => NOW, sleep: () => Promise.resolve() },
+);
+
+describe("POST /watch/log", () => {
+  const tap = { tracker_id: "caffeine", at: "2026-10-21T19:58:00Z", idempotency_key: "tap-0001-abcd" };
+
+  it("logs a tap once and replays a retry", async () => {
+    const first = await post(tap);
+    expect(first.status).toBe(201);
+    const again = await post(tap);
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({ created: false, day_total: 80, event: { local_date: "2026-10-21" } });
+    const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: { t: number; k: string }[] }>();
+    expect(body.events).toEqual([{ t: 21 * 60 + 58, k: "cafe" }]);
+  });
+
+  it("logs a mood", async () => {
+    const res = await post({ ...tap, tracker_id: "mood_cansado", idempotency_key: "tap-0002-abcd" });
+    expect(res.status).toBe(201);
+  });
+
+  it("rejects a bad token, other trackers, missing fields and bad times", async () => {
+    expect((await post(tap, `Bearer ${TOKEN.slice(0, -1)}x`)).status).toBe(401);
+    expect((await post({ ...tap, tracker_id: "weight" })).status).toBe(400);
+    expect((await post({ tracker_id: "caffeine" })).status).toBe(400);
+    expect((await post({ ...tap, at: "2026-10-01T10:00:00Z" })).status).toBe(400);
+    expect((await post({ ...tap, idempotency_key: "short" })).status).toBe(400);
+    expect((await route(new Request("https://example.com/watch/log", { headers: { authorization: `Bearer ${TOKEN}` } }),
+      appEnv(), { fetch, now: () => NOW, sleep: () => Promise.resolve() })).status).toBe(405);
+    const bad = await route(new Request("https://example.com/watch/log",
+      { method: "POST", headers: { authorization: `Bearer ${TOKEN}` }, body: "{" }),
+      appEnv(), { fetch, now: () => NOW, sleep: () => Promise.resolve() });
+    expect(bad.status).toBe(400);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM event").first<{ n: number }>())?.n).toBe(0);
+  });
+});
