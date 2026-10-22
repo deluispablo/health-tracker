@@ -1181,7 +1181,9 @@ describe("T17 AC4 analysis tools through the authenticated connector", () => {
     expect(msg.result?.structuredContent).toEqual({ ...compareArgs, n: 7,
       groups: [{ label: "0", n: 4, mean: 4, sd: 2.582 }, { label: ">0–5", n: 3, mean: 4.667, sd: 3.055 },
         { label: ">5–10", n: 0, mean: null, sd: null }, { label: ">10", n: 0, mean: null, sd: null }],
-      comparisons: [{ group: ">0–5", vs: "0", diff: 0.667, df: 3.959, ci95: [-5.427, 6.76] }], notes: [], caveats: caveats(7) });
+      comparisons: [{ group: ">0–5", vs: "0", diff: 0.667, df: 3.959, ci95: [-5.427, 6.76] }],
+      notes: ["cigarettes tiene registros en 7 día(s) del rango solicitado; primer registro: 2026-01-01; último registro: 2026-01-07. Se usa todo el rango solicitado; los días sin registro cuentan como 0."],
+      caveats: caveats(7), behavior_logging: { logged_days: 7, first_logged_date: "2026-01-01", last_logged_date: "2026-01-07" }, min_days_per_group: 2 });
     expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
     await toolAudit("health_compare", compareArgs, 1, before);
   });
@@ -1196,7 +1198,10 @@ describe("T17 AC4 analysis tools through the authenticated connector", () => {
     expect(msg.result?.isError).not.toBe(true);
     expect(msg.result?.structuredContent).toEqual({ behavior: args.behavior, outcome: args.outcome, ...window, lag_days: 1, n: 0,
       groups: ["0", ">0–0.5", ">0.5–2.5", ">2.5"].map((label) => ({ label, n: 0, mean: null, sd: null })),
-      comparisons: [], notes: ["caffeine_mg solo tiene valores distintos de 0 en 0 de 0 días; los días sin registro cuentan como 0."], caveats: caveats(0) });
+      comparisons: [], notes: ["caffeine_mg solo tiene valores distintos de 0 en 0 de 0 días; los días sin registro cuentan como 0.",
+        "caffeine_mg tiene registros en 0 día(s) del rango solicitado; primer registro: ninguno; último registro: ninguno. Se usa todo el rango solicitado; los días sin registro cuentan como 0.",
+        "Se necesitan al menos 2 días con resultado disponible en cada uno de al menos 2 grupos para una comparación."],
+      caveats: caveats(0), behavior_logging: { logged_days: 0, first_logged_date: null, last_logged_date: null }, min_days_per_group: 2 });
     expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
     await toolAudit("health_compare", args, 1, before);
   });

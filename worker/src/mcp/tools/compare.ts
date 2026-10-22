@@ -6,6 +6,7 @@ export const OUTCOMES: readonly string[] = [
   "deep_min", "rem_min", "sleep_latency_min", "steps", "azm", "readiness_proxy",
 ];
 const DEFAULT_BINS: Record<string, number[]> = { cigarettes: [5, 10], alcohol_g: [20, 40], caffeine_mg: [200, 400] };
+const MIN_DAYS_PER_GROUP = 2;
 const DAY = 86_400_000;
 
 export function round(value: number): number;
@@ -55,6 +56,10 @@ export async function healthCompare(db: D1Database, { behavior, outcome, start, 
     throw new RangeError("bins must be 1 to 5 ascending positive finite numbers");
   }
   const { days, series: [behaviors, outcomes] } = await analysisSeries(db, start, end, lag_days, [behavior, outcome]);
+  const tracker = { cigarettes: "cigarettes", alcohol_g: "alcohol", caffeine_mg: "caffeine" }[behavior];
+  const { results: [behavior_logging] } = await db.prepare(
+    "SELECT COUNT(*) AS logged_days, MIN(local_date) AS first_logged_date, MAX(local_date) AS last_logged_date FROM tracker_daily WHERE tracker_id = ? AND local_date BETWEEN ? AND ?",
+  ).bind(tracker, start, end).all<{ logged_days: number; first_logged_date: string | null; last_logged_date: string | null }>();
   const labels = ["0", ...bins.map((t, i) => `>${String(i === 0 ? 0 : bins[i - 1])}–${String(t)}`), `>${String(bins[bins.length - 1])}`];
   const groups = labels.map((): number[] => []);
   let n = 0;
@@ -68,7 +73,7 @@ export async function healthCompare(db: D1Database, { behavior, outcome, start, 
     n++;
     if (total !== 0) nonZeroDays++;
   }
-  const reference = groups.findIndex((group) => group.length >= 2);
+  const reference = groups.findIndex((group) => group.length >= MIN_DAYS_PER_GROUP);
   const comparisons: { group: string; vs: string; diff: number; df: number | null; ci95: [number, number] | null }[] = [];
   if (reference !== -1) {
     for (let i = reference + 1; i < groups.length; i++) {
@@ -84,7 +89,11 @@ export async function healthCompare(db: D1Database, { behavior, outcome, start, 
   } else if (comparisons.length === 0) {
     notes.push("Ningún grupo distinto del de referencia tiene al menos 2 días; no hay comparaciones.");
   }
+  notes.push(`${behavior} tiene registros en ${String(behavior_logging.logged_days)} día(s) del rango solicitado; primer registro: ${behavior_logging.first_logged_date ?? "ninguno"}; último registro: ${behavior_logging.last_logged_date ?? "ninguno"}. Se usa todo el rango solicitado; los días sin registro cuentan como 0.`);
+  if (comparisons.length === 0) {
+    notes.push(`Se necesitan al menos ${String(MIN_DAYS_PER_GROUP)} días con resultado disponible en cada uno de al menos 2 grupos para una comparación.`);
+  }
   return { behavior, outcome, lag_days, start, end, n,
     groups: groups.map((group, i) => ({ label: labels[i], n: group.length, mean: round(mean(group)), sd: round(sampleSd(group)) })),
-    comparisons, notes, caveats: caveats(n) };
+    comparisons, notes, caveats: caveats(n), behavior_logging, min_days_per_group: MIN_DAYS_PER_GROUP };
 }
