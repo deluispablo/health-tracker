@@ -26,10 +26,10 @@ class LogMenuTest {
     fun readsTheCatalogAndToleratesItsAbsence() {
         val d = parseDialData(catalogJson())
         assertEquals(Water(750, 2000), d.water)
-        assertEquals(listOf("caffeine", "cigarettes", "alcohol", "water", "mood_bien", "melatonin", "protein", "creatine"), d.trackers.map { it.id })
+        assertEquals(listOf("caffeine", "cigarettes", "alcohol", "water", "mood_bien", "melatonin", "protein", "creatine"), d.trackers?.map { it.id })
         val old = parseDialData(sampleJson())
         assertEquals(null, old.water)
-        assertEquals(emptyList<CatalogItem>(), old.trackers)
+        assertEquals(null, old.trackers)
     }
 
     @Test
@@ -48,9 +48,20 @@ class LogMenuTest {
     }
 
     @Test
-    fun aCatalogOfOnlyMoodsStillCountsTheDialsMarks() {
+    fun aCatalogOfOnlyMoodsOffersNoTrackerButtons() {
         val d = parseDialData(sampleJson()).copy(trackers = listOf(CatalogItem("mood_bien", "Ánimo: bien", "u", 1.0, "face", 1.0)))
-        assertEquals(listOf("1", "1", "1"), logMenu(d, emptyList()).face.map { it.today })
+        assertEquals(emptyList<LogItem>(), logMenu(d, emptyList()).face)
+    }
+
+    @Test
+    fun anEmptyCatalogOffersNothingRatherThanTheOldTrackers() {
+        val d = parseDialData(sampleJson()).copy(trackers = emptyList())
+        assertEquals(LogMenu(emptyList(), emptyList()), logMenu(d, emptyList()))
+    }
+
+    @Test
+    fun anUndoOnADialWithoutKeysStillTakesBackTheCount() {
+        assertEquals("0", logMenu(parseDialData(sampleJson().replace(",\"i\":\"tap-1\"", "")), listOf(Tap("x-9", "caffeine", at, undo = true))).face.first().today)
     }
 
     @Test

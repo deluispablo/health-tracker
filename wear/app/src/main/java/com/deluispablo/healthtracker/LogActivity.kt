@@ -65,9 +65,18 @@ class LogActivity : Activity() {
         showGrid()
     }
 
+    /** Reads the cache off the main thread: a redraw may hold its lock while it renders. */
     private fun showGrid() {
+        val ctx = applicationContext
+        thread {
+            val menu = menuNow(ctx)
+            val undo = lastTap(ctx) != null
+            runOnUiThread { if (!isFinishing) drawGrid(menu, undo) }
+        }
+    }
+
+    private fun drawGrid(menu: LogMenu, undo: Boolean) {
         screen.removeAllViews()
-        val menu = menuNow(this)
         val extra = listOfNotNull(
             Triple(MOOD_STYLE, getString(R.string.log_mood)) { showRing() },
             menu.supplements.takeIf { it.isNotEmpty() }?.let {
@@ -91,7 +100,7 @@ class LogActivity : Activity() {
             val (x, y) = spot(menu.face.size + j)
             place(iconButton(style, 30 * size / 68, label) { open() }, size, x, y)
         }
-        if (lastTap(this) != null) place(centreButton(R.drawable.ic_undo, R.string.log_undo) {
+        if (undo) place(centreButton(R.drawable.ic_undo, R.string.log_undo) {
             screen.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
             val ctx = applicationContext
             thread { undoLast(ctx) }

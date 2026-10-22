@@ -3,9 +3,6 @@
     <string name="app_name">Health Tracker</string>
     <string name="dial_label">Dial de hoy</string>
     <string name="dial_description">Día de hoy: sueño, entrenos, registros y pulso</string>
-    <string name="log_coffee">Registrar café</string>
-    <string name="log_cigarette">Registrar cigarro</string>
-    <string name="log_drink">Registrar copa</string>
     <string name="log_mood">Registrar ánimo</string>
     <string name="log_undo">Deshacer el último registro</string>
     <string name="log_back">Volver</string>

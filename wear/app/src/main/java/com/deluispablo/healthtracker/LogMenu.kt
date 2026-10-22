@@ -21,15 +21,16 @@ private val FALLBACK = listOf(
 
 /** Builds the menus from the cached dial plus the taps the Worker has not shown yet. */
 fun logMenu(data: DialData?, taps: List<Tap>): LogMenu {
-    val rows = data?.trackers?.filterNot { it.id.startsWith("mood_") }.orEmpty()
-    val catalog = rows.ifEmpty { FALLBACK }
+    // Only a Worker without the catalog gets the built-in trackers; an empty catalog means none.
+    val catalog = data?.trackers?.filterNot { it.id.startsWith("mood_") } ?: FALLBACK
     val shown = data?.events?.mapNotNull { it.i }?.toSet() ?: emptySet()
     val date = data?.date ?: java.time.LocalDate.now(MADRID).toString()
     val day = taps.filter { tapDate(it) == date }
     val items = catalog.map { t ->
-        // Unsent logs count at once; an unsent undo takes back a log the dial already shows.
+        // Unsent logs count at once; an unsent undo takes back a log the dial already shows (on a dial
+        // cached before marks carried keys, any undo does, as withTaps removes an equal mark).
         val delta = day.count { it.tracker == t.id && !it.undo && it.id !in shown } -
-            day.count { it.tracker == t.id && it.undo && it.id in shown }
+            day.count { it.tracker == t.id && it.undo && (it.id in shown || shown.isEmpty()) }
         val text = when {
             t.unit == "ml" -> litres((t.today + delta * t.value).coerceAtLeast(0.0))
             // The face counts drinks and coffees, whatever their dose; cigarettes count their units.

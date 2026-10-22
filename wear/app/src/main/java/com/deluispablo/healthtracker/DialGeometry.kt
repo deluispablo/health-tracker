@@ -66,7 +66,7 @@ fun dataForToday(data: DialData, now: ZonedDateTime = ZonedDateTime.now(MADRID))
         date = now.withZoneSameInstant(MADRID).toLocalDate().toString(),
         sleep = emptyList(), workouts = emptyList(), events = emptyList(), hr = List(96) { null },
         // Yesterday's totals do not carry over; the catalog and the goal do.
-        water = data.water?.copy(ml = 0), trackers = data.trackers.map { it.copy(today = 0.0) },
+        water = data.water?.copy(ml = 0), trackers = data.trackers?.map { it.copy(today = 0.0) },
     )
 
 /** Calendar minutes keep dial angles tied to local time across DST changes. */

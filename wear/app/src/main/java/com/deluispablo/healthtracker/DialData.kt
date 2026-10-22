@@ -22,9 +22,9 @@ data class DialData(
     val workouts: List<Span>,
     val events: List<Mark>,
     val hr: List<Int?>,
-    // Absent from Workers older than the tracker catalog.
+    // Null from Workers older than the tracker catalog.
     val water: Water? = null,
-    val trackers: List<CatalogItem> = emptyList(),
+    val trackers: List<CatalogItem>? = null,
 )
 
 /** Parses the Worker's `GET /watch/today` body. */
@@ -49,7 +49,7 @@ fun parseDialData(json: String): DialData {
             CatalogItem(it.getString("id"), it.getString("name"), it.getString("unit"), it.getDouble("value"),
                 it.getString("surface").also { s -> require(s == "face" || s == "tile") }, it.getDouble("today"))
                 .also { c -> require(c.value > 0 && c.today >= 0) { "dose must be positive" } }
-        } ?: emptyList(),
+        },
     )
 }
 

@@ -165,8 +165,3 @@ fun menuNow(ctx: Context): LogMenu = synchronized(cacheLock) {
     logMenu(data, readTaps(ctx))
 }
 
-/** Today's dial as drawn, unsent taps included; null before the first sync. */
-fun todayWithTaps(ctx: Context): DialData? = synchronized(cacheLock) {
-    val data = chooseCached(null, File(ctx.filesDir, "dial.json").takeIf { it.exists() }?.readText()) ?: return null
-    withTaps(dataForToday(data), readTaps(ctx))
-}
