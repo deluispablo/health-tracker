@@ -113,6 +113,15 @@ describe("acute daily selection", () => {
     expect(times).toContain(day + 13 * 3600 + 7);
     expect(candidateTimes([...taps].reverse())).toEqual(times);
   });
+  it("matches main's grid ordering for same-second taps with unsorted offsets", () => {
+    const taps = [tap(tap().ts, "caffeine", 120), tap(tap().ts, "alcohol", 60), tap(day + 18 * 3600, "cigarettes", 60)];
+    const i = input(taps);
+    for (const w of i.windows.values()) w.tz_offset_min = 60;
+    const sorted = [...taps].sort((a, b) => a.ts - b.ts || a.tz_offset_min - b.tz_offset_min);
+    const expected = acuteDays({ ...i, taps: sorted }, range);
+    expect(expected[0]).toMatchObject({ d: [8], events: 1, controls: 8, excluded: { coverage: 0 } });
+    expect(acuteDays(i, range)).toEqual(expected);
+  });
   it("ignores windows ending at or after now", () => {
     const i = input(); i.nowSec = tap().ts + 900;
     expect(cigarettes(i).excluded.future).toBe(1);

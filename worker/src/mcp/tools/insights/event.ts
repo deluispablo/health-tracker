@@ -120,6 +120,12 @@ export function acuteDays(input: AcuteInput, p: { start: string; end: string }):
   const start = new Date((midnight(p.end) - (ACUTE.days - 1) * 86400) * 1000).toISOString().slice(0, 10);
   const taps = [...input.taps].sort((a, b) => a.ts - b.ts);
   const starts = gridStarts(taps);
+  const dates = new Map<AcuteInput["taps"][number], string>();
+  for (const tap of taps) {
+    const date = dateAt(tap.ts, tap.tz_offset_min);
+    dates.set(tap, date);
+  }
+  const grids = new Map<string, { ts: number; w: WindowAgg | undefined; sameDay: boolean }[]>();
   const firstTapAt = (ts: number): number => {
     let lo = 0, hi = taps.length;
     while (lo < hi) {
@@ -142,7 +148,7 @@ export function acuteDays(input: AcuteInput, p: { start: string; end: string }):
     };
     const candidates = taps.filter((tap) => {
       if (tap.tracker !== tracker) return false;
-      const date = dateAt(tap.ts, tap.tz_offset_min);
+      const date = dates.get(tap) ?? dateAt(tap.ts, tap.tz_offset_min);
       return date >= start && date <= p.end && isSessionStart(tap);
     }).slice(-ACUTE.maxEvents);
     const overlaps = (lo: number, hi: number, event?: AcuteInput["taps"][number]): boolean => {
@@ -174,7 +180,7 @@ export function acuteDays(input: AcuteInput, p: { start: string; end: string }):
       const d = delta(tap.ts, tap);
       if (d === null) continue;
       result.events++;
-      const date = dateAt(tap.ts, tap.tz_offset_min);
+      const date = dates.get(tap) ?? dateAt(tap.ts, tap.tz_offset_min);
       const events = days.get(date) ?? [];
       events.push({ delta: d, offset: tap.tz_offset_min });
       days.set(date, events);
@@ -183,16 +189,27 @@ export function acuteDays(input: AcuteInput, p: { start: string; end: string }):
       const controls: { delta: number; offset: number }[] = [];
       const dayStart = starts.get(date);
       if (dayStart === undefined) continue;
+      let grid = grids.get(date);
+      if (!grid) {
+        grid = [];
+        const localStart = midnight(date);
+        let next = firstTapAt(dayStart);
+        for (let minute = 0; minute < 1440; minute += ACUTE.gridMin) {
+          const ts = dayStart + minute * 60;
+          while (next < taps.length && taps[next].ts < ts) next++;
+          if ((next < taps.length && taps[next].ts - ts < ACUTE.clearanceMin * 60)
+            || (next > 0 && ts - taps[next - 1].ts < ACUTE.clearanceMin * 60)) continue;
+          const w = input.windows.get(ts);
+          const local = ts + (w?.tz_offset_min ?? 0) * 60;
+          grid.push({ ts, w, sameDay: local >= localStart && local < localStart + 86400 });
+        }
+        grids.set(date, grid);
+      }
       const offsets = new Set(events.map((event) => event.offset));
-      for (let minute = 0; minute < 1440; minute += ACUTE.gridMin) {
-        const ts = dayStart + minute * 60;
-        const w = input.windows.get(ts);
-        const next = firstTapAt(ts);
-        if ((next < taps.length && taps[next].ts - ts < ACUTE.clearanceMin * 60)
-          || (next > 0 && ts - taps[next - 1].ts < ACUTE.clearanceMin * 60)) continue;
+      for (const { ts, w, sameDay } of grid) {
         if (!w) { result.excluded.coverage++; continue; }
         if (w.tz_offset_min === null || !offsets.has(w.tz_offset_min)) { result.excluded.dst++; continue; }
-        if (dateAt(ts, w.tz_offset_min) !== date) continue;
+        if (!sameDay) continue;
         const d = delta(ts);
         if (d !== null) controls.push({ delta: d, offset: w.tz_offset_min });
       }
