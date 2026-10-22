@@ -24,11 +24,10 @@ for h in range(24):
 R_IN, R_OUT = R_BEZEL, 225.0
 R_MID = (R_IN + R_OUT) / 2
 APP = "com.deluispablo.healthtracker"
-# Slot 1 stays the owner's choice; the other three are fixed one-tap log buttons served by the app.
-slots = [(1, 45, "WATCH_BATTERY", "RANGED_VALUE"), (2, 135, "EMPTY", "EMPTY", "CoffeeComplicationService"),
-         (3, 225, "EMPTY", "EMPTY", "CigaretteComplicationService"), (4, 315, "EMPTY", "EMPTY", "AlcoholComplicationService")]
+slots = [(1, 45, "WATCH_BATTERY", "RANGED_VALUE"), (2, 135, "STEP_COUNT", "GOAL_PROGRESS"),
+         (3, 225, "EMPTY", "EMPTY"), (4, 315, "EMPTY", "EMPTY")]
 
-def edge_slot(sid, mid, provider, ptype, service=None):
+def edge_slot(sid, mid, provider, ptype):
     # Concentric-style edge slot (after lukakilic/concentric-watch-face, MIT): icon, value and
     # progress share one curved line centred on the diagonal; lower slots read counter-clockwise.
     half, rg, fs, ico = 35.0, 208.0, 19, 25
@@ -98,8 +97,8 @@ def edge_slot(sid, mid, provider, ptype, service=None):
     ranged = "([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / ([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN])"
     goal = "[COMPLICATION.GOAL_PROGRESS_VALUE] / [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE]"
     return f"""
-    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="{sid}" displayName="slot_{sid}_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="{"FALSE" if service else "TRUE"}">
-      <DefaultProviderPolicy defaultSystemProvider="{provider}" defaultSystemProviderType="{ptype}"{f' primaryProvider="{APP}/{APP}.{service}" primaryProviderType="SHORT_TEXT"' if service else ""}/>
+    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="{sid}" displayName="slot_{sid}_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="TRUE">
+      <DefaultProviderPolicy defaultSystemProvider="{provider}" defaultSystemProviderType="{ptype}"/>
       <BoundingArc centerX="{f(C)}" centerY="{f(C)}" width="{f(2 * R_OUT)}" height="{f(2 * R_OUT)}" thickness="{f(R_OUT - R_IN)}" startAngle="{f(s)}" endAngle="{f(e)}" isRoundEdge="TRUE"/>
       <Variant mode="AMBIENT" target="alpha" value="0"/>
       <Complication type="RANGED_VALUE">{progress(ranged)}
@@ -140,7 +139,7 @@ HOUR_LEN = (R_BEZEL - 4) / K  # the hour hand reaches the bezel; minutes are 10 
 HOUR = "([HOUR_0_23] * 60 + [MINUTE]) / 4"
 MINUTE = "[MINUTE] * 6"  # minute steps: no per-second redraws
 hub_r = 6 * K * 1.3
-SPOT = round(R_BEZEL * math.sqrt(2))  # tap square inside the bezel: opens the mood picker
+SPOT = round(R_BEZEL * math.sqrt(2))  # tap square inside the bezel: opens the log menu
 
 xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <!-- Edge complication layout adapted from concentric-watch-face by Luka Kilic (MIT); see wear/THIRD_PARTY_NOTICES.md. -->

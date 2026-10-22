@@ -3,7 +3,6 @@
 
     <uses-feature android:name="android.hardware.type.watch" />
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:name=".App"
@@ -16,7 +15,7 @@
             android:value="true" />
 
         <activity
-            android:name=".MoodActivity"
+            android:name=".LogActivity"
             android:exported="true"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
             <intent-filter>
@@ -44,69 +43,5 @@
                 android:name="android.support.wearable.complications.SAFE_WATCH_FACES"
                 android:value="com.deluispablo.healthtracker.watchface" />
         </service>
-
-        <service
-            android:name=".CoffeeComplicationService"
-            android:exported="true"
-            android:icon="@drawable/ic_launcher"
-            android:label="@string/log_coffee"
-            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
-            <intent-filter>
-                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
-            </intent-filter>
-            <meta-data
-                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
-                android:value="SHORT_TEXT" />
-            <meta-data
-                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
-                android:value="0" />
-            <meta-data
-                android:name="android.support.wearable.complications.SAFE_WATCH_FACES"
-                android:value="com.deluispablo.healthtracker.watchface" />
-        </service>
-
-        <service
-            android:name=".CigaretteComplicationService"
-            android:exported="true"
-            android:icon="@drawable/ic_launcher"
-            android:label="@string/log_cigarette"
-            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
-            <intent-filter>
-                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
-            </intent-filter>
-            <meta-data
-                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
-                android:value="SHORT_TEXT" />
-            <meta-data
-                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
-                android:value="0" />
-            <meta-data
-                android:name="android.support.wearable.complications.SAFE_WATCH_FACES"
-                android:value="com.deluispablo.healthtracker.watchface" />
-        </service>
-
-        <service
-            android:name=".AlcoholComplicationService"
-            android:exported="true"
-            android:icon="@drawable/ic_launcher"
-            android:label="@string/log_alcohol"
-            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
-            <intent-filter>
-                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
-            </intent-filter>
-            <meta-data
-                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
-                android:value="SHORT_TEXT" />
-            <meta-data
-                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
-                android:value="0" />
-            <meta-data
-                android:name="android.support.wearable.complications.SAFE_WATCH_FACES"
-                android:value="com.deluispablo.healthtracker.watchface" />
-        </service>
-
-        <receiver
-            android:name=".LogReceiver"
-            android:exported="false" />
     </application>
 </manifest>

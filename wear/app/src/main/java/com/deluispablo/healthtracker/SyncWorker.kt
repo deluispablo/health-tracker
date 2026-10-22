@@ -68,7 +68,7 @@ class RedrawWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
     }
 }
 
-/** Renders before saving a valid new body, then pokes the complications. */
+/** Renders before saving a valid new body, then pokes the complication. */
 fun refreshCache(ctx: Context, body: String?, sent: Set<String> = emptySet()) = synchronized(cacheLock) {
     val dir = ctx.filesDir
     val jsonFile = File(dir, "dial.json")
@@ -83,9 +83,9 @@ fun refreshCache(ctx: Context, body: String?, sent: Set<String> = emptySet()) = 
     writeAtomic(File(dir, "dial.png"), png)
     writeAtomic(File(dir, "dial-ambient.png"), ambient)
     if (newData != null) writeAtomic(jsonFile, body!!.toByteArray())
-    for (service in listOf(DialComplicationService::class.java) + TRACKER_SERVICES) {
-        ComplicationDataSourceUpdateRequester.create(ctx, ComponentName(ctx, service)).requestUpdateAll()
-    }
+    ComplicationDataSourceUpdateRequester
+        .create(ctx, ComponentName(ctx, DialComplicationService::class.java))
+        .requestUpdateAll()
 }
 
 private fun Bitmap.png(): ByteArray =

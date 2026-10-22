@@ -193,8 +193,8 @@
       </Complication>
       <Complication type="EMPTY"/>
     </ComplicationSlot>
-    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="2" displayName="slot_2_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="FALSE">
-      <DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" primaryProvider="com.deluispablo.healthtracker/com.deluispablo.healthtracker.CoffeeComplicationService" primaryProviderType="SHORT_TEXT"/>
+    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="2" displayName="slot_2_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="TRUE">
+      <DefaultProviderPolicy defaultSystemProvider="STEP_COUNT" defaultSystemProviderType="GOAL_PROGRESS"/>
       <BoundingArc centerX="225" centerY="225" width="450" height="450" thickness="30" startAngle="100" endAngle="170" isRoundEdge="TRUE"/>
       <Variant mode="AMBIENT" target="alpha" value="0"/>
       <Complication type="RANGED_VALUE">
@@ -324,8 +324,8 @@
       </Complication>
       <Complication type="EMPTY"/>
     </ComplicationSlot>
-    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="3" displayName="slot_3_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="FALSE">
-      <DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" primaryProvider="com.deluispablo.healthtracker/com.deluispablo.healthtracker.CigaretteComplicationService" primaryProviderType="SHORT_TEXT"/>
+    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="3" displayName="slot_3_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="TRUE">
+      <DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
       <BoundingArc centerX="225" centerY="225" width="450" height="450" thickness="30" startAngle="190" endAngle="260" isRoundEdge="TRUE"/>
       <Variant mode="AMBIENT" target="alpha" value="0"/>
       <Complication type="RANGED_VALUE">
@@ -455,8 +455,8 @@
       </Complication>
       <Complication type="EMPTY"/>
     </ComplicationSlot>
-    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="4" displayName="slot_4_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="FALSE">
-      <DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" primaryProvider="com.deluispablo.healthtracker/com.deluispablo.healthtracker.AlcoholComplicationService" primaryProviderType="SHORT_TEXT"/>
+    <ComplicationSlot x="0" y="0" width="450" height="450" slotId="4" displayName="slot_4_label" supportedTypes="RANGED_VALUE GOAL_PROGRESS SHORT_TEXT EMPTY" isCustomizable="TRUE">
+      <DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
       <BoundingArc centerX="225" centerY="225" width="450" height="450" thickness="30" startAngle="280" endAngle="350" isRoundEdge="TRUE"/>
       <Variant mode="AMBIENT" target="alpha" value="0"/>
       <Complication type="RANGED_VALUE">
