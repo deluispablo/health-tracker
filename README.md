@@ -175,8 +175,8 @@ Set each with `npx wrangler secret put <NAME> --config wrangler.production.jsonc
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client (connector sign-in and Health consent) |
 | `TOKEN_ENC_KEY` | Base64 of exactly 32 random bytes; AES-256-GCM key for the stored refresh token |
 | `WEBHOOK_SECRET` | Webhook authorization value, including the `Bearer ` prefix (at least 16 characters) |
-| `WATCH_TOKEN` | Bearer token for the watch app's read-only `/watch/today` (at least 32 characters) |
 | `WEBHOOK_SECRET_PREV` | Only during a [rotation](#rotating-the-webhook-secret) |
+| `WATCH_TOKEN` | Bearer token for the watch app's read-only `/watch/today` (at least 32 characters) |
 
 ### 3. Migrate and deploy
 

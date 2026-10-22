@@ -131,6 +131,7 @@ export async function route(request: Request, env: AppEnv, deps: AppDeps): Promi
       if (request.method !== "GET") return new Response(null, { status: 405 });
       return finishGoogleConnect(request, env, deps);
     case "/watch/today":
+      if (request.method !== "GET") return new Response(null, { status: 405 });
       return handleWatchToday(request, env, deps.now());
     default:
       return new Response(null, { status: 404 });

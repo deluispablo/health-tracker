@@ -62,18 +62,40 @@ describe("GET /watch/today", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/json");
     expect(res.headers.get("cache-control")).toBe("no-store");
-    const body = await res.json<{ date: string; generatedAt: number; sleep: unknown; workouts: unknown; events: { t: number; k: string }[]; hr: (number | null)[] }>();
+    const body = await res.json<{ date: string; generatedAt: number; sleep: unknown; workouts: unknown; events: { t: number; k: string }[]; counts: Record<string, number>; hr: (number | null)[] }>();
     expect(body.date).toBe(d);
     expect(body.generatedAt).toBe(NOW);
     expect(body.sleep).toEqual([{ start: -30, end: 430, nap: false }, { start: 900, end: 940, nap: true }]);
     expect(body.workouts).toEqual([{ start: 1080, end: 1140 }]);
     expect(body.events).toEqual([{ t: 460, k: "cafe" }, { t: 675, k: "cigarro" }, { t: 1170, k: "alcohol" }]);
+    expect(body.counts).toEqual({ cafe: 1, cigarro: 1, alcohol: 1 });
     expect(body.hr.length).toBe(96);
     expect([body.hr[0], body.hr[72], body.hr[1]]).toEqual([60, 120, null]);
   });
 
   it("empty day", async () => {
     const body = await (await get(`Bearer ${TOKEN}`)).json();
-    expect(body).toEqual({ date: "2026-10-21", generatedAt: NOW, sleep: [], workouts: [], events: [], hr: Array(96).fill(null) });
+    expect(body).toEqual({ date: "2026-10-21", generatedAt: NOW, sleep: [], workouts: [], events: [], counts: {}, hr: Array(96).fill(null) });
+  });
+
+  it("returns every log of a busy day", async () => {
+    await env.DB.batch(Array.from({ length: 51 }, (_, i) => env.DB.prepare(`
+      INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at)
+      VALUES (?, 'caffeine', ?, 120, '2026-10-21', 1, 'mcp', 1)`).bind(`c${String(i)}`, local("2026-10-21", "08:00") + i * 60)));
+    const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: { t: number }[]; counts: Record<string, number> }>();
+    expect(body.events.length).toBe(51);
+    expect(body.events[50].t).toBe(530);
+    expect(body.counts).toEqual({ cafe: 51 });
+  });
+
+  it("rejects an unset token and a token without the Bearer prefix, without touching the database", async () => {
+    const noDb = new Proxy({}, { get: () => { throw new Error("database touched"); } }) as D1Database;
+    const call = (authorization: string, token?: string) => route(
+      new Request("https://example.com/watch/today", { headers: { authorization } }),
+      { ...appEnv(), DB: noDb, WATCH_TOKEN: token as string }, { fetch, now: () => NOW, sleep: () => Promise.resolve() });
+    for (const res of await Promise.all([call("Bearer undefined"), call("Bearer "), call(TOKEN, TOKEN), call(`bearer ${TOKEN}`, TOKEN)])) {
+      expect(res.status).toBe(401);
+      expect(await res.text()).toBe("");
+    }
   });
 });
