@@ -781,7 +781,7 @@ try {
     'undo.retry': ['Retry', 'Reintentar'],
     'undo.logged': ['{x} at {t}', '{x} a las {t}'],
     'undo.mood': ['Mood: {m} at {t}', 'Ánimo: {m} a las {t}'],
-    'undo.done': ['Logged {x} at {t}', '{x} registrado a las {t}'],
+    'undo.done': ['Logged {x} at {t}', 'Registrado: {x} a las {t}'],
     'undo.moodDone': ['Logged mood: {m} at {t}', 'Ánimo registrado: {m} a las {t}'],
     'undo.failed': ['Not saved: {x} at {t}', 'No se ha guardado: {x} a las {t}'],
     'undo.undone': ['Removed: {x} at {t}', 'Eliminado: {x} a las {t}'],
@@ -2775,7 +2775,7 @@ try {
       if (!b) continue;   // supplements are logged from the Suplementos picker
       const ids = c.key === 'animo' ? L.MOODS.map((m) => m.id) : c.key === 'supl' ? L.SUPPS.map((x) => x.id) : [c.id];
       const avail = ids.some((id) => L.available(snap, id)), s = L.summary(cal?.date === viewDate ? cal : null, c.key, now().min);   // badges count the calendar day
-      const blocked = ids.some(failedLog), saving = !Q.idle() && Q.has((w) => w.kind === 'log' && w.key === c.key);
+      const blocked = ids.every(failedLog), saving = !Q.idle() && Q.has((w) => w.kind === 'log' && ids.includes(w.trackerId));   // a group chip stays open while any of its options can still be logged
       const unusable = noAccess || !connector || !snap || blocked || !avail;
       if (snap && !avail && !noAccess) na.push(chipName(c.key));
       b.setAttribute('aria-disabled', String(unusable));
