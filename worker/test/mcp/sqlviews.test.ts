@@ -21,7 +21,6 @@ describe("T11 AC3e parser layer allows only the four views and declared CTEs", (
     "WITH q AS (SELECT * FROM v_daily) SELECT * FROM q",
     "WITH Q AS (SELECT * FROM v_daily) SELECT * FROM q",
     "WITH q AS (WITH r AS (SELECT * FROM v_events) SELECT * FROM r) SELECT * FROM q",
-    "WITH RECURSIVE q(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM q WHERE n < 3) SELECT * FROM q",
     "SELECT * FROM v_daily WHERE local_date IN (WITH z AS (SELECT local_date FROM v_sleep) SELECT * FROM z)",
     "SELECT * FROM v_daily UNION SELECT * FROM v_workouts",
     "SELECT * FROM v_daily d JOIN v_sleep s ON s.local_date = d.local_date",
@@ -52,4 +51,47 @@ describe("T11 AC3e parser layer allows only the four views and declared CTEs", (
   ])("refuses syntax the parser does not support with rewrite hints: %s", (sql) => {
     expect(viewsOnly(sql, parser)).toMatchObject({ ok: false, reason: "unsupported SQL syntax; quote identifiers with double quotes", error: expect.any(Error) as unknown });
   });
+});
+
+
+describe("SQL resource bounds", () => {
+  it.each([
+    "SELECT hex(zeroblob(1000000))",
+    'SELECT "randomblob"(1000000)',
+    "SELECT 'ZeRoBlOb'(1000000)",
+    "WITH q AS (SELECT randomblob(1000000)) SELECT * FROM q",
+    "SELECT 1 WHERE EXISTS (SELECT zeroblob(1000000))",
+  ])("refuses blob allocation in %s", sql => { refuses(sql, /function .* is not allowed.*unbounded blobs/); });
+
+  it.each([
+    "SELECT printf('%.*c', 1e8, 'x')",
+    'SELECT "FoRmAt"(\'%.*c\', 1e8, \'x\')',
+    "SELECT 'printf'('%.*c', 1e8, 'x')",
+    "WITH q AS (SELECT format('%.*c', 1e8, 'x')) SELECT * FROM q",
+  ])("refuses string allocation in %s", sql => { refuses(sql, /function .* is not allowed.*unbounded strings/); });
+
+  it.each([
+    "WITH RECURSIVE q(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM q) SELECT max(n) FROM q",
+    "WITH RECURSIVE q(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM q WHERE n < 3) SELECT * FROM q",
+    "WITH q AS (WITH RECURSIVE r AS (SELECT 1) SELECT * FROM r) SELECT * FROM q",
+  ])("refuses recursive CTEs in %s", sql => { refuses(sql, /WITH RECURSIVE is not allowed/); });
+
+  it.each([
+    "WITH q(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM q) SELECT max(n) FROM q",
+    "SELECT (WITH q(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM q) SELECT max(n) FROM q)",
+    'WITH "Q" AS (SELECT * FROM v_daily JOIN "q" ON 1=1) SELECT * FROM q',
+    "WITH q AS (SELECT (SELECT count(*) FROM q)) SELECT * FROM q",
+  ])("refuses self-referencing CTEs without RECURSIVE in %s", sql => { refuses(sql, /recursive CTE q is not allowed/); });
+
+  it.each([
+    "SELECT 'zeroblob(1000000)', 'WITH RECURSIVE', 'randomblob(1)'",
+    'SELECT 1 AS "zeroblob", 2 AS "randomblob"',
+    "WITH zeroblob AS (SELECT 1 AS n) SELECT n FROM zeroblob",
+    "SELECT 1 /* randomblob(1000000) WITH RECURSIVE */",
+    "WITH q AS (SELECT q, d.q FROM v_daily d) SELECT * FROM q",
+    "WITH q AS (SELECT * FROM r), r AS (SELECT 1) SELECT * FROM q",
+    "SELECT (WITH q AS (SELECT 1 AS q) SELECT q FROM q)",
+    "SELECT 'printf', 'format', 'printf(1000000)'",
+    'SELECT 1 AS "printf", 2 AS "format"',
+  ])("preserves ordinary literals, names and comments in %s", accepts);
 });
