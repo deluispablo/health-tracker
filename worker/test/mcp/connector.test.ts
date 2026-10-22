@@ -435,6 +435,7 @@ describe("T39 tool description contract", () => {
             "step_goal": {
               "type": "number"
             },
+            "water_goal_ml": { "type": "number" },
             "sleep_goal_min": {
               "type": "number"
             },
@@ -773,12 +774,12 @@ describe("T39 tool description contract", () => {
     // Limits checked against the handlers; tracker configuration is deliberately discovered at runtime.
     const required: Record<string, string[]> = {
       health_scan: ["10 ranked rows", "limit defaults to 10", "health_context"],
-      health_periods: ["streaks", "CUSUM", "mood weeks", "anomalies"],
+      health_periods: ["streaks", "CUSUM", "mood weeks", "anomalies", "cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "water", "melatonin", "protein", "creatine"],
       health_contrast: ["filter dates are clipped to start/end", "Widen start/end", "sin_datos as no difference"],
       health_findings: ["list", "save", "recheck", "retire", "untrusted"],
       health_context: ["9000 characters", "no data read", "ROPEs", "physiology"],
-      health_profile: ["90 dated weights", "7000 steps", "450 minutes", "USER_TZ", "health_set_profile"],
-      health_set_profile: ["at least one field", "0.1", "local today", "1920", "100–250", "30–300", "1000–50000", "240–720", "120–230", "health_profile", "midnight"],
+      health_profile: ["90 dated weights", "7000 steps", "450 minutes", "2000 ml", "water_goal_ml", "USER_TZ", "health_set_profile"],
+      health_set_profile: ["at least one field", "0.1", "local today", "1920", "100–250", "30–300", "1000–50000", "240–720", "water_goal_ml", "500–6000", "120–230", "health_profile", "midnight"],
       health_status: ["14-day", "48 hours", "24 hours", "5 attempts", "USER_TZ", "YYYY-MM-DDTHH:MM", "health_daily"],
       health_daily: ["90 dates", "all metrics", "mood_", "count", "null", "health_trend", "health_compare", "health_correlate", "health_sql"],
       health_sleep: ["31 dates", "stages", "YYYY-MM-DDTHH:MM", "health_daily", "health_intraday"],
@@ -814,8 +815,11 @@ describe("T39 tool description contract", () => {
         }
       }
     }
+    const periods = tools.find((tool) => tool.name === "health_periods");
+    for (const id of ["workout", "steps", "short_sleep"]) expect(periods?.description).not.toContain(id);
     const log = tools.find((tool) => tool.name === "health_log_event")?.inputSchema as { properties: Record<string, { description: string }> };
     expect(log.properties.tracker_id.description).toMatch(/examples.*health_trackers.*custom trackers.*null bounds/);
+    for (const id of ["water", "melatonin", "protein", "creatine"]) expect(log.properties.tracker_id.description).toContain(id);
     expect(log.properties.note.description).toContain("reject");
     for (const limit of ["hours 00–14", "minutes 00–59", "3 fractional digits", "7 days", "300 seconds"]) expect(log.properties.at.description).toContain(limit);
     expect(log.properties.idempotency_key.description).toContain("Omit for a random event id");
@@ -1081,6 +1085,25 @@ describe("AC3 stateless read tools and audit", () => {
     await initialize(token);
     const msg = await rpc(token, "tools/call", { name, arguments: args });
     expect(Boolean(msg.error) || msg.result?.isError === true).toBe(true);
+  });
+
+  it.each([
+    ["water", 50, 2000], ["melatonin", 0.1, 10], ["protein", 5, 100], ["creatine", 1, 20],
+  ] as const)("enforces inclusive per-event limits for %s through health_log_event", async (tracker_id, min, max) => {
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    for (const value of [min - 0.01, max + 0.01]) {
+      const msg = await rpc(token, "tools/call", { name: "health_log_event", arguments: { tracker_id, value } });
+      expect(msg.error).toBeUndefined();
+      expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: "value must be finite, within the tracker limits and an integer for count trackers" }] });
+    }
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM event").first("n")).toBe(0);
+    for (const value of [min, max]) {
+      const msg = await rpc(token, "tools/call", { name: "health_log_event", arguments: { tracker_id, value } });
+      expect(msg.result?.isError).not.toBe(true);
+      expect(msg.result?.structuredContent).toMatchObject({ created: true, event: { tracker_id, value } });
+    }
   });
 
   it("logs an event through MCP once per idempotency key, audits it, and lists it for the day", async () => {
@@ -1850,11 +1873,15 @@ describe("T35 AC4 owner profile connector", () => {
     const write = listed.result?.tools?.find((tool) => tool.name === "health_set_profile");
     expect(write?.description).toMatch(/midnight/);
     expect(write?.description).toMatch(/date/);
-    const args = { weight_kg: 30, date: "2000-01-01", smoker: false };
+    const initial = await rpc(token, "tools/call", { name: "health_profile", arguments: {} });
+    expect(initial.result?.structuredContent).toMatchObject({ water_goal_ml: 2000 });
+    const defaults = await rpc(token, "tools/call", { name: "health_set_profile", arguments: { smoker: false } });
+    expect(defaults.result?.structuredContent).toMatchObject({ water_goal_ml: 2000 });
+    const args = { weight_kg: 30, date: "2000-01-01", water_goal_ml: 2500, smoker: false };
     const before = (await audit()).length;
     const updated = await rpc(token, "tools/call", { name: "health_set_profile", arguments: args });
     expect(updated.result?.isError).not.toBe(true);
-    expect(updated.result?.structuredContent).toMatchObject({ weight_kg: 30, weight_date: "2000-01-01", smoker: false });
+    expect(updated.result?.structuredContent).toMatchObject({ weight_kg: 30, weight_date: "2000-01-01", water_goal_ml: 2500, smoker: false });
     expect(JSON.parse(updated.result?.content?.[0].text ?? "null")).toEqual(updated.result?.structuredContent);
     await toolAudit("health_set_profile", { fields: Object.keys(args) }, 1, before);
     const read = await rpc(token, "tools/call", { name: "health_profile", arguments: {} });
@@ -1864,7 +1891,7 @@ describe("T35 AC4 owner profile connector", () => {
   });
 
   it.each([
-    { step_goal: 999 }, { weight_kg: 30, date: "2000-02-30" }, { weight_kg: 30, date: "9999-01-01" },
+    { water_goal_ml: 499 }, { water_goal_ml: 6001 }, { water_goal_ml: 2500.5 }, { step_goal: 999 }, { weight_kg: 30, date: "2000-02-30" }, { weight_kg: 30, date: "9999-01-01" },
     { date: "2000-01-01" }, { mystery: 1 }, {},
   ])("audits an in-tool refusal with only field names for %j", async (args) => {
     google();
@@ -1873,14 +1900,15 @@ describe("T35 AC4 owner profile connector", () => {
     const msg = await rpc(token, "tools/call", { name: "health_set_profile", arguments: args });
     expect(msg.result?.isError).toBe(true);
     expect(msg.result?.content?.[0].text).not.toBe("Unable to read health data");
+    if ("water_goal_ml" in args) expect(msg.result?.content?.[0].text).toContain("water_goal_ml");
     await toolAudit("health_set_profile", { fields: Object.keys(args) }, 0, before);
   });
 
-  it("preserves the SDK validation exemption for wrongly typed arguments", async () => {
+  it.each([{ step_goal: "7000" }, { water_goal_ml: "2500" }, { water_goal_ml: null }, { water_goal_ml: true }, { water_goal_ml: {} }])("preserves the SDK validation exemption for wrongly typed arguments %j", async (args) => {
     google();
     const token = await accessToken();
     const before = await audit();
-    const msg = await rpc(token, "tools/call", { name: "health_set_profile", arguments: { step_goal: "7000" } });
+    const msg = await rpc(token, "tools/call", { name: "health_set_profile", arguments: args });
     expect(msg.result?.isError).toBe(true);
     expect(await audit()).toEqual(before);
   });

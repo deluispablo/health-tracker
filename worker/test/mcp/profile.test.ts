@@ -6,7 +6,7 @@ import { healthProfile, healthSetProfile } from "../../src/mcp/tools/profile";
 const options = { now: Date.parse("2026-12-31T23:30:00Z") / 1000, tz: "Europe/Madrid" };
 const empty = {
   birth_year: null, sex: null, height_cm: null, weight_kg: null, weight_date: null,
-  step_goal: 7000, sleep_goal_min: 450, max_hr: null, max_hr_source: null,
+  step_goal: 7000, sleep_goal_min: 450, water_goal_ml: 2000, max_hr: null, max_hr_source: null,
   smoker: null, age: null, weight_history: [],
 };
 const read = () => healthProfile(env.DB, options);
@@ -40,7 +40,7 @@ describe("T35 AC2 profile reads", () => {
   });
 
   it.each(["not-json", '"7000"', "true", "{}", "999999"])("treats corrupt stored values %s as unset and permits unrelated writes", async (value) => {
-    await env.DB.batch(["birth_year", "step_goal", "sleep_goal_min", "max_hr", "height_cm", "sex", "smoker"].map((key) =>
+    await env.DB.batch(["birth_year", "step_goal", "sleep_goal_min", "water_goal_ml", "max_hr", "height_cm", "sex", "smoker"].map((key) =>
       env.DB.prepare("INSERT INTO profile VALUES (?, ?, 1)").bind(key, value)));
     const expected = { ...empty, ...(value === "true" ? { smoker: true } : {}) };
     expect(await read()).toEqual(expected);
@@ -51,7 +51,7 @@ describe("T35 AC2 profile reads", () => {
   it("uses defaults/estimate for invalid stored goals and max HR with a valid birth year", async () => {
     await set({ birth_year: 1920 });
     await env.DB.prepare("INSERT INTO profile VALUES ('max_hr', 'true', 1), ('step_goal', '{}', 1), ('sleep_goal_min', '1', 1)").run();
-    expect(await read()).toMatchObject({ step_goal: 7000, sleep_goal_min: 450, max_hr: 133, max_hr_source: "estimated" });
+    expect(await read()).toMatchObject({ step_goal: 7000, sleep_goal_min: 450, water_goal_ml: 2000, max_hr: 133, max_hr_source: "estimated" });
   });
 
   it("filters invalid weights before selecting the newest 90 by date", async () => {
@@ -92,7 +92,7 @@ describe("T35 AC3 profile updates", () => {
     expect(await healthSetProfile(db, { birth_year: 2027, sex: "female", height_cm: 100.16,
       weight_kg: 30.16, step_goal: 1000, sleep_goal_min: 240, max_hr: 120, smoker: false }, options))
       .toEqual({ birth_year: 2027, sex: "female", height_cm: 100.2, weight_kg: 30.2, weight_date: "2027-01-01",
-        step_goal: 1000, sleep_goal_min: 240, max_hr: 120, max_hr_source: "measured", smoker: false, age: 0,
+        step_goal: 1000, sleep_goal_min: 240, water_goal_ml: 2000, max_hr: 120, max_hr_source: "measured", smoker: false, age: 0,
         weight_history: [{ date: "2027-01-01", kg: 30.2 }] });
     expect(batch).toHaveBeenCalledTimes(2);
     expect(batch.mock.calls.map(([statements]) => statements.length)).toEqual([8, 2]);
@@ -126,7 +126,7 @@ describe("T35 AC3 profile updates", () => {
   });
 
   const ranges = { birth_year: [1920, 2027], height_cm: [100, 250], weight_kg: [30, 300],
-    step_goal: [1000, 50000], sleep_goal_min: [240, 720], max_hr: [120, 230] };
+    water_goal_ml: [500, 6000], step_goal: [1000, 50000], sleep_goal_min: [240, 720], max_hr: [120, 230] };
   for (const [field, [min, max]] of Object.entries(ranges)) {
     it.each([min - 1, max + 1, String(min), NaN, Infinity, -Infinity, true, {}, null])(`rejects invalid ${field} %j before D1`, async (value) => {
       const prepare = vi.fn();
@@ -137,7 +137,7 @@ describe("T35 AC3 profile updates", () => {
       expect(prepare).not.toHaveBeenCalled();
     });
   }
-  it.each(["birth_year", "step_goal", "sleep_goal_min", "max_hr"])("rejects fractional %s", async (field) => {
+  it.each(["birth_year", "step_goal", "sleep_goal_min", "water_goal_ml", "max_hr"])("rejects fractional %s", async (field) => {
     await expect(set({ [field]: ranges[field as keyof typeof ranges][0] + 0.5 })).rejects.toThrow(RangeError);
   });
   it.each([
@@ -175,4 +175,12 @@ describe("T35 AC3 profile updates", () => {
     } });
     await expect(healthSetProfile(db, { smoker: false }, options)).rejects.toBe(failure);
   });
+});
+
+it("stores the water goal and accepts both integer bounds", async () => {
+  for (const water_goal_ml of [500, 2500, 6000]) {
+    expect(await set({ water_goal_ml })).toMatchObject({ water_goal_ml });
+    expect(await env.DB.prepare("SELECT value FROM profile WHERE key = 'water_goal_ml'").first("value")).toBe(String(water_goal_ml));
+  }
+  await expect(set({ water_goal_ml: 1.5 })).rejects.toThrow(RangeError);
 });

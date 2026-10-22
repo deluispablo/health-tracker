@@ -8,9 +8,9 @@ beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); })
 describe("T33 AC3 mood tracker migration", () => {
   it("seeds exactly eight named count trackers with default and limits 1", async () => {
     const rows = (await env.DB.prepare("SELECT * FROM tracker WHERE id LIKE 'mood_%' ORDER BY id").all()).results;
-    expect(rows).toEqual(emotions.map((emotion) => ({ id: `mood_${emotion}`, name: `Ánimo: ${emotion}`,
+    expect(rows).toEqual(emotions.map((emotion, i) => ({ id: `mood_${emotion}`, name: `Ánimo: ${emotion}`,
       unit: "u", value_type: "count", default_value: 1, min_value: 1, max_value: 1,
-      archived_at: null, created_at: expect.any(Number) as unknown })).sort((a, b) => a.id.localeCompare(b.id)));
+      archived_at: null, surface: "face", sort: i + 3, created_at: expect.any(Number) as unknown })).sort((a, b) => a.id.localeCompare(b.id)));
   });
 
   it("replays INSERT OR IGNORE without changing configured or archived trackers, events or schema", async () => {
