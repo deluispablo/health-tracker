@@ -30,7 +30,7 @@ function localDate(ts: number, formatter: Intl.DateTimeFormat): string {
   return ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
 }
 
-function offsetMinutes(ts: number, formatter: Intl.DateTimeFormat): number {
+export function offsetMinutes(ts: number, formatter: Intl.DateTimeFormat): number {
   const offset = formatter.formatToParts(ts * 1000).find((part) => part.type === "timeZoneName")
     ?.value.match(/^GMT([+-])(\d{2}):(\d{2})$/);
   return offset ? (offset[1] === "+" ? 1 : -1) * (Number(offset[2]) * 60 + Number(offset[3])) : 0;
