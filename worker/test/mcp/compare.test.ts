@@ -36,19 +36,29 @@ async function row(day: string, value: number | null, behavior?: number, tracker
 function observed(rewrite: (value: unknown) => unknown = (value) => value) {
   const reads: { sql: string; bindings: unknown[] }[] = [];
   let executions = 0;
-  const wrap = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => new Proxy(statement, { get(t, p) {
-    if (p === "bind") return (...bindings: unknown[]) => { reads[reads.length - 1].bindings = bindings; return wrap(t.bind(...bindings), sql); };
-    if (["all", "first", "raw", "run"].includes(String(p))) return (...args: unknown[]) => {
-      executions++;
-      expect(sql).toMatch(/^\s*SELECT\b/i);
-      return (Reflect.get(t, p) as (...args: unknown[]) => Promise<unknown>).apply(t, args).then(rewrite);
-    };
-    const value: unknown = Reflect.get(t, p);
-    return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
-  } });
+  const statements = new WeakMap<D1PreparedStatement, D1PreparedStatement>();
+  const wrap = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => {
+    const proxy = new Proxy(statement, { get(t, p) {
+      if (p === "bind") return (...bindings: unknown[]) => { reads[reads.length - 1].bindings = bindings; return wrap(t.bind(...bindings), sql); };
+      if (["all", "first", "raw", "run"].includes(String(p))) return (...args: unknown[]) => {
+        executions++;
+        expect(sql).toMatch(/^\s*SELECT\b/i);
+        return (Reflect.get(t, p) as (...args: unknown[]) => Promise<unknown>).apply(t, args).then(rewrite);
+      };
+      const value: unknown = Reflect.get(t, p);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
+    } });
+    statements.set(proxy, statement);
+    return proxy;
+  };
   const db = new Proxy(env.DB, { get(t, p) {
     if (p === "prepare") return (sql: string) => { reads.push({ sql, bindings: [] }); return wrap(t.prepare(sql), sql); };
-    if (["batch", "exec", "dump"].includes(String(p))) return () => { throw new Error(`unexpected ${String(p)}`); };
+    if (p === "batch") return (batch: D1PreparedStatement[]) => {
+      executions++;
+      expect(reads.every(({ sql }) => /^\s*SELECT\b/i.test(sql))).toBe(true);
+      return t.batch(batch.map((statement) => statements.get(statement) ?? statement)).then(rewrite);
+    };
+    if (["exec", "dump"].includes(String(p))) return () => { throw new Error(`unexpected ${String(p)}`); };
     const value: unknown = Reflect.get(t, p);
     return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(t) : value;
   } });
@@ -71,7 +81,7 @@ describe("T17 AC1/AC3 health_compare", () => {
     const out = await compare(seen.db, base);
     expect(out.n).toBe(4);
     expect(out.groups[0]).toMatchObject({ n: 2, mean: 65 });
-    expect(seen.executions()).toBe(2);
+    expect(seen.executions()).toBe(1);
     expect(seen.reads[0].bindings).toEqual(["cigarettes", base.start, base.end]);
     expect(seen.reads[0].sql.match(/EXISTS/g)).toHaveLength(1);
   });
@@ -370,7 +380,7 @@ describe("T17 compare validation and AC5 bounded SELECT", () => {
     const seen = observed();
     const out = await compare(seen.db, { ...base, start, end, lag_days, bins: [1, 2, 3, 4, 5] });
     expect(seen.reads).toHaveLength(2);
-    expect(seen.executions()).toBe(2);
+    expect(seen.executions()).toBe(1);
     expect(seen.reads[0].sql).toMatch(/WITH RECURSIVE dates\(local_date\)[\s\S]*LEFT JOIN v_daily USING \(local_date\)/);
     expect(seen.reads[0].sql).not.toContain(start);
     expect(seen.reads[0].bindings).toEqual(["cigarettes", start, widened]);

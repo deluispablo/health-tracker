@@ -1550,7 +1550,7 @@ describe("T10f AC6 workouts through the authenticated connector", () => {
     await toolAudit("health_workouts", args, 0, before);
     expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
     expect(msg.result?.structuredContent).toBeUndefined();
-    expect(reads).toHaveLength(read === "HR" ? 2 : 1);
+    expect(reads).toHaveLength(1);
   });
 });
 

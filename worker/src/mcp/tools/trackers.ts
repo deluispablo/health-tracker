@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "../../lib/time";
 import { trackerDailyStatements } from "../../rollup/trackers";
 
 interface Tracker {
@@ -36,19 +37,23 @@ export async function healthTrackers(db: D1Database, { date }: { date: string })
     || date < "2000-01-01" || date > "2099-12-31") {
     throw new RangeError("date must be a real YYYY-MM-DD date between 2000-01-01 and 2099-12-31");
   }
-  const { results: trackers } = await db.prepare(`
-    SELECT t.id, t.name, t.unit, t.value_type, t.default_value, t.min_value, t.max_value,
-      COALESCE(SUM(e.value), 0) AS total, COUNT(e.id) AS n
-    FROM tracker t LEFT JOIN event e
-      ON e.tracker_id = t.id AND e.local_date = ? AND e.deleted_at IS NULL
-    WHERE t.archived_at IS NULL GROUP BY t.id ORDER BY t.id
-  `).bind(date).all<Tracker & { total: number; n: number }>();
-  const { results: events } = await db.prepare(`
-    SELECT e.id, e.tracker_id, e.ts, e.tz_offset_min, e.local_date, e.value, e.note
-    FROM event e JOIN tracker t ON t.id = e.tracker_id
-    WHERE e.local_date = ? AND e.deleted_at IS NULL AND t.archived_at IS NULL
-    ORDER BY e.ts, e.id LIMIT 51
-  `).bind(date).all<EventRow>();
+  const [totalsResult, eventsResult] = await db.batch<Tracker & { total: number; n: number } | EventRow>([
+    db.prepare(`
+      SELECT t.id, t.name, t.unit, t.value_type, t.default_value, t.min_value, t.max_value,
+        COALESCE(SUM(e.value), 0) AS total, COUNT(e.id) AS n
+      FROM tracker t LEFT JOIN event e
+        ON e.tracker_id = t.id AND e.local_date = ? AND e.deleted_at IS NULL
+      WHERE t.archived_at IS NULL GROUP BY t.id ORDER BY t.id
+    `).bind(date),
+    db.prepare(`
+      SELECT e.id, e.tracker_id, e.ts, e.tz_offset_min, e.local_date, e.value, e.note
+      FROM event e JOIN tracker t ON t.id = e.tracker_id
+      WHERE e.local_date = ? AND e.deleted_at IS NULL AND t.archived_at IS NULL
+      ORDER BY e.ts, e.id LIMIT 51
+    `).bind(date),
+  ]);
+  const trackers = totalsResult.results as (Tracker & { total: number; n: number })[];
+  const events = eventsResult.results as EventRow[];
   return { date, trackers, events: events.slice(0, 50).map(eventOutput), events_truncated: events.length > 50 };
 }
 
@@ -106,13 +111,24 @@ export async function logEvent(db: D1Database, args: {
     if (typeof args.idempotency_key !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(args.idempotency_key)) {
       throw new RangeError("idempotency_key must contain 8 to 64 ASCII letters, digits, underscores or hyphens");
     }
-    const existing = await eventById(db, `k_${args.idempotency_key}`);
-    if (existing) return logResult(db, existing, false);
   }
-  const tracker = await db.prepare(`
+  const trackerStatement = db.prepare(`
     SELECT id, name, unit, value_type, default_value, min_value, max_value
     FROM tracker WHERE id = ? AND archived_at IS NULL
-  `).bind(args.tracker_id).first<Tracker>();
+  `).bind(args.tracker_id);
+  let tracker: Tracker | null;
+  if (args.idempotency_key !== undefined) {
+    const [existingResult, trackerResult] = await db.batch<EventRow | Tracker>([
+      db.prepare("SELECT id, tracker_id, ts, tz_offset_min, local_date, value, note, deleted_at FROM event WHERE id = ?")
+        .bind(`k_${args.idempotency_key}`),
+      trackerStatement,
+    ]);
+    const existing = existingResult.results[0] as EventRow | undefined;
+    if (existing) return logResult(db, existing, false);
+    tracker = trackerResult.results[0] as Tracker | undefined ?? null;
+  } else {
+    tracker = await trackerStatement.first<Tracker>();
+  }
   if (!tracker) throw new RangeError("tracker_id must name an active tracker");
   const value = args.value === undefined ? tracker.default_value : args.value;
   if (typeof value !== "number" || !Number.isFinite(value)
@@ -128,7 +144,7 @@ export async function logEvent(db: D1Database, args: {
     note = args.note.trim() || null;
     if (note !== null && Array.from(note).length > 280) throw new RangeError("note must contain at most 280 Unicode code points after trimming");
   }
-  const offset = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" })
+  const offset = dateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" })
     .formatToParts(ts * 1000).find((part) => part.type === "timeZoneName")?.value.match(/^GMT([+-])(\d{2}):(\d{2})$/);
   const tz_offset_min = offset ? (offset[1] === "+" ? 1 : -1) * (Number(offset[2]) * 60 + Number(offset[3])) : 0;
   const event: EventRow = {

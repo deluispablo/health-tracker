@@ -161,12 +161,12 @@ describe("AC3 log events", () => {
     const batches: string[][] = [];
     const db = observedDb(() => {}, (sql) => { batches.push(sql); });
     await expect(logEvent(db, args, { now: NOW + 10 * 86400, tz: "UTC" })).rejects.toThrow("rollup down");
-    expect(batches.map((batch) => batch.length)).toEqual([3]);
+    expect(batches.map((batch) => batch.length)).toEqual([2, 3]);
     expect(await daily()).toEqual([{ local_date: "2026-10-21", tracker_id: "cigarettes", total: 1, n: 1 }]);
     await env.DB.prepare("DROP TRIGGER fail_daily").run();
     batches.length = 0;
     expect(await logEvent(db, args, opts)).toEqual({ created: false, event: first.event, day_total: 4 });
-    expect(batches.map((batch) => batch.length)).toEqual([3]);
+    expect(batches.map((batch) => batch.length)).toEqual([2, 3]);
     expect(await daily()).toEqual([{ local_date: "2026-10-21", tracker_id: "cigarettes", total: 4, n: 2 }]);
     expect(await events()).toHaveLength(3);
   });
@@ -401,26 +401,23 @@ describe("AC3 log events", () => {
     await expect(logEvent(env.DB, { tracker_id: "cigarettes" }, opts)).resolves.toMatchObject({ created: true, day_total: 4 });
   });
 
-  it("inserts, refreshes and reads the total in exactly one batch, then replays in one batch", async () => {
+  it("batches keyed lookups before the atomic insert or replay refresh", async () => {
     const batches: string[][] = [];
-    const db = observedDb((sql, _args, inBatch) => {
-      if (!inBatch) {
-        expect(sql).toMatch(/^\s*SELECT\b/i);
-        expect(sql).not.toMatch(/\bSUM\s*\(/i);
-      }
+    const db = observedDb((_sql, _args, inBatch) => {
+      expect(inBatch).toBe(true);
     }, (sql) => { batches.push(sql); });
     const args = { tracker_id: "cigarettes", idempotency_key: "batch_01" };
     const first = await logEvent(db, args, opts);
     expect(first).toEqual({ created: true, day_total: 1, event: { id: "k_batch_01", tracker_id: "cigarettes",
       local_date: "2026-10-21", local_time: "12:00", value: 1, note_untrusted: null } });
-    expect(batches.map((batch) => batch.length)).toEqual([4]);
-    expect(batches[0][0]).toMatch(/^\s*INSERT INTO event/i);
-    expect(batches[0][1]).toMatch(/^\s*DELETE FROM tracker_daily/i);
-    expect(batches[0][2]).toMatch(/^\s*INSERT INTO tracker_daily/i);
-    expect(batches[0][3]).toMatch(/^\s*SELECT COALESCE\(SUM\(value\), 0\)/i);
+    expect(batches.map((batch) => batch.length)).toEqual([2, 4]);
+    expect(batches[1][0]).toMatch(/^\s*INSERT INTO event/i);
+    expect(batches[1][1]).toMatch(/^\s*DELETE FROM tracker_daily/i);
+    expect(batches[1][2]).toMatch(/^\s*INSERT INTO tracker_daily/i);
+    expect(batches[1][3]).toMatch(/^\s*SELECT COALESCE\(SUM\(value\), 0\)/i);
     batches.length = 0;
     expect(await logEvent(db, args, opts)).toEqual({ ...first, created: false });
-    expect(batches.map((batch) => batch.length)).toEqual([3]);
+    expect(batches.map((batch) => batch.length)).toEqual([2, 3]);
   });
 
   it.each(["not-a-date", "2026-02-30", "1999-12-31", "2100-01-01"])("replays invalid stored date %s with only the total SELECT", async (date) => {
@@ -433,7 +430,7 @@ describe("AC3 log events", () => {
     expect(await logEvent(db, { tracker_id: "missing", idempotency_key: "bad_date" }, opts)).toMatchObject({
       created: false, event: { local_date: date }, day_total: 5,
     });
-    expect(batches.map((batch) => batch.length)).toEqual([1]);
+    expect(batches.map((batch) => batch.length)).toEqual([2, 1]);
     expect(await events()).toEqual(before);
     expect(await daily()).toEqual([]);
   });
@@ -446,7 +443,7 @@ describe("AC3 log events", () => {
     const db = observedDb(() => {}, (sql) => { batches.push(sql); });
     expect(await logEvent(db, { tracker_id: "cigarettes", idempotency_key: "deleted_only" }, opts))
       .toMatchObject({ created: false, day_total: 0 });
-    expect(batches.map((batch) => batch.length)).toEqual([3]);
+    expect(batches.map((batch) => batch.length)).toEqual([2, 3]);
     expect(await daily()).toEqual([]);
     expect(await env.DB.prepare("SELECT deleted_at FROM event WHERE id = 'k_deleted_only'").first("deleted_at")).toBe(0);
   });
@@ -712,4 +709,14 @@ describe("T33 AC1 delete event", () => {
     expect(await deleteEvent(env.DB, { event_id: "target" }, { now: NOW })).toMatchObject({ deleted: true, day_total: 2 });
     expect(await daily()).toEqual([{ local_date: "2026-10-21", tracker_id: "cigarettes", total: 2, n: 1 }]);
   });
+});
+
+it("reads tracker totals and events in one batch", async () => {
+  const batches: string[][] = [];
+  const db = observedDb((sql, _args, inBatch) => {
+    expect(inBatch).toBe(true);
+    expect(sql).toMatch(/^\s*SELECT\b/i);
+  }, (sql) => { batches.push(sql); });
+  expect(await healthTrackers(db, { date: "2026-10-21" })).toEqual(await healthTrackers(env.DB, { date: "2026-10-21" }));
+  expect(batches.map((batch) => batch.length)).toEqual([2]);
 });

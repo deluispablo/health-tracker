@@ -14,9 +14,9 @@ async function session(id: string, start: string, end: string, localDate: string
 async function stage(id: string, start: string, end: string, kind: string) {
   await env.DB.prepare("INSERT INTO sleep_stage (session_id, start_ts, end_ts, stage) VALUES (?, ?, ?, ?)").bind(id, at(start), at(end), kind).run();
 }
-interface Seen { sql: string[]; binds: unknown[][]; writes: string[] }
+interface Seen { sql: string[]; binds: unknown[][]; writes: string[]; calls: number }
 function guarded(): [D1Database, Seen] {
-  const seen: Seen = { sql: [], binds: [], writes: [] };
+  const seen: Seen = { sql: [], binds: [], writes: [], calls: 0 };
   const wrap = <T extends object>(o: T, on: (p: string | symbol, v: unknown) => unknown): T => new Proxy(o, { get(t, p) {
     const v: unknown = Reflect.get(t, p);
     const r = on(p, v);
@@ -26,6 +26,7 @@ function guarded(): [D1Database, Seen] {
   const db = wrap(env.DB, (p) => {
     if (p === "prepare") return (q: string) => { seen.sql.push(q); return wrap(env.DB.prepare(q), (sp) => sp === "bind"
       ? (...a: unknown[]) => { seen.binds.push(a); return env.DB.prepare(q).bind(...a); } : undefined); };
+    if (p === "batch") return (statements: D1PreparedStatement[]) => { seen.calls++; return env.DB.batch(statements); };
     if (p === "exec" || p === "dump") return () => { seen.writes.push(p); throw new Error("unexpected"); };
     return undefined;
   });
@@ -97,6 +98,8 @@ describe("AC1 health_sleep", () => {
     expect(seen.binds.every((b) => b.length === 2 && b[0] === "2026-10-01" && b[1] === "2026-10-02")).toBe(true);
     expect(seen.sql.every((q) => /^\s*SELECT\b/i.test(q))).toBe(true);
     expect(seen.writes).toEqual([]);
+    expect(seen.calls).toBe(1);
+    expect(seen.sql).toHaveLength(2);
     const broken = new Proxy(env.DB, { get(t, p) {
       if (p === "batch") return () => Promise.reject(new Error("D1 down"));
       if (p === "prepare") return (q: string) => new Proxy(t.prepare(q), { get(st, sp) {
@@ -175,22 +178,11 @@ describe("AC1 health_sleep", () => {
     expect(seen.sql).toEqual([]);
   });
 
-  it("rejects when stages fail to load after sessions loaded", async () => {
+  it("rejects when the session and stage batch fails", async () => {
     await session("s", "2026-10-07T22:00:00Z", "2026-10-08T05:00:00Z", "2026-10-08");
     await stage("s", "2026-10-07T22:00:00Z", "2026-10-07T23:00:00Z", "DEEP");
-    const failStages = (q: string) => /sleep_stage/i.test(q);
     const broken = new Proxy(env.DB, { get(t, p) {
       if (p === "batch") return (stmts: D1PreparedStatement[]) => t.batch(stmts).then(() => Promise.reject(new Error("stage read failed")));
-      if (p === "prepare") return (q: string) => {
-        const st = t.prepare(q);
-        if (!failStages(q)) return st;
-        return new Proxy(st, { get(x, xp) {
-          if (xp === "bind") return () => ({ all: () => Promise.reject(new Error("stage read failed")),
-            raw: () => Promise.reject(new Error("stage read failed")), first: () => Promise.reject(new Error("stage read failed")) });
-          const v: unknown = Reflect.get(x, xp);
-          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(x) : v;
-        } });
-      };
       const v: unknown = Reflect.get(t, p);
       return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
     } });

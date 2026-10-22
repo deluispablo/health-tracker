@@ -51,16 +51,20 @@ export async function healthSleep(db: D1Database, { start, end }: {
   const daysRequested = (calendarTime(end) - calendarTime(start)) / 86_400_000 + 1;
   if (daysRequested < 1 || daysRequested > 31) throw new RangeError("range must contain 1 to 31 dates");
 
-  const { results: rows } = await db.prepare(`
-    SELECT source_id, start_ts, end_ts, local_date, is_nap, tz_offset_min,
-      minutes_asleep, minutes_in_bed, efficiency, deep_min, rem_min, light_min, awake_min, latency_min
-    FROM sleep_session WHERE local_date BETWEEN ? AND ? ORDER BY start_ts, source_id
-  `).bind(start, end).all<SessionRow>();
-  const { results: stages } = await db.prepare(`
-    SELECT st.session_id, st.start_ts, st.end_ts, st.stage, s.start_ts AS session_start_ts
-    FROM sleep_session s JOIN sleep_stage st ON st.session_id = s.source_id
-    WHERE s.local_date BETWEEN ? AND ? ORDER BY st.session_id, st.start_ts
-  `).bind(start, end).all<StageRow>();
+  const [sessionsResult, stagesResult] = await db.batch<SessionRow | StageRow>([
+    db.prepare(`
+      SELECT source_id, start_ts, end_ts, local_date, is_nap, tz_offset_min,
+        minutes_asleep, minutes_in_bed, efficiency, deep_min, rem_min, light_min, awake_min, latency_min
+      FROM sleep_session WHERE local_date BETWEEN ? AND ? ORDER BY start_ts, source_id
+    `).bind(start, end),
+    db.prepare(`
+      SELECT st.session_id, st.start_ts, st.end_ts, st.stage, s.start_ts AS session_start_ts
+      FROM sleep_session s JOIN sleep_stage st ON st.session_id = s.source_id
+      WHERE s.local_date BETWEEN ? AND ? ORDER BY st.session_id, st.start_ts
+    `).bind(start, end),
+  ]);
+  const rows = sessionsResult.results as SessionRow[];
+  const stages = stagesResult.results as StageRow[];
 
   const bySession = new Map<string, Stage[]>();
   for (const row of stages) {
