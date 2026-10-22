@@ -1,11 +1,11 @@
 # Watch face
 
-The `wear/` folder holds a Wear OS watch face that shows today's dial (sleep, workouts, logs and heart rate) on the watch, with native hands and four editable edge complications. It has two modules:
+The `wear/` folder holds a Wear OS watch face that shows today's dial (sleep, workouts, logs and heart rate) on the watch, with native hands, one editable edge complication and three one-tap log buttons. It has two modules:
 
 | Module | Package | What it is |
 |---|---|---|
 | `app` | `com.deluispablo.healthtracker` | Fetches `GET /watch/today` from the Worker every hour, renders the dial to an image and serves it as a complication |
-| `watchface` | `com.deluispablo.healthtracker.watchface` | A resource-only Watch Face Format (v4) face: bezel, 24-hour hour hand, minute hand, the dial image and four edge slots |
+| `watchface` | `com.deluispablo.healthtracker.watchface` | A resource-only Watch Face Format (v4) face: bezel, 24-hour hour hand, minute hand, the dial image, one edge slot and three log buttons |
 
 It needs Wear OS 6 or later (Watch Face Format v4). It was built for a 41 mm Pixel Watch 3; other round watches should work. It is sideloaded with ADB, not published on Play.
 
@@ -79,15 +79,20 @@ adb shell am broadcast -a com.google.android.wearable.app.DEBUG_SURFACE \
 
 You can also pick **Health Tracker** from the watch's face picker or the phone's watch app.
 
-The first sync runs when the app starts, then every 60 minutes while the watch has a connection. Until the first image arrives the face shows "Toca para activar". Tapping it, or tapping the dial at any time, launches a tiny launcher activity that requests a best-effort immediate one-time sync and closes; use it after logging something, since the hourly job can be deferred while the screen is off. A separate job redraws the cache every 15 minutes without needing a connection, keeps stale dimming current and clears yesterday's data after local midnight in Europe/Madrid. WorkManager timing is approximate. The hands update once per minute.
+The first sync runs when the app starts, then every 60 minutes while the watch has a connection. Until the first image arrives the face shows "Toca para activar". Tapping the centre of the face opens the mood picker, which also requests a best-effort immediate sync, since the hourly job can be deferred while the screen is off. A separate job redraws the cache every 15 minutes without needing a connection, keeps stale dimming current and clears yesterday's data after local midnight in Europe/Madrid. WorkManager timing is approximate. The hands update once per minute.
 
-## 6. Edge complications
+## 6. Edge complications and logging
 
-The four slots sit on the diagonals of the bezel. By default the top-right slot shows battery (`WATCH_BATTERY`, `RANGED_VALUE`) and the bottom-right slot shows steps (`STEP_COUNT`, `GOAL_PROGRESS`); both left slots start empty. Long-press the face (or use the phone's watch app) and choose **Edit** to change them. Edge slots accept providers with progress (`RANGED_VALUE` or `GOAL_PROGRESS`), shown as icon, value and a progress arc on one curved line, and short text (`SHORT_TEXT`), shown as icon and text centred on the diagonal. The lower slots read upright. They hide in ambient mode, which shows only the bezel, the hands and the night's sleep.
+The four slots sit on the diagonals of the bezel. The top-right slot is yours to choose (battery by default: `WATCH_BATTERY`, `RANGED_VALUE`); long-press the face (or use the phone's watch app) and choose **Edit** to change it. It accepts providers with progress (`RANGED_VALUE` or `GOAL_PROGRESS`), shown as icon, value and a progress arc on one curved line, and short text (`SHORT_TEXT`), shown as icon and text centred on the diagonal.
+
+The other three are fixed log buttons served by the app: coffee bottom-right, cigarette bottom-left, alcohol top-left. Each shows today's count; one tap logs one more, vibrates and redraws the count and the dial without opening anything. Tapping the centre of the face opens the mood picker with the dashboard's eight moods; one tap logs the mood and closes it. The edge slots hide in ambient mode, which shows only the bezel, the hands and the night's sleep.
+
+Every log is queued on the watch first, with a random id as its idempotency key and the tap time as the event time, then sent to `POST /watch/log` when there is a connection. A tap is removed from the queue only once a fresh `GET /watch/today` already includes it, so retries never double-count. The endpoint accepts only coffee, cigarettes, alcohol and the eight moods, and rejects taps older than seven days. The Worker stores watch logs like any other log; undo one from the dashboard or with `health_delete_event`.
 
 ## Troubleshooting
 
 - **`adb shell screencap` shows only the bezel and hands.** The watch was in ambient mode; wake it (`adb shell input keyevent KEYCODE_WAKEUP`) and capture again.
+- **A log button tap does nothing.** Check `adb logcat -s LogWorker`; queued taps live in the app's `taps.json` until the Worker confirms them.
 - **The dial never appears.** Check the app's sync log with `adb logcat -s SyncWorker`. A 401 means `watchToken` does not match the `WATCH_TOKEN` secret; rebuild after fixing `local.properties`.
 - **The dial looks faded.** The data is more than three hours old; the watch has not reached the Worker since.
 - **Change the face** in `wear/watchface/generate.py`, not in the XML: run `python3 generate.py` from `wear/watchface` to rewrite `src/main/res/raw/watchface.xml`.
