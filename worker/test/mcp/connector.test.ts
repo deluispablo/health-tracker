@@ -887,7 +887,7 @@ describe("AC3 stateless read tools and audit", () => {
         queue: { pending: 0, stuck: 0, oldest_received_local: null },
         google: { connected: false, token_updated_local: null },
         coverage: Array.from({ length: 14 }, (_, i) => ({
-          date: new Date(Date.parse(`${today}T00:00:00Z`) - (13 - i) * 86400000).toISOString().slice(0, 10), hr_minutes: 0,
+          date: new Date(Date.parse(`${today}T00:00:00Z`) - (13 - i) * 86400000).toISOString().slice(0, 10), hr_minutes: null,
         })),
         alerts: [
           { code: "google_disconnected", message: expect.any(String) as unknown },

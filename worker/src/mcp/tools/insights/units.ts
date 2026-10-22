@@ -143,7 +143,8 @@ export function shapeDayTable(rows: Row[], range: ResolvedRange): DayTable {
     const deep = t.metric.deep_min[i], rem = t.metric.rem_min[i];
     t.metric.deep_pct[i] = asleep && deep !== null ? 100 * deep / asleep : null;
     t.metric.rem_pct[i] = asleep && rem !== null ? 100 * rem / asleep : null;
-    const worn=(numberAt(row, "hr_wear_min") ?? 0)>=600;
+    const wear=numberAt(row, "hr_wear_min");
+    const worn=wear===null ? null : wear>=600;
     t.metric.steps[i] = worn ? t.metric.steps[i] : null;
     t.metric.workout_min[i] = worn ? t.metric.workout_min[i] ?? 0 : null;
     for (const id of ["cigarettes","caffeine","alcohol"] as const) t.behavior[id].push(known(id) ? numberAt(row, id) ?? 0 : null);

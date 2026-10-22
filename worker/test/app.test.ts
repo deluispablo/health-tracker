@@ -131,7 +131,7 @@ describe("AC1 five-minute cron", () => {
     expect((await env.DB.prepare("SELECT metric, ts, value FROM metric_minute").all()).results).toEqual([{ metric: "hr", ts: at("2026-10-20T21:00:00Z"), value: 61 }]);
     expect((await env.DB.prepare("SELECT local_date, hr_wear_min, computed_at FROM daily_summary ORDER BY local_date").all()).results).toEqual([
       { local_date: "2026-10-20", hr_wear_min: 1, computed_at: NOW },
-      { local_date: "2026-10-21", hr_wear_min: 0, computed_at: NOW }]);
+      { local_date: "2026-10-21", hr_wear_min: null, computed_at: NOW }]);
     expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first()).toEqual({ n: 0 });
   });
 

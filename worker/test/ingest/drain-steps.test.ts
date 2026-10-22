@@ -183,6 +183,6 @@ describe("T36 AC2 hourly ingestion", () => {
     await queue();
     await drainSyncPending(drainEnv(), fake().client);
     await recomputeDailySummary(env.DB, "2026-10-25", "2026-10-25", 1);
-    expect(await env.DB.prepare("SELECT steps, hr_wear_min FROM daily_summary").first()).toEqual({ steps: 8123, hr_wear_min: 0 });
+    expect(await env.DB.prepare("SELECT steps, hr_wear_min FROM daily_summary").first()).toEqual({ steps: 8123, hr_wear_min: null });
   });
 });

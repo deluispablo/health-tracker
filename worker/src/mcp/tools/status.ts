@@ -1,10 +1,12 @@
+import { dateTimeFormat } from "../../lib/time";
+
 interface StreamRow {
   ts: number;
   tz_offset_min: number;
 }
 
 export async function healthStatus(db: D1Database, { now, tz }: { now: number; tz: string }) {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  const formatter = dateTimeFormat("en-CA", {
     timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   });
@@ -20,20 +22,8 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
     new Date(midnight - (13 - i) * 86400000).toISOString().slice(0, 10));
   const yesterday = new Date(midnight - 86400000).toISOString().slice(0, 10);
 
-  // Step between metric names in the primary key without reading their history.
-  const { results: names } = await db.prepare(`
-    SELECT metric FROM (
-      WITH RECURSIVE names(metric) AS (
-        SELECT min(metric) FROM metric_minute
-        UNION ALL
-        SELECT (SELECT min(metric) FROM metric_minute WHERE metric > names.metric)
-        FROM names WHERE metric IS NOT NULL
-      )
-      SELECT metric FROM names WHERE metric IS NOT NULL
-    ) ORDER BY metric
-  `).all<{ metric: string }>();
   const [sleepResult, dailyResult, watchResult, queueResult, googleResult, coverageResult,
-    freshResult, ...metricResults] = await db.batch([
+    freshResult, metricResult] = await db.batch([
     db.prepare(`
       SELECT end_ts AS ts, tz_offset_min FROM sleep_session
       WHERE source = 'gh' AND is_nap = 0 ORDER BY end_ts DESC LIMIT 1
@@ -59,10 +49,21 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
       SELECT 1 AS present FROM metric_minute
       WHERE metric = 'hr' AND source = 'gh' AND ts BETWEEN ? AND ? LIMIT 1
     `).bind(now - 172800, now),
-    ...names.map(({ metric }) => db.prepare(`
-      SELECT metric, ts, tz_offset_min FROM metric_minute
-      WHERE metric = ? AND source = 'gh' ORDER BY ts DESC LIMIT 1
-    `).bind(metric)),
+    // Step between metric names in the primary key without reading their history.
+    db.prepare(`
+      SELECT m.metric, m.ts, m.tz_offset_min FROM (
+        WITH RECURSIVE names(metric) AS (
+          SELECT min(metric) FROM metric_minute
+          UNION ALL
+          SELECT (SELECT min(metric) FROM metric_minute WHERE metric > names.metric)
+          FROM names WHERE metric IS NOT NULL
+        )
+        SELECT metric FROM names WHERE metric IS NOT NULL
+      ) n JOIN metric_minute m ON m.metric = n.metric AND m.source = 'gh'
+        AND m.ts = (SELECT ts FROM metric_minute
+          WHERE metric = n.metric AND source = 'gh' ORDER BY ts DESC LIMIT 1)
+      ORDER BY m.metric
+    `),
   ]);
   const sleep = sleepResult.results[0] as StreamRow | undefined;
   const daily = dailyResult.results[0] as { local_date: string; computed_at: number } | undefined;
@@ -71,7 +72,7 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
   const google = googleResult.results[0] as { updated_at: number } | undefined;
   const coverage = coverageResult.results as { date: string; hr_minutes: number | null }[];
   const fresh = freshResult.results[0];
-  const metrics = metricResults.flatMap(({ results }) => results) as (StreamRow & { metric: string })[];
+  const metrics = metricResult.results as (StreamRow & { metric: string })[];
 
   const stream = (name: string, ts: number | null, offset?: number) => ({
     stream: name,
@@ -118,7 +119,10 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
       oldest_received_local: queue?.oldest == null ? null : localTime(queue.oldest),
     },
     google: { connected: google !== undefined, token_updated_local: google ? localTime(google.updated_at) : null },
-    coverage: dates.map((date) => ({ date, hr_minutes: Math.round(minutesByDate.get(date) ?? 0) })),
+    coverage: dates.map((date) => {
+      const minutes = minutesByDate.get(date);
+      return { date, hr_minutes: minutes == null ? null : Math.round(minutes) };
+    }),
     alerts,
   };
 }
