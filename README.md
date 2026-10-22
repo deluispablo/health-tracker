@@ -32,7 +32,7 @@ Health Tracker is a single-user health pipeline. One Cloudflare Worker receives 
 | Area | Status on `main` |
 |---|---|
 | Ingest | Google Health API v4 webhooks (authorization + ECDSA signature verified) queue changes; a 5-minute cron drains them; a daily 48 h reconcile repairs missed notifications and brings in workouts |
-| Metrics | Heart rate (per minute), hourly and daily steps, resting HR, HRV (RMSSD), SpO2, respiratory rate, skin temperature deviation, active zone minutes, sleep sessions with stages, workouts |
+| Metrics | Heart rate (per minute), hourly and daily steps (watch only; phone-estimated steps are ignored), resting HR, HRV (RMSSD), SpO2, respiratory rate, skin temperature deviation, active zone minutes, sleep sessions with stages, workouts |
 | Sleep | Sessions dated by wake day; short daytime sleep (under 3 h in bed, starting 09:00–19:59 local) is stored as a nap |
 | Daily summaries | Recomputed from the earliest changed date through the latest changed date's 28-day score tail (capped at today and 366 dates per batch); z-scores against a 28-day baseline and a heuristic readiness proxy |
 | Connector | Remote MCP server (Streamable HTTP), OAuth 2.1 with PKCE, dynamic client registration and client ID metadata documents; Google sign-in limited to one email |
@@ -308,8 +308,6 @@ No dates; these are ideas, in no particular order.
 - Merge the Health Tracker dashboard (on its branch today).
 - Pixel Watch quick-log tile and watch face.
 - macOS menu bar widget.
-
-Work in progress on a branch, not shipped: counting steps from the watch only (excluding phone-estimated steps).
 
 ## FAQ
 
