@@ -22,6 +22,7 @@ try {
     --on-fill-caffeine: #2a1a00; --on-fill-cig: #16191f; --on-fill-alcohol: #1c0b33; --on-fill-mood: #141c45; --face-ink: #14161c;
     --mood-estresado: #f08a5d; --mood-genial: #f2d06b; --mood-bien: #c9dc6a; --mood-tranquilo: #6cc9a0;
     --mood-cansado: #7fa7e0; --mood-triste: #6f8fe8; --mood-ansioso: #e86f7a; --mood-enfadado: #ee5f5f;
+    --m-water: #0a6fae; --m-supp: #a8346a; --fill-water: #38b6ff; --fill-supp: #f59bb8; --on-fill-water: #03263d; --on-fill-supp: #3d0b1f;
     --fill-edge: var(--muted);
     --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px;
     --radius-sm: 6px; --radius-md: 12px; --radius-full: 999px;
@@ -43,6 +44,7 @@ try {
       --on-fill-caffeine: #2a1a00; --on-fill-cig: #16191f; --on-fill-alcohol: #1c0b33; --on-fill-mood: #141c45; --face-ink: #14161c;
       --mood-estresado: #f08a5d; --mood-genial: #f2d06b; --mood-bien: #c9dc6a; --mood-tranquilo: #6cc9a0;
       --mood-cansado: #7fa7e0; --mood-triste: #6f8fe8; --mood-ansioso: #e86f7a; --mood-enfadado: #ee5f5f;
+      --m-water: #38b6ff; --m-supp: #f59bb8; --fill-water: #38b6ff; --fill-supp: #f59bb8; --on-fill-water: #03263d; --on-fill-supp: #3d0b1f;
       --fill-edge: transparent;
       --w: 500; --w-strong: 600; --w-title: 600;
     }
@@ -59,6 +61,7 @@ try {
     --on-fill-caffeine: #2a1a00; --on-fill-cig: #16191f; --on-fill-alcohol: #1c0b33; --on-fill-mood: #141c45; --face-ink: #14161c;
     --mood-estresado: #f08a5d; --mood-genial: #f2d06b; --mood-bien: #c9dc6a; --mood-tranquilo: #6cc9a0;
     --mood-cansado: #7fa7e0; --mood-triste: #6f8fe8; --mood-ansioso: #e86f7a; --mood-enfadado: #ee5f5f;
+    --m-water: #38b6ff; --m-supp: #f59bb8; --fill-water: #38b6ff; --fill-supp: #f59bb8; --on-fill-water: #03263d; --on-fill-supp: #3d0b1f;
     --fill-edge: transparent;
     --w: 500; --w-strong: 600; --w-title: 600;
   }
@@ -197,7 +200,7 @@ try {
   @media (min-width: 1200px) { .ht-dial { max-width: 480px; } }
   .ht-dial-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; margin: 12px 0 4px; font-size: 12px; line-height: 16px; color: var(--muted); }
   .ht-dial-legend span { display: inline-flex; align-items: center; gap: 6px; }
-  .ht-key-bean, .ht-key-line, .ht-key-glass, .ht-key-dot { width: 16px; height: 16px; }
+  .ht-key-bean, .ht-key-line, .ht-key-glass, .ht-key-dot, .ht-key-drop, .ht-key-pill { width: 16px; height: 16px; }
   .ht-key-arc, .ht-key-sleep, .ht-key-nap { width: 16px; height: 10px; }
   .ht-key-night { width: 14px; height: 9px; background: var(--band); border-radius: 2px; }
   .ht-key-pulse { width: 15px; height: 10px; background: repeating-linear-gradient(90deg, var(--m-hr) 0 2px, transparent 2px 5px); opacity: .7; }
@@ -244,7 +247,7 @@ try {
   .tl-x { padding: 4px 0 8px; }
   .tl-g { padding: 14px 0 4px; font-size: 12px; line-height: 16px; font-weight: var(--w-strong); color: var(--muted); }
   .tl-m { justify-self: center; margin-top: 4px; }
-  .tl-m.bean, .tl-m.line, .tl-m.glass, .tl-m.dot { width: 16px; height: 16px; }
+  .tl-m.bean, .tl-m.line, .tl-m.glass, .tl-m.dot, .tl-m.drop, .tl-m.pill { width: 16px; height: 16px; }
   .tl-m.sq { width: 9px; height: 9px; box-shadow: inset 0 0 0 2px var(--ink); margin-top: 6px; }
   .tl-m.arc { width: 16px; height: 10px; margin-top: 5px; }
   @media (max-width: 599px) { .tl-r { grid-template-columns: 10px 62px minmax(0, 1fr) auto; column-gap: 6px; } }
@@ -337,6 +340,8 @@ try {
     transition: background var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard); -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   .ht-chip .ht-chip-disc { position: relative; display: grid; place-items: center; color: var(--on-disc); }
   .ht-chip .ht-chip-disc::before { content: ""; position: absolute; width: 30px; height: 30px; top: calc(50% - 3px); left: 50%; transform: translate(-50%, -50%); border-radius: var(--radius-full); background: var(--disc); box-shadow: inset 0 0 0 1px var(--fill-edge); }
+  .ht-chip .ht-chip-disc.has-goal::after { content: ""; position: absolute; width: 38px; height: 38px; top: calc(50% - 3px); left: 50%; transform: translate(-50%, -50%); border-radius: var(--radius-full);
+    background: conic-gradient(var(--m-water) calc(var(--p) * 360deg), var(--line) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); }
   .ht-chip .ht-ico-sm svg { position: relative; width: 18px; height: 18px; transform: translateY(-3px); stroke-width: 2.4; }
   .ht-chip .ht-ico-sm .mood-face { color: var(--on-disc); stroke-width: 1.9; }
   .ht-mood[aria-disabled="true"] svg { opacity: .4; }
@@ -575,7 +580,7 @@ try {
     #ev-body { overflow: visible !important; }
   }
   @media (forced-colors: active) {
-    .ht-key-bean, .ht-key-line, .ht-key-glass, .ht-key-sleep, .ht-key-nap, .ht-key-arc, .ht-key-dot, .ht-key-other, .ht-key-grp, .ht-strip, .ht-strip *, .ht-bar, .ht-bar *, .sl-sw, .sbar i, .tl-m, .act-k, .det .k { forced-color-adjust: none; }
+    .ht-key-bean, .ht-key-line, .ht-key-glass, .ht-key-drop, .ht-key-pill, .ht-key-sleep, .ht-key-nap, .ht-key-arc, .ht-key-dot, .ht-key-other, .ht-key-grp, .ht-strip, .ht-strip *, .ht-bar, .ht-bar *, .sl-sw, .sbar i, .tl-m, .act-k, .det .k { forced-color-adjust: none; }
     .ht-chip .ht-chip-disc { forced-color-adjust: none; color: Canvas; }
     .ht-chip .ht-chip-disc::before { background: CanvasText; box-shadow: none; }
     .mood-face { forced-color-adjust: none; color: Canvas !important; }
@@ -606,7 +611,11 @@ try {
         <button type="button" class="ht-chip" data-chip="cafe"></button>
         <button type="button" class="ht-chip" data-chip="cigarro"></button>
         <button type="button" class="ht-chip" data-chip="alcohol"></button>
+        <button type="button" class="ht-chip" data-chip="agua"></button>
         <button type="button" class="ht-chip" data-chip="animo" aria-haspopup="dialog" aria-controls="mood-sheet"></button>
+        <button type="button" class="ht-chip is-supp" data-chip="melatonina"></button>
+        <button type="button" class="ht-chip is-supp" data-chip="proteina"></button>
+        <button type="button" class="ht-chip is-supp" data-chip="creatina"></button>
         <p id="quick-note" class="ht-quick-note" hidden></p>
       </div>
       <div class="undo-slot"><div id="undo"></div></div>
@@ -749,11 +758,18 @@ try {
     'trk.cigarro': ['Cigarette', 'Cigarro'],
     'trk.alcohol': ['Alcohol', 'Alcohol'],
     'trk.animo': ['Mood', 'Ánimo'],
+    'trk.agua': ['Water', 'Agua'],
+    'trk.melatonina': ['Melatonin', 'Melatonina'],
+    'trk.proteina': ['Protein', 'Proteína'],
+    'trk.creatina': ['Creatine', 'Creatina'],
+    'dial.legendSupp': ['Supplement', 'Suplemento'],
     'trk.workout': ['Workout', 'Entreno'],
     'quick.group': ['Quick log', 'Registro rápido'],
     'quick.log': ['Log {x} now', 'Registrar {x} ahora'],
     'quick.logMood': ['Log mood', 'Registrar ánimo'],
     'quick.count': ['{n} today', '{n} hoy'],
+    'quick.water': ['{v} of {g} ml', '{v} de {g} ml'],
+    'sum.water': ['{v} / {g} ml', '{v} / {g} ml'],
     'quick.loading': ['loading', 'cargando'],
     'quick.saving': ['{x}, saving', '{x}, guardando'],
     'undo.queued': ['Saving {n} more in order…', 'Guardando {n} más, en orden…'],
@@ -1121,6 +1137,8 @@ try {
   /* ---- steps expected by now: an active day 07:00-23:00 ---- */
   /* The owner's step goal from health_profile; 8,000 until the profile is readable. */
   const stepGoal = (p) => Number.isInteger(p?.step_goal) && p.step_goal > 0 ? p.step_goal : 8000;
+  /* The water goal from health_profile; 2,000 ml until it is readable. */
+  const waterGoal = (p) => Number.isInteger(p?.water_goal_ml) && p.water_goal_ml > 0 ? p.water_goal_ml : 2000;
   const expectedSteps = (min, goal) => Math.round(Math.min(goal, Math.max(0, goal * (min - 420) / (1380 - 420))));
 
   /* ---- dial geometry: 0 deg at 00:00 (top), clockwise; local minutes from each item's own local time ---- */
@@ -1182,7 +1200,9 @@ try {
   }
 
   /* ---- trackers, writes and snapshots ---- */
-  const CHIPS = [{ key: 'cafe', id: 'caffeine', k: 'm-caffeine' }, { key: 'cigarro', id: 'cigarettes', k: 'm-cig' }, { key: 'alcohol', id: 'alcohol', k: 'm-alcohol' }, { key: 'animo', id: null, k: 'ink' }];
+  const CHIPS = [{ key: 'cafe', id: 'caffeine', k: 'm-caffeine', disc: 'caffeine' }, { key: 'cigarro', id: 'cigarettes', k: 'm-cig', disc: 'cig' }, { key: 'alcohol', id: 'alcohol', k: 'm-alcohol', disc: 'alcohol' },
+    { key: 'agua', id: 'water', k: 'm-water', disc: 'water' }, { key: 'animo', id: null, k: 'ink', disc: 'mood' },
+    { key: 'melatonina', id: 'melatonin', k: 'm-supp', disc: 'supp' }, { key: 'proteina', id: 'protein', k: 'm-supp', disc: 'supp' }, { key: 'creatina', id: 'creatine', k: 'm-supp', disc: 'supp' }];
   const MOODS = [['genial', 'great'], ['bien', 'good'], ['tranquilo', 'calm'], ['cansado', 'tired'], ['estresado', 'stressed'], ['ansioso', 'anxious'], ['triste', 'sad'], ['enfadado', 'angry']]
     .map(([face, label]) => ({ face, label, id: 'mood_' + face }));
   function trackerKey(id) {
@@ -1334,7 +1354,7 @@ try {
 
   window.HTLogic = {
     COPY, t, tn, pickLang, fmt: { num, signed, dur, ago, day, vital, range }, VITALS, shiftDate, dayValue, typicalRange, rangeStatus, rangeFlag, outliers,
-    recovery, stepGoal, expectedSteps, sunTimes, pulseBuckets, dialAngle, localMinutes, sleepWedge, clipWorkout, mainSession, CHIPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
+    recovery, stepGoal, waterGoal, expectedSteps, sunTimes, pulseBuckets, dialAngle, localMinutes, sleepWedge, clipWorkout, mainSession, CHIPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
     available, summary, dialEvents, dayItems, timelineItems, clusterFacts, stageMinutes, gapRuns, GROUP_MIN, clusterEvents, writeQueue, doubleTap, NIGHT_END, dayFor, bridgeEvents,
     applyLog, applyUndo, acceptSnapshot, syncLabel, errorKind
   };
@@ -1632,7 +1652,7 @@ try {
   'use strict';
   const L = window.HTLogic, $ = (id) => document.getElementById(id);
   const SERVER = 'Health Tracker';
-  let GOAL = L.stepGoal(null);
+  let GOAL = L.stepGoal(null), WGOAL = L.waterGoal(null);
   const WATCH = { cache: { staleTime: 300000, gcTime: 86400000 }, refetchInterval: 300000 };
   const FRESH = { cache: { refresh: true, gcTime: 86400000 } };
   const SOURCES = ['status', 'daily', 'sleep', 'trackers', 'workouts'];
@@ -1666,6 +1686,10 @@ try {
     cafe: '<path d="M5 9h11v4.5A5.5 5.5 0 0 1 10.5 19h0A5.5 5.5 0 0 1 5 13.5zM16 10.5h1.2a2.6 2.6 0 0 1 0 5.2H16"/>',
     cigarro: '<path d="M3 14h14v3H3zM12.5 14v3M20 17v-3M20 11c0-1.3 1.3-1.7 1.3-3S20 6.3 20 5"/>',
     alcohol: '<path d="M8 4h8v3.5a4 4 0 0 1-8 0zM12 11.5v8M8.5 19.5h7"/>',
+    agua: '<path d="M12 3.6C9 7.6 6.5 10.6 6.5 14a5.5 5.5 0 0 0 11 0c0-3.4-2.5-6.4-5.5-10.4z"/>',
+    melatonina: '<path d="M7.8 16.2a3.4 3.4 0 0 1 0-4.8l3.6-3.6a3.4 3.4 0 0 1 4.8 4.8l-3.6 3.6a3.4 3.4 0 0 1-4.8 0zM9.6 9.6l4.8 4.8"/>',
+    proteina: '<path d="M8.5 8h7l-1 12h-5zM9.5 8V5h5v3M8.8 12h6.4"/>',
+    creatina: '<path d="M4.5 11h9a4.5 4.5 0 0 1-9 0zM13.5 11l6-4"/>',
     animo: '<circle cx="12" cy="12" r="8.25"/><circle cx="9.4" cy="10.2" r="1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="10.2" r="1" fill="currentColor" stroke="none"/><path d="M9 14.4q3 2.1 6 0"/>',
     retry: '<path d="M19 12a7 7 0 1 1-2.05-4.95M19 4.5V8h-3.5"/>',
     alert: '<circle cx="12" cy="12" r="8.25"/><path d="M12 7.75v5"/><circle cx="12" cy="16" r="1" fill="currentColor" stroke="none"/>',
@@ -1951,13 +1975,15 @@ try {
   const evIcon = (e) => e.k === 'animo' ? face(e.mood, 20) : e.k !== 'other' ? icon(e.k, 'ht-ico-sm') : icon('dot', 'ht-ico-sm');
   const evValue = (e) => e.k === 'animo' || !finiteNum(e.value) || (e.unit === 'u' && e.value === 1) ? null : fmt.num(e.value, lang, e.value % 1 ? 1 : 0) + unitText(e.unit);
   /* One shape per tracker, shared by the dial, legend and timeline. */
-  const SHAPE = { cafe: 'bean', cigarro: 'line', alcohol: 'glass', animo: 'dot', other: 'sq' };
+  const SHAPE = { cafe: 'bean', cigarro: 'line', alcohol: 'glass', agua: 'drop', animo: 'dot', melatonina: 'pill', proteina: 'pill', creatina: 'pill', other: 'sq' };
   const logGlyph = (k, mood) => {
     const filled = (shape, color) => '<g class="log-halo" fill="var(--surface)" stroke="var(--surface)" stroke-width="2.2">' + shape + '</g><g class="log-fill" fill="var(--' + color + ')" stroke="var(--fill-edge)" stroke-width=".9" paint-order="stroke">' + shape + '</g>';
     if (k === 'cafe') return filled('<ellipse rx="4.2" ry="5.6"/>', 'fill-caffeine') + '<path class="log-seam" d="M0 -4.6Q-2 -2.3 0 0Q2 2.3 0 4.6" fill="none" stroke="var(--on-fill-caffeine)" stroke-width="1.2"/>';
     if (k === 'cigarro') return '<path class="log-halo" d="M0 -7V7" stroke="var(--surface)" stroke-width="6.6"/><path class="log-line" d="M0 -7V7" stroke="var(--m-cig)" stroke-width="3"/>';
     if (k === 'alcohol') return filled('<path d="M-4.6 -6.4H4.6V-3.2A4.6 4.6 0 0 1-4.6 -3.2Z"/>', 'fill-alcohol') + '<path class="log-halo" d="M0 1.4V5.6M-2.8 5.6H2.8" fill="none" stroke="var(--surface)" stroke-width="3.8"/><path class="log-line" d="M0 1.4V5.6M-2.8 5.6H2.8" fill="none" stroke="var(--m-alcohol)" stroke-width="1.6"/>';
     if (k === 'animo') return filled('<circle r="4.6"/>', moodColor(mood));
+    if (k === 'agua') return filled('<path d="M0 -6.2C-1.6 -3.6 -4.2 -1.2 -4.2 1.6A4.2 4.2 0 0 0 4.2 1.6C4.2 -1.2 1.6 -3.6 0 -6.2Z"/>', 'fill-water');
+    if (SHAPE[k] === 'pill') return filled('<rect x="-2.7" y="-5.8" width="5.4" height="11.6" rx="2.7"/>', 'fill-supp') + '<path d="M-2.7 0H2.7" stroke="var(--on-fill-supp)" stroke-width="1"/>';
     return filled('<rect x="-4" y="-4" width="8" height="8"/>', 'ink');
   };
   const shapeMark = (k, mood, cls = 'tl-m ' + SHAPE[k]) => h('i', { class: cls, 'aria-hidden': 'true', html: k === 'other' ? '' : '<svg width="16" height="16" viewBox="-10 -10 20 20" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + logGlyph(k, mood) + '</svg>' });
@@ -2188,7 +2214,8 @@ try {
     const legend = h('div', { id: 'dial-legend', class: 'ht-dial-legend', role: 'region', 'aria-label': t('dial.legendToggle'), hidden: !dialLegendOpen },
       wedge && h('span', {}, arcMark('sleep', 'ht-key-sleep'), t('dial.legendSleep')), naps.length > 0 && h('span', {}, arcMark('nap', 'ht-key-nap'), t('tip.nap')),
       has.has('cafe') && h('span', {}, shapeMark('cafe', null, 'ht-key-bean'), t('trk.cafe')), has.has('cigarro') && h('span', {}, shapeMark('cigarro', null, 'ht-key-line'), t('trk.cigarro')), has.has('alcohol') && h('span', {}, shapeMark('alcohol', null, 'ht-key-glass'), t('trk.alcohol')),
-      has.has('animo') && h('span', {}, shapeMark('animo', events.find((e) => e.k === 'animo')?.mood, 'ht-key-dot'), t('trk.animo')), works.length > 0 && h('span', {}, arcMark('workout', 'ht-key-arc'), t('trk.workout')),
+      has.has('agua') && h('span', {}, shapeMark('agua', null, 'ht-key-drop'), t('trk.agua')), has.has('animo') && h('span', {}, shapeMark('animo', events.find((e) => e.k === 'animo')?.mood, 'ht-key-dot'), t('trk.animo')),
+      ['melatonina', 'proteina', 'creatina'].some((x) => has.has(x)) && h('span', {}, shapeMark('melatonina', null, 'ht-key-pill'), t('dial.legendSupp')), works.length > 0 && h('span', {}, arcMark('workout', 'ht-key-arc'), t('trk.workout')),
       has.has('other') && key('ht-key-other', t('dial.legendOther')), sun && key('ht-key-night', t('dial.legendNight')), pulse.length > 0 && key('ht-key-pulse', t('dial.legendPulse')));
     const toggle = h('button', { type: 'button', class: 'ht-dial-legend-toggle', 'data-fk': 'dial-legend-toggle', 'aria-expanded': String(dialLegendOpen), 'aria-controls': 'dial-legend', onclick: () => {
       dialLegendOpen = !dialLegendOpen; legend.hidden = !dialLegendOpen; toggle.setAttribute('aria-expanded', String(dialLegendOpen));
@@ -2258,7 +2285,7 @@ try {
     const snap = S.trackers.data, past = isPast();
     swap(box, h('ul', { class: 'ht-trk' }, L.CHIPS.map((c) => {
       const s = L.summary(snap, c.key, past ? 1440 : n.min);
-      const value = s.n === 0 ? '—' : c.key === 'animo' ? (s.mood ? t('mood.' + s.mood) : fmt.num(s.n, lang)) : amount(s.total, s.unit);
+      const value = c.key === 'agua' ? t('sum.water', { v: fmt.num(s.total || 0, lang), g: fmt.num(WGOAL, lang) }) : s.n === 0 ? '—' : c.key === 'animo' ? (s.mood ? t('mood.' + s.mood) : fmt.num(s.n, lang)) : amount(s.total, s.unit);
       const last = s.n === 0 ? t(c.key === 'animo' ? 'sum.moodNone' : 'sum.none') : s.since == null ? t('sum.unknown') : past ? t('sum.last', { t: s.last }) : fmt.ago(s.since, lang);
       const sub = s.n === 0 ? last : tn(c.key === 'cafe' ? 'sum.cups' : 'sum.count', s.n, { n: fmt.num(s.n, lang), last: !past && s.since != null ? t('sum.recent', { d: last }) : last });
       return h('li', {}, h('div', { class: 'ht-trk-h' }, h('span', { class: 'tl-icon', style: '--k:var(--' + c.k + ')', html: c.key === 'animo' && s.mood ? face(s.mood, 20) : icon(c.key, 'ht-ico-sm') }), t('trk.' + c.key)),
@@ -2756,8 +2783,9 @@ try {
         : !snap ? log + ', ' + t('quick.loading')
         : c.key === 'animo' || !cal ? log + (s.n ? ', ' + t('quick.count', { n: s.n }) : '') : t('quick.logCount', { x: name.toLowerCase(), n: s.n });
       b.setAttribute('aria-label', saving ? t('quick.saving', { x: label }) : label);
-      const disc = c.key === 'cafe' ? 'caffeine' : c.key === 'cigarro' ? 'cig' : c.key === 'animo' ? 'mood' : 'alcohol';
-      b.innerHTML = saving ? SPIN : '<span class="ht-ico-sm ht-chip-disc" style="--disc:var(--fill-' + disc + ');--on-disc:var(--on-fill-' + disc + ')" aria-hidden="true">' + (c.key === 'animo' ? '<svg class="mood-face" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + (FACE[s.mood || 'bien'] || '') + '</svg>' : icon(c.key)) + '</span>';
+      const disc = c.disc, goal = c.key === 'agua' ? ';--p:' + Math.min(1, (s.total || 0) / WGOAL) : '';
+      if (c.key === 'agua' && snap) b.setAttribute('aria-label', b.getAttribute('aria-label') + ', ' + t('quick.water', { v: fmt.num(s.total || 0, lang), g: fmt.num(WGOAL, lang) }));
+      b.innerHTML = saving ? SPIN : '<span class="ht-ico-sm ht-chip-disc' + (goal ? ' has-goal' : '') + '" style="--disc:var(--fill-' + disc + ');--on-disc:var(--on-fill-' + disc + ')' + goal + '" aria-hidden="true">' + (c.key === 'animo' ? '<svg class="mood-face" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + (FACE[s.mood || 'bien'] || '') + '</svg>' : icon(c.key)) + '</span>';
       b.append(h('span', { class: 'ht-chip-l', text: name }));
       if (s.n > 0) b.append(h('span', { class: 'ht-chip-n', 'aria-hidden': 'true', text: fmt.num(s.n, lang) }));
     }
@@ -3273,7 +3301,7 @@ try {
   noConnector = !connector;
   if (connector) { SOURCES.forEach(subscribe); syncNow(); }
   /* The goal never blocks the page: on any failure the default stays. */
-  if (connector) connector.callTool(SERVER, 'health_profile', {}).then((r) => { GOAL = L.stepGoal(r?.payload); if (!stopped) render(); }).catch(() => {});
+  if (connector) connector.callTool(SERVER, 'health_profile', {}).then((r) => { GOAL = L.stepGoal(r?.payload); WGOAL = L.waterGoal(r?.payload); if (!stopped) render(); }).catch(() => {});
   render();
 })();
 </script>
