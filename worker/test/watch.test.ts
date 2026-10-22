@@ -88,6 +88,17 @@ describe("GET /watch/today", () => {
     expect(body.counts).toEqual({ cafe: 51 });
   });
 
+  it("adds the units of a multi-cigarette log", async () => {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at)
+        VALUES ('three', 'cigarettes', ?, 120, '2026-10-21', 3, 'mcp', 1), ('cup', 'caffeine', ?, 120, '2026-10-21', 160, 'mcp', 1)`)
+        .bind(local("2026-10-21", "09:00"), local("2026-10-21", "09:30")),
+    ]);
+    const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: unknown[]; counts: Record<string, number> }>();
+    expect(body.events.length).toBe(2);
+    expect(body.counts).toEqual({ cigarro: 3, cafe: 1 });
+  });
+
   it("rejects an unset token and a token without the Bearer prefix, without touching the database", async () => {
     const noDb = new Proxy({}, { get: () => { throw new Error("database touched"); } }) as D1Database;
     const call = (authorization: string, token?: string) => route(
