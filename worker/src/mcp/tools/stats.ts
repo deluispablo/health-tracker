@@ -1,3 +1,5 @@
+export const roundOneDecimal = (value: number | null): number | null => value === null ? null : Math.round(value * 10) / 10;
+
 export function mean(xs: number[]): number | null {
   return xs.length === 0 ? null : xs.reduce((sum, x) => sum + x, 0) / xs.length;
 }

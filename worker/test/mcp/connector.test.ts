@@ -961,7 +961,7 @@ describe("AC3 stateless read tools and audit", () => {
       expect(msg.result?.isError).not.toBe(true);
       expect(msg.result?.content).toEqual([{ type: "text", text: JSON.stringify(msg.result?.structuredContent) }]);
       expect(msg.result?.structuredContent).toEqual(expected);
-      if (name === "health_daily") expect(msg.result?.structuredContent).toMatchObject({ rows: [["2026-10-20", 61, 8123, 55.183]] });
+      if (name === "health_daily") expect(msg.result?.structuredContent).toMatchObject({ rows: [["2026-10-20", 61, 8123, 55.2]] });
       await toolAudit(name, args, 1, before);
     }
   });
@@ -976,7 +976,7 @@ describe("AC3 stateless read tools and audit", () => {
     ["health_intraday", { metric: "hr", date: "2026-02-30", resolution: "1m" }, "date must be a real YYYY-MM-DD date between 2000-01-01 and 2099-12-31"],
     ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["nope"] }, `unknown metric "nope"; valid: ${DAILY_COLUMNS.join(", ")}`],
     ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: [] }, "metrics must not be empty"],
-    ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["rhr", "rhr"] }, 'metric "rhr" is repeated'],
+    ["health_daily", { start: "2026-10-20", end: "2026-10-20", metrics: ["rhr", "rhr"] }, `metric "rhr" is repeated; valid: ${DAILY_COLUMNS.join(", ")}`],
     ["health_intraday", { metric: "steps", date: "2026-10-20", resolution: "1m" }, "steps supports only 1h resolution"],
     ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "2m" }, "resolution must be 1m, 5m or 1h"],
     ["health_intraday", { metric: "hr", date: "2026-10-20", resolution: "1m" }, "1m resolution covers at most 3 hours: pass from and to, or use 5m"],
@@ -1228,8 +1228,8 @@ describe("T17 AC4 analysis tools through the authenticated connector", () => {
     ["health_compare", { ...compareArgs, lag_days: -1 }, "lag_days must be an integer from 0 to 7"],
     ["health_compare", { ...compareArgs, lag_days: 8 }, "lag_days must be an integer from 0 to 7"],
     ...[[], [0], [2, 1], [1, 1], [1, 2, 3, 4, 5, 6]].map((bins) => ["health_compare", { ...compareArgs, bins }, "bins must be 1 to 5 ascending positive finite numbers"]),
-    ["health_correlate", { ...correlateArgs, x: "unknown" }, `x and y must be distinct names from: ${names.join(", ")}`],
-    ["health_correlate", { ...correlateArgs, y: "rhr" }, `x and y must be distinct names from: ${names.join(", ")}`],
+    ["health_correlate", { ...correlateArgs, x: "unknown" }, `unknown x metric "unknown"; valid: ${names.join(", ")}`],
+    ["health_correlate", { ...correlateArgs, y: "rhr" }, `metric "rhr" is repeated in x and y; valid: ${names.join(", ")}`],
     ["health_correlate", { ...correlateArgs, max_lag: -1 }, "max_lag must be an integer from 0 to 7"],
     ["health_correlate", { ...correlateArgs, max_lag: 8 }, "max_lag must be an integer from 0 to 7"],
     ...[["health_compare", compareArgs], ["health_correlate", correlateArgs]].flatMap(([name, args]) => [
@@ -1580,7 +1580,7 @@ describe("T18 AC5 health_trend through the authenticated connector", () => {
   });
 
   it.each([
-    [{ metric: "unknown" }, `metric must be one of: ${names.join(", ")}`],
+    [{ metric: "unknown" }, `unknown metric "unknown"; valid: ${names.join(", ")}`],
     [{ period: "day" }, "period must be week or month"],
     [{ start: "2026-02-30" }, "date must be a real calendar date in YYYY-MM-DD format"],
     [{ end: "2100-01-01" }, "date must be a real calendar date in YYYY-MM-DD format"],

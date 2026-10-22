@@ -1,4 +1,5 @@
 import { round } from "./compare";
+import { roundOneDecimal } from "./stats";
 
 export const DAILY_COLUMNS: readonly string[] = [
   "rhr", "hrv_rmssd", "ln_rmssd", "resp_rate", "spo2_avg", "skin_temp_dev",
@@ -38,7 +39,7 @@ export async function healthDaily(db: D1Database, { start, end, metrics = DAILY_
   const unknown = metrics.find((metric) => !DAILY_COLUMNS.includes(metric));
   if (unknown !== undefined) throw new RangeError(`unknown metric "${unknown}"; valid: ${DAILY_COLUMNS.join(", ")}`);
   const repeated = metrics.find((metric, i) => metrics.indexOf(metric) !== i);
-  if (repeated !== undefined) throw new RangeError(`metric "${repeated}" is repeated`);
+  if (repeated !== undefined) throw new RangeError(`metric "${repeated}" is repeated; valid: ${DAILY_COLUMNS.join(", ")}`);
 
   const columns = ["local_date", ...metrics];
   const { results } = await db.prepare(
@@ -48,7 +49,8 @@ export async function healthDaily(db: D1Database, { start, end, metrics = DAILY_
     columns,
     rows: results.map((row) => columns.map((column) => {
       const value = row[column];
-      return typeof value === "number" && Number.isFinite(value) && !Number.isInteger(value) ? round(value) : value;
+      return typeof value === "number" && Number.isFinite(value) && !Number.isInteger(value)
+        ? UNITS[column] === "min" ? roundOneDecimal(value) : round(value) : value;
     })),
     units: Object.fromEntries(metrics.map((metric) => [metric, UNITS[metric]])),
     coverage: { days_requested: daysRequested, days_with_data: results.length },
