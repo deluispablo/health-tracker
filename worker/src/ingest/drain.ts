@@ -104,6 +104,7 @@ export async function drainSyncPending(
   env: DrainEnv, client: Pick<ReturnType<typeof createGoogleClient>, "rollUpHeartRate" | "rollUpSteps" | "dailyRollUp" | "listDaily" | "reconcile">,
   opts: { now?: () => number } = {},
 ): Promise<{ processed: number; failed: number }> {
+  const deadline = Date.now() + 60_000;
   const db = env.DB;
   const dateFormatter = dateTimeFormat("en-US", {
     timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",
@@ -112,15 +113,19 @@ export async function drainSyncPending(
   let failed = 0;
   const types = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
     "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"];
-  // Recent heart-rate notifications take precedence over historical backfills.
-  const { results: heads } = await db.prepare(`SELECT * FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY data_type ORDER BY
-      CASE WHEN data_type = 'heart-rate' AND end_ts < ? THEN 1 ELSE 0 END, received_at, start_ts, operation, end_ts) AS rank
+  const cutoff = (opts.now?.() ?? Math.floor(Date.now() / 1000)) - 86400;
+  let remaining = 799; // Include the queue read in the 800-statement budget.
+  // Admit at most one historical heart-rate row; drain all types oldest-first.
+  const { results: pending } = await db.prepare(`SELECT * FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY data_type, (end_ts < ?1)
+      ORDER BY received_at, start_ts, operation, end_ts) AS rank
     FROM sync_pending WHERE attempts < 5 AND data_type IN (${types.map(() => "?").join(", ")})
-  ) WHERE rank = 1`).bind((opts.now?.() ?? Math.floor(Date.now() / 1000)) - 86400, ...types).all<PendingRow>();
-  for (const type of types) {
-    const row = heads.find((head) => head.data_type === type);
-    if (!row) continue;
+  ) WHERE data_type != 'heart-rate' OR end_ts >= ?1 OR rank = 1
+    ORDER BY received_at, start_ts, operation, end_ts,
+      CASE data_type ${types.map((type, i) => `WHEN '${type}' THEN ${String(i)}`).join(" ")} END`).bind(cutoff, ...types).all<PendingRow>();
+  for (const row of pending) {
+    if (Date.now() >= deadline || remaining < 4) break;
+    const type = row.data_type;
 
     const key = [row.data_type, row.start_ts, row.end_ts, row.operation];
     const predicate = "data_type = ? AND start_ts = ? AND end_ts = ? AND operation = ?";
@@ -326,13 +331,18 @@ export async function drainSyncPending(
           .bind(advance, ...key, row.received_at));
       }
 
+      // Reserve one statement to record a failed batch.
+      if (statements.length + 2 > remaining && processed + failed > 0) break;
+      remaining -= statements.length + 1;
       await db.batch([...statements, remove]);
       processed++;
     } catch (cause) {
       const status = cause instanceof Error ? cause.message.match(/^(?:Google API |Google token refresh failed: )([45]\d{2})$/) : null;
       console.error(type, cause instanceof Error ? cause.name : "UnknownError", ...(status ? [Number(status[1])] : []));
+      remaining--;
       await db.prepare(`UPDATE sync_pending SET attempts = attempts + 1 WHERE ${predicate}`).bind(...key).run();
       failed++;
+      if (status?.[1] === "429") break;
     }
   }
   return { processed, failed };
