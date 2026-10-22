@@ -1,9 +1,14 @@
-import { dependentRiskDiff, labelOf, mean } from "../stats";
+import { dependentRiskDiff, labelOf } from "../stats";
 import type { Baseline } from "./baseline";
 import { CALIBRATION_CAPS, LEG_MIN, METRICS, METRIC_MIN_PAIRS, METRIC_TIMINGS, NIGHT_ANCHORED, refusedMetricPair, SCAN_Z } from "./catalog";
 import { olsAdjusted, type ModelPoint } from "./model";
 import type { CalibrationCaps, Expected, GroupStats, LabelOutcome, Leg, MetricId, MetricPair, MetricStats } from "./types";
 import type { DayTable } from "./units";
+
+function raw(values: (number | null)[] | undefined, i: number): number | null {
+  const value = values?.[i];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
 
 export function evaluateMetricPair(t: DayTable, bl: Partial<Record<MetricId, Baseline>>, anomalies: boolean[], pair: MetricPair,
   opts: { includeAnomalies: boolean; groups?: { a: (i: number) => boolean; b: (i: number) => boolean } }): MetricStats {
@@ -15,10 +20,6 @@ export function evaluateMetricPair(t: DayTable, bl: Partial<Record<MetricId, Bas
   const excluded: Record<string, number> = { middle_band: 0, incomplete_pair: 0, anomaly: 0 };
   const points: (ModelPoint & { rawY: number })[] = [];
   const outcome = t.metric[pair.outcome as Exclude<MetricId, "hr_delta">];
-  const raw = (values: (number | null)[] | undefined, i: number): number | null => {
-    const value = values?.[i];
-    return typeof value === "number" && Number.isFinite(value) ? value : null;
-  };
   const deviation = (m: MetricId, values: (number | null)[], i: number): number | null => {
     const value = raw(values, i), median = raw(bl[m]?.median, i);
     return value === null || median === null ? null : value - median;
@@ -38,7 +39,7 @@ export function evaluateMetricPair(t: DayTable, bl: Partial<Record<MetricId, Bas
     const sleep = thatNight ? deviation("sleep_min", t.metric.sleep_min, i) : undefined;
     if (rawY === null || y === null || yPrev === null || sleep === null) { excluded.incomplete_pair++; continue; }
     if (!opts.includeAnomalies && (anomalies[i] || anomalies[j])) { excluded.anomaly++; continue; }
-    points.push({ rawY, idx: i, a: a ? 1 : 0, y, yPrev, weekend: t.weekend[i] ? 1 : 0, ...(sleep === undefined ? {} : { sleep }) });
+    points.push({ rawY, idx: i, a: a ? 1 : 0, y, yPrev, weekend: t.weekend[i] ? 1 : 0, sleep });
   }
   function fit(kept: typeof points): GroupStats & { adjusted_for: string[]; reason: "confounded" | null } {
     if (binary) {
@@ -46,11 +47,13 @@ export function evaluateMetricPair(t: DayTable, bl: Partial<Record<MetricId, Bas
       for (const p of kept) (p.a ? a : b)[p.idx] = p.y as 0 | 1;
       return { ...dependentRiskDiff(a, b), adjusted_for: [], reason: null };
     }
-    const aa = kept.filter(p => p.a === 1), bb = kept.filter(p => p.a === 0);
-    const enough = aa.length >= 3 && bb.length >= 3;
-    return { ...olsAdjusted(kept, t.dates.length, thatNight), n_a: aa.length, n_b: bb.length,
-      mean_a: enough ? mean(aa.map(p => p.rawY)) : null,
-      mean_b: enough ? mean(bb.map(p => p.rawY)) : null };
+    let na = 0, nb = 0, sumA = 0, sumB = 0;
+    for (const p of kept) {
+      if (p.a) { na++; sumA += p.rawY; } else { nb++; sumB += p.rawY; }
+    }
+    const enough = na >= 3 && nb >= 3;
+    return { ...olsAdjusted(kept, t.dates.length, thatNight), n_a: na, n_b: nb,
+      mean_a: enough ? sumA / na : null, mean_b: enough ? sumB / nb : null };
   }
   const main = fit(points);
   function leg(kept: typeof points): Leg {
@@ -70,7 +73,7 @@ export function evaluateMetricPair(t: DayTable, bl: Partial<Record<MetricId, Bas
 export function finalizeMetricLabel(s: MetricStats, q: number | null, rope: number, expected: Expected | null,
   caps: CalibrationCaps = CALIBRATION_CAPS): LabelOutcome {
   const result: LabelOutcome = { ...(s.reason === "confounded" ? { label: "indicio" as const, reason: "confounded" as const }
-    : labelOf({ ...s, q, rope })), needed: null };
+    : labelOf({ n_a:s.n_a, n_b:s.n_b, diff:s.diff, ci95:s.ci95, q, rope })), needed: null };
   if (result.reason === "few_days") result.needed = `faltan ${String(Math.max(0, 8 - s.n_a) + Math.max(0, 8 - s.n_b))} pares de días`;
   if (result.reason === "few_effective_days") {
     const groupMissing = Math.max(0, 2 - s.n_eff_a) + Math.max(0, 2 - s.n_eff_b);

@@ -22,10 +22,20 @@ export function olsAdjusted(points: ModelPoint[], calendarLength: number, thatNi
   const result: ModelResult = { diff: null, ci95: null, p: null, df: null, k, f: inflation(0.2), phi: 0.2,
     n_eff_a: na / inflation(0.2), n_eff_b: nb / inflation(0.2), adjusted_for: nuisance.map(c => c.name), reason: null };
   if (na < 3 || nb < 3) return result;
-  const x = points.map(p => [1, p.a, ...nuisance.map(c => c.value(p))]);
-  const gram = Array.from({ length: k }, (_, i) => Array.from({ length: k }, (_, j) =>
-    x.reduce((sum, row) => sum + row[i] * row[j], 0)));
-  const threshold = 1e-10 * Math.max(...gram.flat().map(Math.abs));
+  const x: number[][] = [], gram = Array.from({ length: k }, () => Array<number>(k).fill(0));
+  const xy = Array<number>(k).fill(0);
+  for (const p of points) {
+    const row = [1, p.a];
+    for (const c of nuisance) row.push(c.value(p));
+    x.push(row);
+    for (let i = 0; i < k; i++) {
+      xy[i] += row[i] * p.y;
+      for (let j = 0; j < k; j++) gram[i][j] += row[i] * row[j];
+    }
+  }
+  let largest = 0;
+  for (const row of gram) for (const v of row) largest = Math.max(largest, Math.abs(v));
+  const threshold = 1e-10 * largest;
   const augmented = gram.map((row, i) => [...row, ...Array.from({ length: k }, (_, j) => Number(i === j))]);
   for (let col = 0; col < k; col++) {
     let pivot = col;
@@ -41,15 +51,17 @@ export function olsAdjusted(points: ModelPoint[], calendarLength: number, thatNi
     }
   }
   const inverse = augmented.map(row => row.slice(k));
-  const xy = Array.from({ length: k }, (_, j) => x.reduce((sum, row, i) => sum + row[j] * points[i].y, 0));
   const beta = inverse.map(row => row.reduce((sum, v, j) => sum + v * xy[j], 0));
   const residuals: (number | null)[] = Array<null>(calendarLength).fill(null);
   let rss = 0;
-  points.forEach((p, i) => {
-    const residual = p.y - x[i].reduce((sum, v, j) => sum + v * beta[j], 0);
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    let fitted = 0;
+    for (let j = 0; j < k; j++) fitted += x[i][j] * beta[j];
+    const residual = p.y - fitted;
     residuals[p.idx] = residual;
     rss += residual * residual;
-  });
+  }
   const phi = effectivePhi(residuals), f = inflation(phi), ne = points.length / f;
   const fitted = { ...result, diff: beta[1], phi, f, n_eff_a: na / f, n_eff_b: nb / f };
   if (fitted.n_eff_a < 2 || fitted.n_eff_b < 2 || ne - k < 2) return fitted;

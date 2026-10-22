@@ -111,20 +111,23 @@ export function pearson(xs: number[], ys: number[]): number | null {
   return xx === 0 || yy === 0 ? null : xy / Math.sqrt(xx * yy);
 }
 
-export function ar1Phi(series: (number | null)[]): number {
-  const centre = mean(series.filter((x) => x !== null));
-  if (centre === null) return 0;
-  let numerator = 0;
-  let denominator = 0;
-  let pairs = 0;
+function lagMoments(series: ArrayLike<number | null>, centre: number, groups?: Int8Array, offset = 0): { numerator: number; denominator: number; pairs: number } {
+  let numerator = 0, denominator = 0, pairs = 0;
   for (let i = 1; i < series.length; i++) {
-    const previous = series[i - 1];
-    const current = series[i];
+    if (groups && (!groups[i + offset] || !groups[i + offset - 1])) continue;
+    const previous = series[i - 1], current = series[i];
     if (previous === null || current === null) continue;
     numerator += (current - centre) * (previous - centre);
     denominator += (previous - centre) ** 2;
     pairs++;
   }
+  return { numerator, denominator, pairs };
+}
+
+export function ar1Phi(series: (number | null)[]): number {
+  const centre = mean(series.filter((x) => x !== null));
+  if (centre === null) return 0;
+  const { numerator, denominator, pairs } = lagMoments(series, centre);
   return pairs < 3 || denominator === 0 ? 0 : Math.max(-0.99, Math.min(0.99, numerator / denominator));
 }
 
@@ -272,15 +275,23 @@ export function inflation(phi: number): number {
 }
 
 export function effectiveWelch(a: number[], b: number[], f: number): Inference {
+  const ma = mean(a) ?? 0, mb = mean(b) ?? 0;
+  let ssA = 0, ssB = 0;
+  for (const x of a) ssA += (x - ma) ** 2;
+  for (const x of b) ssB += (x - mb) ** 2;
+  return welchInference(ma, mb, ssA, ssB, a.length, b.length, f);
+}
+
+function welchInference(ma: number, mb: number, ssA: number, ssB: number, nA: number, nB: number, f: number): Inference {
   const result: Inference = { diff: null, ci95: null, p: null, df: null,
-    phi: (f - 1) / (f + 1), n_eff_a: a.length / f, n_eff_b: b.length / f };
-  if (a.length < 3 || b.length < 3) return result;
-  const diff = (mean(a) ?? 0) - (mean(b) ?? 0);
+    phi: (f - 1) / (f + 1), n_eff_a: nA / f, n_eff_b: nB / f };
+  if (nA < 3 || nB < 3) return result;
+  const diff = ma - mb;
   result.diff = diff;
   const na = result.n_eff_a, nb = result.n_eff_b;
   if (na < 2 || nb < 2) return result;
-  const va = (sampleSd(a) ?? 0) ** 2 / na;
-  const vb = (sampleSd(b) ?? 0) ** 2 / nb;
+  const va = Math.sqrt(ssA / (nA - 1)) ** 2 / na;
+  const vb = Math.sqrt(ssB / (nB - 1)) ** 2 / nb;
   if (va + vb === 0) return { ...result, ci95: [diff, diff], p: diff === 0 ? 1 : 0 };
   const df = Math.max(1, Math.floor((va + vb) ** 2 / (va ** 2 / (na - 1) + vb ** 2 / (nb - 1))));
   const se = Math.sqrt(va + vb);
@@ -288,21 +299,59 @@ export function effectiveWelch(a: number[], b: number[], f: number): Inference {
   return { ...result, df, ci95: [diff - margin, diff + margin], p: 2 * tCdf(-Math.abs(diff) / se, df) };
 }
 
-function calendarGroups(a: (number | null)[], b: (number | null)[]): { a: number[]; b: number[]; stats: GroupStats } {
+// The signed calendar preserves gaps and avoids allocating two sparse value arrays per row.
+export function dependentGroups(values: (number | null)[], groups: Int8Array, start: number, end: number, binary: boolean,
+  residuals: Float64Array = new Float64Array(end - start + 1)): GroupStats {
+  let nA = 0, nB = 0, sumA = 0, sumB = 0;
+  for (let i = start; i <= end; i++) {
+    if (groups[i] === 1) { nA++; sumA += values[i] ?? 0; }
+    else if (groups[i] === -1) { nB++; sumB += values[i] ?? 0; }
+  }
+  const ma = nA ? sumA / nA : null, mb = nB ? sumB / nB : null;
+  let sum = 0, pairs = 0, ssA = 0, ssB = 0;
+  for (let i = start; i <= end; i++) {
+    if (!groups[i]) continue;
+    const a = groups[i] === 1, x = (values[i] ?? 0) - ((a ? ma : mb) ?? 0);
+    residuals[i - start] = x;
+    if (a) ssA += x ** 2; else ssB += x ** 2;
+    sum += x;
+    if (i > start && groups[i - 1]) pairs++;
+  }
+  let phi = 0.2;
+  if (pairs >= 10) {
+    const centre = sum / (nA + nB);
+    const { numerator, denominator } = lagMoments(residuals, centre, groups, start);
+    phi = Math.max(0.2, Math.min(0.9, denominator === 0 ? 0 : numerator / denominator));
+  }
+  const f = inflation(phi), enough = nA >= 3 && nB >= 3;
+  const stats: GroupStats = { n_a: nA, n_b: nB, mean_a: enough ? ma : null, mean_b: enough ? mb : null,
+    diff: enough ? (ma ?? 0) - (mb ?? 0) : null, ci95: null, p: null, df: null, phi, n_eff_a: nA / f, n_eff_b: nB / f };
+  if (!binary) {
+    const inference = welchInference(ma ?? 0, mb ?? 0, ssA, ssB, nA, nB, f);
+    stats.ci95 = inference.ci95; stats.p = inference.p; stats.df = inference.df;
+  } else if (enough && stats.n_eff_a >= 2 && stats.n_eff_b >= 2) {
+    const na = stats.n_eff_a, nb = stats.n_eff_b, xa = sumA * na / nA, xb = sumB * nb / nB;
+    const pooled = Math.max(0, Math.min(1, (xa + xb) / (na + nb)));
+    const se = Math.sqrt(pooled * (1 - pooled) * (1 / na + 1 / nb));
+    stats.ci95 = newcombeDiff(xa, na, xb, nb);
+    stats.p = se === 0 ? 1 : 2 * normalCdf(-Math.abs(stats.diff ?? 0) / se);
+  }
+  return stats;
+}
+
+function calendarGroups(a: (number | null)[], b: (number | null)[], binary: boolean): GroupStats {
   if (a.length !== b.length) throw new RangeError("Group calendars must have equal lengths");
-  if (a.some((x, i) => x !== null && b[i] !== null)) throw new RangeError("Group calendars must be disjoint");
-  const aa = a.filter(x => x !== null), bb = b.filter(x => x !== null);
-  const ma = mean(aa), mb = mean(bb);
-  const residuals = a.map((x, i) => x !== null ? x - (ma ?? 0) : b[i] !== null ? b[i] - (mb ?? 0) : null);
-  const phi = effectivePhi(residuals), f = inflation(phi);
-  const enough = aa.length >= 3 && bb.length >= 3;
-  return { a: aa, b: bb, stats: { n_a: aa.length, n_b: bb.length, mean_a: enough ? ma : null, mean_b: enough ? mb : null,
-    diff: enough ? (ma ?? 0) - (mb ?? 0) : null, ci95: null, p: null, df: null, phi, n_eff_a: aa.length / f, n_eff_b: bb.length / f } };
+  const groups = new Int8Array(a.length), values: (number | null)[] = Array<null>(a.length).fill(null);
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== null && b[i] !== null) throw new RangeError("Group calendars must be disjoint");
+    if (a[i] !== null) { groups[i] = 1; values[i] = a[i]; }
+    else if (b[i] !== null) { groups[i] = -1; values[i] = b[i]; }
+  }
+  return dependentGroups(values, groups, 0, a.length - 1, binary);
 }
 
 export function dependentWelch(a: (number | null)[], b: (number | null)[]): GroupStats {
-  const groups = calendarGroups(a, b);
-  return { ...groups.stats, ...effectiveWelch(groups.a, groups.b, inflation(groups.stats.phi)), phi: groups.stats.phi };
+  return calendarGroups(a, b, false);
 }
 
 export function newcombeDiff(xa: number, na: number, xb: number, nb: number): Interval {
@@ -318,14 +367,7 @@ export function newcombeDiff(xa: number, na: number, xb: number, nb: number): In
 }
 
 export function dependentRiskDiff(a: (0 | 1 | null)[], b: (0 | 1 | null)[]): GroupStats {
-  const { a: aa, b: bb, stats } = calendarGroups(a, b);
-  if (stats.diff === null || stats.n_eff_a < 2 || stats.n_eff_b < 2) return stats;
-  const na = stats.n_eff_a, nb = stats.n_eff_b;
-  const xa = aa.reduce((sum, x) => sum + x, 0) * na / aa.length;
-  const xb = bb.reduce((sum, x) => sum + x, 0) * nb / bb.length;
-  const pooled = Math.max(0, Math.min(1, (xa + xb) / (na + nb)));
-  const se = Math.sqrt(pooled * (1 - pooled) * (1 / na + 1 / nb));
-  return { ...stats, ci95: newcombeDiff(xa, na, xb, nb), p: se === 0 ? 1 : 2 * normalCdf(-Math.abs(stats.diff) / se) };
+  return calendarGroups(a, b, true);
 }
 
 export function oneSampleDependent(d: (number | null)[]): { N: number; diff: number | null; ci95: Interval | null; p: number | null; df: number | null; phi: number; n_eff: number } {

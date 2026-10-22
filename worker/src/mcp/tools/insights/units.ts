@@ -45,6 +45,8 @@ export interface DayTable {
   tests_last_24h: number;
 }
 const MOOD_IDS = Object.values(MOODS).flat();
+const MOOD_GROUPS = Object.entries(MOODS) as [keyof typeof MOODS,MoodId[]][];
+const BED_IDS = Object.keys(BEFORE_BED_HOURS) as BeforeBedId[];
 const TRACKERS = ["cigarettes","caffeine","alcohol","mood"] as const;
 const BEHAVIORS: BehaviorId[] = ["cigarettes","caffeine","alcohol","mood_negative","mood_tired","workout","steps","short_sleep"];
 const quoteList = (ids: string[]) => ids.map(id=> "'" + id + "'").join(",");
@@ -100,9 +102,17 @@ LEFT JOIN taps a ON a.bday = d.local_date
 LEFT JOIN taps prev ON prev.bday = date(d.local_date, '-1 day')
 ORDER BY d.local_date
 `;
+function numberAt(row: Row, key: string): number | null {
+  const value = row[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
 interface Row { local_date: string; [key: string]: string | number | null }
 export async function loadDayTable(db: D1Database, range: ResolvedRange, nowSec: number): Promise<DayTable> {
   const {results:rows}=await db.prepare(SQL).bind(range.fetchStart,range.fetchEnd,nowSec).all<Row>();
+  return shapeDayTable(rows, range);
+}
+
+export function shapeDayTable(rows: Row[], range: ResolvedRange): DayTable {
   const dates=rows.map(r=>r.local_date);
   const indices=new Map(dates.map((d,i)=>[d,i]));
   const t:DayTable = {
@@ -118,46 +128,51 @@ export async function loadDayTable(db: D1Database, range: ResolvedRange, nowSec:
     const row=rows[0], ts=row["first_"+id+"_ts"], bday=row["first_"+id+"_bday"];
     if (typeof ts==="number" && typeof bday==="string") t.first[id]={ts,bday};
   }
-  for (const row of rows) {
-    const n=(key:string):number|null=>typeof row[key]==="number" && Number.isFinite(row[key]) ? row[key] : null;
+  for (const m of Object.keys(t.metric) as (keyof DayTable["metric"])[]) {
+    const values = t.metric[m];
+    for (const row of rows) {
+      const value = row[m];
+      values.push(typeof value === "number" && Number.isFinite(value) ? value : null);
+    }
+  }
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     const day=row.local_date;
-    const known=(id:typeof TRACKERS[number])=>t.first[id] !== null && day > t.first[id].bday && (n("active") ?? 0)>0;
-    for (const m of Object.keys(t.metric) as (keyof DayTable["metric"])[]) t.metric[m].push(n(m));
-    const i=t.metric.sleep_min.length-1;
-    const set=(m:keyof DayTable["metric"],v:number|null)=>{t.metric[m][i]=v;};
-    const asleep=n("sleep_min");
-    set("deep_pct",asleep ? n("deep_min") === null ? null : 100*(n("deep_min") ?? 0)/asleep : null);
-    set("rem_pct",asleep ? n("rem_min") === null ? null : 100*(n("rem_min") ?? 0)/asleep : null);
-    const worn=(n("hr_wear_min") ?? 0)>=600;
-    set("steps",worn ? n("steps") : null);
-    set("workout_min",worn ? n("workout_min") ?? 0 : null);
-    for (const id of ["cigarettes","caffeine","alcohol"] as const) t.behavior[id].push(known(id) ? n(id) ?? 0 : null);
-    const moodCount=MOOD_IDS.reduce((sum,id)=>sum+(n(id) ?? 0),0);
+    const known=(id:typeof TRACKERS[number])=>t.first[id] !== null && day > t.first[id].bday && (numberAt(row, "active") ?? 0)>0;
+    const asleep=numberAt(row, "sleep_min");
+    const deep = t.metric.deep_min[i], rem = t.metric.rem_min[i];
+    t.metric.deep_pct[i] = asleep && deep !== null ? 100 * deep / asleep : null;
+    t.metric.rem_pct[i] = asleep && rem !== null ? 100 * rem / asleep : null;
+    const worn=(numberAt(row, "hr_wear_min") ?? 0)>=600;
+    t.metric.steps[i] = worn ? t.metric.steps[i] : null;
+    t.metric.workout_min[i] = worn ? t.metric.workout_min[i] ?? 0 : null;
+    for (const id of ["cigarettes","caffeine","alcohol"] as const) t.behavior[id].push(known(id) ? numberAt(row, id) ?? 0 : null);
+    const moodCount=MOOD_IDS.reduce((sum,id)=>sum+(numberAt(row, id) ?? 0),0);
     const moodKnown=known("mood") && moodCount>0;
-    for (const id of MOOD_IDS) { t.moodTaps[id].push(n(id) ?? 0); set(id,moodKnown ? Number((n(id) ?? 0)>0) : null); }
-    for (const [group,ids] of Object.entries(MOODS) as [keyof typeof MOODS,MoodId[]][]) {
-      const value=moodKnown ? Number(ids.some(id=>(n(id) ?? 0)>0)) : null;
-      set(`mood_${group}`,value);
+    for (const id of MOOD_IDS) { t.moodTaps[id].push(numberAt(row, id) ?? 0); t.metric[id][i] = moodKnown ? Number((numberAt(row, id) ?? 0)>0) : null; }
+    for (const [group,ids] of MOOD_GROUPS) {
+      const value=moodKnown ? Number(ids.some(id=>(numberAt(row, id) ?? 0)>0)) : null;
+      t.metric[`mood_${group}`][i] = value;
     }
     t.behavior.mood_negative.push(t.metric.mood_negative[i]);
     t.behavior.mood_tired.push(t.metric.mood_tired[i]);
     t.behavior.steps.push(t.metric.steps[i]);
-    t.behavior.workout.push((n("workout_min") ?? 0)>0 ? 1 : worn ? 0 : null);
+    t.behavior.workout.push((numberAt(row, "workout_min") ?? 0)>0 ? 1 : worn ? 0 : null);
     t.behavior.short_sleep.push(asleep===null ? null : Number(asleep<360));
-    for (const id of Object.keys(BEFORE_BED_HOURS) as BeforeBedId[]) {
-      const bed=n("bed");
+    for (const id of BED_IDS) {
+      const bed=numberAt(row, "bed");
       let value:0|1|null=null;
       if (bed!==null) {
-        if (id==="workout") value=n("workout_late") ? 1 : n("workout_early") ? 0 : null;
+        if (id==="workout") value=numberAt(row, "workout_late") ? 1 : numberAt(row, "workout_early") ? 0 : null;
         else {
           const first=t.first[id==="mood_negative" ? "mood" : id];
-          if (first && bed-BEFORE_BED_HOURS[id]*3600>=first.ts && n("previous_active") && (id!=="mood_negative" || n("window_mood_taps")))
-            value=n("window_"+id) ? 1 : 0;
+          if (first && bed-BEFORE_BED_HOURS[id]*3600>=first.ts && numberAt(row, "previous_active") && (id!=="mood_negative" || numberAt(row, "window_mood_taps")))
+            value=numberAt(row, "window_"+id) ? 1 : 0;
         }
       }
       t.beforeBed[id].push(value);
     }
-    t.tests_last_24h=n("tests_last_24h") ?? 0;
+    t.tests_last_24h=numberAt(row, "tests_last_24h") ?? 0;
   }
   return t;
 }

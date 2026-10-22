@@ -1,5 +1,5 @@
 import { round } from "../compare";
-import { benjaminiHochberg, dependentRiskDiff, dependentWelch, labelOf, mean, oneSampleDependent } from "../stats";
+import { benjaminiHochberg, dependentGroups, labelOf, oneSampleDependent } from "../stats";
 import { BEHAVIOR_OUTCOMES, BEFORE_BED_HOURS, CALIBRATION_CAPS, METRICS, NEEDED_TEXT, PHRASES, behaviorExcluded } from "./catalog";
 import type { BeforeBedId, BehaviorId, BehaviorTiming, CalibrationCaps, Cutpoints, Envelope, FamilyRow, GroupStats, InsightRow, LabelOutcome, MetricId, Origin, RowKey } from "./types";
 import type { AcuteDays } from "./event";
@@ -31,8 +31,7 @@ export function behaviorDraft(t: DayTable, anomalies: boolean[], key: { behavior
   if (timing === "before_bed" && !(behavior in BEFORE_BED_HOURS)) throw new RangeError(`No before-bed window for ${behavior}.`);
   const cuts = opts.cutpoints ?? (behavior === "steps" ? tertiles(t.behavior.steps.slice(t.start,t.end+1).filter((x): x is number=>x!==null)) : null);
   const excluded = {exposure_unknown:0,outcome_missing:0,anomaly:0,both_groups:0,middle_band:0,incomplete_pair:0,no_control:0};
-  const outcome: (number|null)[] = t.dates.map(()=>null), a = [...outcome], b = [...outcome];
-  const groupIdx: RowDraft["groupIdx"] = {a:[],b:[]};
+  const groups = new Int8Array(t.dates.length);
   for (let i=t.start;i<=t.end;i++) {
     const j = i + (timing === "same_day" ? 0 : 1);
     const exposure = timing === "before_bed" ? (t.beforeBed[behavior as BeforeBedId][j] ?? null) : (t.behavior[behavior][i] ?? null);
@@ -41,18 +40,40 @@ export function behaviorDraft(t: DayTable, anomalies: boolean[], key: { behavior
     const inB = opts.groups ? opts.groups.b[i] : cuts ? exposure < cuts.lo : exposure === 0;
     if (inA && inB) { excluded.both_groups++; continue; }
     if (!inA && !inB) { if (cuts && !opts.groups) excluded.middle_band++; continue; }
-    const value = metric === "hr_delta" ? null : (t.metric[metric][j] ?? null);
-    if (value === null || !Number.isFinite(value)) { excluded.outcome_missing++; continue; }
-    if (!opts.includeAnomalies && (anomalies[i] || anomalies[j])) { excluded.anomaly++; continue; }
-    outcome[i] = value;
-    (inA ? a : b)[i] = value;
-    groupIdx[inA ? "a" : "b"].push(i);
+    groups[i] = inA ? 1 : -1;
   }
-  const stats = meta.binary
-    ? dependentRiskDiff(a as (0|1|null)[],b as (0|1|null)[])
-    : dependentWelch(a,b);
-  return {draft:{key:{kind:"behavior",...key},stats,rope:meta.rope,binary:meta.binary,low_confidence:meta.lowConfidence,groupIdx,outcome},excluded};
+  const raw = metric === "hr_delta" ? t.dates.map(() => null) : t.metric[metric];
+  const outcome = t.dates.map((_, i) => raw[i + Number(timing !== "same_day")] ?? null);
+  const draft = groupedBehaviorDraft(t, opts.includeAnomalies ? [] : anomalies, { kind: "behavior", ...key }, groups,
+    excluded.exposure_unknown, excluded.middle_band, outcome);
+  Object.assign(excluded, draft.excluded, { both_groups: excluded.both_groups });
+  // Preserve the sparse outcome calendar exposed by this single-row builder.
+  const kept = new Set([...draft.groupIdx.a, ...draft.groupIdx.b]);
+  draft.outcome = outcome.map((x, i) => kept.has(i) ? x : null);
+  delete draft.excluded;
+  return { draft, excluded };
 }
+
+// Prepared-calendar equivalence is checked by the complete-family tests in insights-scan.test.ts.
+export function groupedBehaviorDraft(t: DayTable, flags: boolean[], key: { kind: "behavior"; behavior: BehaviorId; timing: BehaviorTiming; metric: MetricId }, groups: Int8Array, unknown: number, middle: number, outcome: (number | null)[], residuals?: Float64Array): RowDraft {
+  const meta = METRICS[key.metric];
+  const offset = key.timing === "same_day" ? 0 : 1;
+  const groupIdx = { a: [] as number[], b: [] as number[] };
+  const kept = new Int8Array(groups.length);
+  const excluded = { exposure_unknown: unknown, outcome_missing: 0, anomaly: 0, both_groups: 0, middle_band: middle, incomplete_pair: 0, no_control: 0 };
+  for (let i = t.start; i <= t.end; i++) {
+    const group = groups[i];
+    if (!group) continue;
+    const value = outcome[i] ?? null;
+    if (value === null || !Number.isFinite(value)) { excluded.outcome_missing++; continue; }
+    if (flags[i] || flags[i + offset]) { excluded.anomaly++; continue; }
+    kept[i] = group;
+    groupIdx[group === 1 ? "a" : "b"].push(i);
+  }
+  const stats = dependentGroups(outcome, kept, t.start, t.end, meta.binary, residuals);
+  return { key, stats, rope: meta.rope, binary: meta.binary, low_confidence: meta.lowConfidence, groupIdx, outcome, excluded };
+}
+
 
 export function acuteDraft(a: AcuteDays): RowDraft {
   const days = a.dates.map(date=>Date.parse(`${date}T00:00:00Z`)/86400000);
@@ -68,18 +89,25 @@ export function acuteDraft(a: AcuteDays): RowDraft {
   };
 }
 
-export function consistentBlocks(t: DayTable, d: RowDraft): { same: number; of: number } | null {
+export function consistentBlocks(t: DayTable, d: RowDraft, blockAt?: Int8Array): { same: number; of: number } | null {
   if (d.stats.diff === null || d.key.kind === "acute") return null;
-  let same = 0, of = 0;
-  for (let end=t.end, block=0;block<4 && end-27>=t.start;end-=28,block++) {
-    const values = (indices: number[]) => indices.filter(i=>i>=end-27 && i<=end).map(i=>d.outcome[i]).filter((x): x is number=>x!==null && Number.isFinite(x));
-    const a = values(d.groupIdx.a), b = values(d.groupIdx.b);
-    if (a.length<3 || b.length<3) continue;
-    of++;
-    const diff = (mean(a) ?? 0)-(mean(b) ?? 0);
-    if (Math.sign(diff) === Math.sign(d.stats.diff) && Math.abs(diff)>=d.rope/2) same++;
+  const sums = [0, 0, 0, 0, 0, 0, 0, 0], ns = [0, 0, 0, 0, 0, 0, 0, 0];
+  const blocks = Math.min(4, Math.floor((t.end - t.start + 1) / 28));
+  for (let group = 0; group < 2; group++) {
+    const indices = group === 0 ? d.groupIdx.a : d.groupIdx.b;
+    for (const i of indices) {
+      const block = blockAt ? blockAt[i] : Math.floor((t.end - i) / 28), x = d.outcome[i], slot = block * 2 + group;
+      if (block >= 0 && block < blocks && x !== null && Number.isFinite(x)) { sums[slot] += x; ns[slot]++; }
+    }
   }
-  return of ? {same,of} : null;
+  let same = 0, of = 0;
+  for (let i = 0; i < blocks * 2; i += 2) {
+    if (ns[i] < 3 || ns[i + 1] < 3) continue;
+    of++;
+    const diff = sums[i] / ns[i] - sums[i + 1] / ns[i + 1];
+    if (Math.sign(diff) === Math.sign(d.stats.diff) && Math.abs(diff) >= d.rope / 2) same++;
+  }
+  return of ? { same, of } : null;
 }
 
 function neededText(d: RowDraft, result: LabelOutcome): string | null {
@@ -98,10 +126,13 @@ function neededText(d: RowDraft, result: LabelOutcome): string | null {
 
 export function finalizeFamily(drafts: RowDraft[], t: DayTable, origin: Origin, cutpoints?: Cutpoints, caps: CalibrationCaps = CALIBRATION_CAPS): { rows: FamilyRow[]; tests: number } {
   const qs = benjaminiHochberg(drafts.map(d=>d.stats.n_a<3 || d.stats.n_b<3 ? null : d.stats.p));
+  const blocks = new Map<RowDraft["groupIdx"], { outcome: RowDraft["outcome"]; rope: number; diff: number | null; value: FamilyRow["consistent_blocks"] }>();
+  const blockAt = new Int8Array(t.dates.length).fill(-1);
+  for (let i = Math.max(t.start, t.end - 111); i <= t.end; i++) blockAt[i] = Math.floor((t.end - i) / 28);
   const rows = drafts.map((d,i): FamilyRow => {
     const s = d.stats, insufficient = s.n_a<3 || s.n_b<3;
     const q = qs[i];
-    let result: LabelOutcome = d.labelWith ? d.labelWith(q) : {...labelOf({...s,q,rope:d.rope}),needed:null};
+    let result: LabelOutcome = d.labelWith ? d.labelWith(q) : {...labelOf({n_a:s.n_a,n_b:s.n_b,diff:s.diff,ci95:s.ci95,q,rope:d.rope}),needed:null};
     if (insufficient) result = {...result,label:"sin_datos",reason:null,needed:null};
     if ((d.binary || d.key.kind === "acute") && result.label === "sólido") result = {...result,label:"probable"};
     if (result.label === "probable" && ((d.binary && caps.binary) || (d.key.kind === "acute" && caps.acute)))
@@ -109,18 +140,26 @@ export function finalizeFamily(drafts: RowDraft[], t: DayTable, origin: Origin, 
     const diff = insufficient ? null : s.diff;
     const pct = diff === null ? null : d.key.metric === "hrv" ? 100*Math.expm1(diff) : s.mean_b === null || s.mean_b === 0 ? null : 100*diff/s.mean_b;
     const frozen = d.key.behavior === "steps" ? cutpoints ?? tertiles(t.behavior.steps.slice(t.start,t.end+1).filter((x): x is number=>x!==null)) : undefined;
-    return {
-      ...d.extra,
-      ref:{v:1,origin,key:d.key,...(frozen ? {cutpoints:frozen} : {})},
-      ...(d.key.behavior ? {behavior:d.key.behavior} : {}), ...(d.key.exposure ? {exposure:d.key.exposure} : {}),
+    const cached = blocks.get(d.groupIdx);
+    const consistent = cached?.rope === d.rope && cached.outcome === d.outcome && cached.diff === s.diff ? cached.value : consistentBlocks(t, d, blockAt);
+    if (!cached) blocks.set(d.groupIdx, { outcome: d.outcome, rope: d.rope, diff: s.diff, value: consistent });
+    const ref: FamilyRow["ref"] = { v: 1, origin, key: d.key };
+    if (frozen) ref.cutpoints = frozen;
+    const row: FamilyRow = {
+      ref,
       timing:d.key.timing,metric:d.key.metric,
       n_a:d.extra?.n_a ?? s.n_a,n_b:d.extra?.n_b ?? s.n_b,
       mean_a:round(insufficient ? null : s.mean_a),mean_b:round(insufficient ? null : s.mean_b),diff:round(diff),
       ci95:insufficient || s.ci95 === null ? null : [round(s.ci95[0]),round(s.ci95[1])],pct:round(pct),
       p:insufficient || s.p === null ? null : Math.round(s.p*10000)/10000,q:q===null ? null : Math.round(q*10000)/10000,
-      ...result,phrase:PHRASES[result.label],needed:neededText(d,result),low_confidence:d.low_confidence,
-      consistent_blocks:consistentBlocks(t,d),binary:d.binary,rope:d.rope,kind:d.key.kind,
+      label:result.label,reason:result.reason,phrase:PHRASES[result.label],needed:neededText(d,result),low_confidence:d.low_confidence,
+      consistent_blocks:consistent,binary:d.binary,rope:d.rope,kind:d.key.kind,
     };
+    if (d.key.behavior) row.behavior = d.key.behavior;
+    if (d.key.exposure) row.exposure = d.key.exposure;
+    if (d.extra) return Object.assign({}, d.extra, row, result.matches_expected === undefined ? {} : { matches_expected: result.matches_expected });
+    if (result.matches_expected !== undefined) row.matches_expected = result.matches_expected;
+    return row;
   });
   return {rows,tests:drafts.length};
 }
