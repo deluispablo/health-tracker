@@ -87,7 +87,8 @@ The four slots sit on the diagonals of the bezel. By default the top-right slot 
 
 ## Troubleshooting
 
-- **The face is black in `adb shell screencap`.** Wear OS does not let ADB capture the watch face; check on the watch itself.
+- **`adb shell screencap` shows only the bezel and hands.** The watch was in ambient mode; wake it (`adb shell input keyevent KEYCODE_WAKEUP`) and capture again.
 - **The dial never appears.** Check the app's sync log with `adb logcat -s SyncWorker`. A 401 means `watchToken` does not match the `WATCH_TOKEN` secret; rebuild after fixing `local.properties`.
 - **The dial looks faded.** The data is more than three hours old; the watch has not reached the Worker since.
-- **Validate the face XML** after editing `wear/watchface/src/main/res/raw/watchface.xml` with the [Watch Face Format validator](https://github.com/google/watchface/releases): `java -jar wff-validator.jar 4 wear/watchface/src/main/res/raw/watchface.xml`.
+- **Change the face** in `wear/watchface/generate.py`, not in the XML: run `python3 generate.py` from `wear/watchface` to rewrite `src/main/res/raw/watchface.xml`.
+- **Validate the face XML** after regenerating `wear/watchface/src/main/res/raw/watchface.xml` with the [Watch Face Format validator](https://github.com/google/watchface/releases): `java -jar wff-validator.jar 4 wear/watchface/src/main/res/raw/watchface.xml`.
