@@ -3,7 +3,10 @@ import { env } from "cloudflare:workers";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "../../src/app";
 import worker from "../../src/index";
+// Construct the shared handler before spying on per-request warnings.
+import "../../src/mcp/server";
 import { DAILY_COLUMNS, healthDaily } from "../../src/mcp/tools/daily";
+import { INSIGHTS_PLAYBOOK } from "../../src/mcp/tools/insights/context";
 import { healthIntraday } from "../../src/mcp/tools/intraday";
 import { healthSleep } from "../../src/mcp/tools/sleep";
 // @ts-expect-error Vite loads this Markdown as text; there is no raw-module declaration.
@@ -14,7 +17,7 @@ const insightAnnotations = { readOnlyHint: false, destructiveHint: false, idempo
 const insightDatesContract = { start: { type: "string" }, end: { type: "string" } };
 const insightSelectionContract = { behaviors: { type: "array", items: { type: "string" } }, metrics: { type: "array", items: { type: "string" } } };
 const looseObjectContract = { type: "object", properties: {}, additionalProperties: {} };
-const insightContract = (properties: object, required?: string[]) => ({ inputSchema: { $schema: "http://json-schema.org/draft-07/schema#", type: "object", properties,
+const insightContract = (properties: object, required?: string[]) => ({ inputSchema: { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", properties,
   ...(required ? { required } : {}), additionalProperties: {} }, annotations: insightAnnotations });
 
 const ORIGIN = "https://health.test";
@@ -223,14 +226,8 @@ async function rpc(token: string, method: string, params: object, id = 1, bindin
     body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) }, bindings);
   expect(res.status).toBe(200);
   expect(res.headers.has("mcp-session-id")).toBe(false);
-  const text = await res.text();
-  const messages: Rpc[] = res.headers.get("content-type")?.includes("text/event-stream")
-    ? text.split(/\r?\n\r?\n/).filter((frame) => /^data:/m.test(frame)).map((frame) => JSON.parse(
-      frame.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n"),
-    ) as Rpc)
-    : [JSON.parse(text) as Rpc];
-  const message = messages.find((m) => m.id === id);
-  if (!message) throw new Error(`Missing JSON-RPC response for id ${String(id)}`);
+  expect(res.headers.get("content-type")).toContain("application/json");
+  const message = await res.json<Rpc>();
   expect(message).toMatchObject({ jsonrpc: "2.0", id });
   return message;
 }
@@ -392,10 +389,10 @@ describe("T39 tool description contract", () => {
       health_periods: insightContract({ ...insightDatesContract, ...insightSelectionContract }),
       health_contrast: insightContract({ ...insightDatesContract, a: looseObjectContract, b: looseObjectContract, metrics: insightSelectionContract.metrics, timing: { type: "string" } }, ["a", "b"]),
       health_findings: insightContract({ action: { type: "string" }, id: { type: "number" }, statement: { type: "string" }, ref: looseObjectContract }, ["action"]),
-      health_context: { inputSchema: { $schema: "http://json-schema.org/draft-07/schema#", type: "object", properties: {} }, annotations: { readOnlyHint: true, openWorldHint: false } },
+      health_context: { inputSchema: { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", properties: {} }, annotations: { readOnlyHint: true, openWorldHint: false } },
       "health_profile": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {}
         },
@@ -406,7 +403,7 @@ describe("T39 tool description contract", () => {
       },
       "health_set_profile": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "birth_year": {
@@ -459,7 +456,7 @@ describe("T39 tool description contract", () => {
       },
       "health_status": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {}
         },
@@ -470,7 +467,7 @@ describe("T39 tool description contract", () => {
       },
       "health_daily": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "start": {
@@ -498,7 +495,7 @@ describe("T39 tool description contract", () => {
       },
       "health_sleep": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "start": {
@@ -520,7 +517,7 @@ describe("T39 tool description contract", () => {
       },
       "health_workouts": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "start": {
@@ -542,7 +539,7 @@ describe("T39 tool description contract", () => {
       },
       "health_intraday": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "metric": {
@@ -574,7 +571,7 @@ describe("T39 tool description contract", () => {
       },
       "health_trackers": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "date": {
@@ -592,7 +589,7 @@ describe("T39 tool description contract", () => {
       },
       "health_log_event": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "tracker_id": {
@@ -624,7 +621,7 @@ describe("T39 tool description contract", () => {
       },
       "health_delete_event": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "event_id": {
@@ -646,7 +643,7 @@ describe("T39 tool description contract", () => {
       },
       "health_compare": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "behavior": {
@@ -687,7 +684,7 @@ describe("T39 tool description contract", () => {
       },
       "health_correlate": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "x": {
@@ -722,7 +719,7 @@ describe("T39 tool description contract", () => {
       },
       "health_trend": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "metric": {
@@ -752,7 +749,7 @@ describe("T39 tool description contract", () => {
       },
       "health_sql": {
         "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
           "properties": {
             "query": {
@@ -775,7 +772,7 @@ describe("T39 tool description contract", () => {
   it("pins every tool's limits, defaults, selection guidance and argument documentation", async () => {
     // Limits checked against the handlers; tracker configuration is deliberately discovered at runtime.
     const required: Record<string, string[]> = {
-      health_scan: ["10 ranked rows", "limit defaults to 10", "health_findings", "health_context"],
+      health_scan: ["10 ranked rows", "limit defaults to 10", "health_context"],
       health_periods: ["streaks", "CUSUM", "mood weeks", "anomalies"],
       health_contrast: ["filter dates are clipped to start/end", "Widen start/end", "sin_datos as no difference"],
       health_findings: ["list", "save", "recheck", "retire", "untrusted"],
@@ -826,6 +823,65 @@ describe("T39 tool description contract", () => {
 });
 
 describe("AC3 stateless read tools and audit", () => {
+  it.each(["GET", "DELETE"])("rejects legacy %s session operations with 405", async method => {
+    google();
+    const token = await accessToken();
+    const res = await request("/mcp", { method, headers: { authorization: `Bearer ${token}`, accept: "text/event-stream" } });
+    expect(res.status).toBe(405);
+    expect(await res.json()).toMatchObject({ error: { message: "Method not allowed." } });
+  });
+
+  it("returns JSON for legacy initialize and tools/call without per-request warnings", async () => {
+    google();
+    const token = await accessToken();
+    const warn = vi.spyOn(console, "warn");
+    await initialize(token);
+    const called = await rpc(token, "tools/call", { name: "health_context", arguments: {} });
+    expect(called.error).toBeUndefined();
+    expect(called.result?.structuredContent).toMatchObject({ text: expect.stringContaining(INSIGHTS_PLAYBOOK) as unknown });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("discovers the 2026 protocol and calls a tool without initializing", async () => {
+    google();
+    const token = await accessToken();
+    const before = (await audit()).length;
+    const modern = async (method: string, params: object = {}, name?: string) => {
+      const res = await request("/mcp", { method: "POST", headers: {
+        authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json",
+        "mcp-protocol-version": "2026-07-28", "mcp-method": method, ...(name ? { "mcp-name": name } : {}),
+      }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: { ...params, _meta: {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientInfo": { name: "connector-contract", version: "1.0" },
+      } } }) });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/json");
+      expect(res.headers.has("mcp-session-id")).toBe(false);
+      return res.json<Rpc>();
+    };
+    const warn = vi.spyOn(console, "warn");
+    const discovered = await modern("server/discover");
+    expect(discovered.error).toBeUndefined();
+    expect(discovered.result).toMatchObject({ supportedVersions: ["2026-07-28"], capabilities: { tools: {} }, resultType: "complete" });
+    const called = await modern("tools/call", { name: "health_context", arguments: {} }, "health_context");
+    expect(called.error).toBeUndefined();
+    expect(called.result).toMatchObject({ resultType: "complete", structuredContent: { text: expect.stringContaining(INSIGHTS_PLAYBOOK) as unknown } });
+    expect(called.result?.content).toEqual([{ type: "text", text: JSON.stringify(called.result?.structuredContent) }]);
+    expect(warn).not.toHaveBeenCalled();
+    await toolAudit("health_context", {}, 1, before);
+    const listed = await modern("tools/list");
+    expect(listed.error).toBeUndefined();
+    expect(listed.result).toMatchObject({ ttlMs: 3600000, cacheScope: "private", resultType: "complete" });
+    const tools = listed.result?.tools ?? [];
+    expect(tools).toHaveLength(19);
+    expect(tools.filter(tool => tool.description.includes(INSIGHTS_PLAYBOOK)).map(tool => tool.name)).toEqual(["health_context"]);
+    expect(tools.filter(tool => tool.description.includes("Catalogue ids (")).map(tool => tool.name)).toEqual(["health_context"]);
+    for (const tool of tools.filter(tool => INSIGHT_NAMES.includes(tool.name) && tool.name !== "health_context")) {
+      expect(tool.description).toContain("See health_context for the insights playbook and catalogue ids.");
+    }
+  });
+
   it("initializes and lists exactly nineteen described tools, with profile, log and delete writing", async () => {
     google();
     const token = await accessToken();
