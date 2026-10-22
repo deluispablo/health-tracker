@@ -1,5 +1,10 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+  <img src="docs/assets/logo-light.svg" width="96" height="96" alt="Health Tracker logo: a 24-hour dial with the night's sleep as a wedge">
+</picture>
+
 # Health Tracker
 
 **Your Pixel Watch data in your own Cloudflare D1 database, queryable from any MCP client, with a live dashboard and one-tap logging, designed for the Cloudflare Free plan.**
@@ -70,7 +75,7 @@ flowchart LR
 | `/mcp` | Stateless MCP server behind the OAuth provider (scope `health:read`) |
 | `/authorize`, `/oauth/google/callback` | Connector consent and Google sign-in (allowlisted email only) |
 | `/google/connect`, `/google/callback` | One-time Google Health consent; stores the encrypted refresh token |
-| `/`, `/privacy`, `/terms` | Static home, privacy and terms pages (the Google OAuth consent screen links to them) |
+| `/`, `/privacy`, `/terms`, `/favicon.ico` | Static home, privacy and terms pages (the Google OAuth consent screen links to them) and the brand icon, which MCP clients show next to the connector |
 
 Freshness depends first on how often the watch syncs to the Google Health app (minutes, sometimes hours), then on the 5-minute cron and the queue backlog. Details: [docs/architecture.md](docs/architecture.md).
 

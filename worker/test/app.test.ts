@@ -388,6 +388,13 @@ describe("T20 public pages", () => {
     ]) expect(html).toContain(text);
   });
 
+  it("serves the brand icon as a PNG favicon", async () => {
+    const res = await getPage("/favicon.ico");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect([...new Uint8Array(await res.arrayBuffer()).slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  });
+
   it("serves the terms of service", async () => {
     const res = await getPage("/terms");
     expect(res.status).toBe(200);

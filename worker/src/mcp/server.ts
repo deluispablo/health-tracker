@@ -17,7 +17,8 @@ import { healthTrend } from "./tools/trend";
 import { healthWorkouts } from "./tools/workouts";
 
 export async function mcp(request: Request, env: ConnectorEnv, ctx: ExecutionContext): Promise<Response> {
-  const server = new McpServer({ name: "health-tracker", version: "0.1.0" });
+  const server = new McpServer({ name: "health-tracker", title: "Health Tracker", version: "0.1.0",
+    icons: [{ src: `${env.PUBLIC_ORIGIN}/favicon.ico`, mimeType: "image/png", sizes: ["256x256"] }] });
   const annotations = { readOnlyHint: true, openWorldHint: false };
   const call = async (name: string, args: object, query: () => Promise<Record<string, unknown>>): Promise<CallToolResult> => {
     const started = Date.now();

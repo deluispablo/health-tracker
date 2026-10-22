@@ -5,6 +5,7 @@ import { drainSyncPending } from "./ingest/drain";
 import { enqueueReconcile } from "./ingest/poll";
 import { handleGoogleWebhook } from "./ingest/webhook";
 import { dateTimeFormat } from "./lib/time";
+import { FAVICON_PNG } from "./favicon";
 import { homepage, pageResponse, privacy, terms } from "./pages";
 import { recomputeDailySummary } from "./rollup/daily";
 import { recomputeTrackerDaily } from "./rollup/trackers";
@@ -113,6 +114,8 @@ export async function route(request: Request, env: AppEnv, deps: AppDeps): Promi
       return pageResponse(request, privacy(env.ALLOWED_EMAIL));
     case "/terms":
       return pageResponse(request, terms(env.ALLOWED_EMAIL));
+    case "/favicon.ico":
+      return new Response(FAVICON_PNG, { headers: { "content-type": "image/png", "cache-control": "public, max-age=86400" } });
     case "/webhooks/google":
       if (request.method !== "POST") return new Response(null, { status: 405 });
       return handleGoogleWebhook(request, env, {
