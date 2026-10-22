@@ -48,6 +48,7 @@ fun parseDialData(json: String): DialData {
         trackers = o.optJSONArray("trackers")?.items {
             CatalogItem(it.getString("id"), it.getString("name"), it.getString("unit"), it.getDouble("value"),
                 it.getString("surface").also { s -> require(s == "face" || s == "tile") }, it.getDouble("today"))
+                .also { c -> require(c.value > 0 && c.today >= 0) { "dose must be positive" } }
         } ?: emptyList(),
     )
 }

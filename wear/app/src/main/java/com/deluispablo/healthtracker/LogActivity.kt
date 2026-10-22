@@ -76,10 +76,12 @@ class LogActivity : Activity() {
         )
         // Four buttons keep the 2x2 grid; more go round the undo button.
         val n = menu.face.size + extra.size
-        val size = when { n <= 4 -> 68; n == 5 -> 60; else -> 56 }
+        // Up to 8 fit a ring of 72 dp at 48 dp each without touching.
+        val size = when { n <= 4 -> 68; n == 5 -> 60; n == 6 -> 56; else -> 48 }
+        val r = if (n <= 6) 68.0 else 72.0
         val spot = { i: Int ->
             if (n <= 4) (if (i % 2 == 0) -46f else 46f) to (if (i < 2) -46f else 46f)
-            else (i * 2 * Math.PI / n).let { a -> (68 * sin(a)).toFloat() to (-68 * cos(a)).toFloat() }
+            else (i * 2 * Math.PI / n).let { a -> (r * sin(a)).toFloat() to (-r * cos(a)).toFloat() }
         }
         menu.face.forEachIndexed { i, item ->
             val (x, y) = spot(i)

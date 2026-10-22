@@ -17,7 +17,8 @@ class LogMenuTest {
           {"id":"melatonin","name":"Melatonina","unit":"mg","value":1,"surface":"tile","today":1},
           ${if (archivedProtein) "" else """{"id":"protein","name":"Batido de proteína","unit":"g","value":30,"surface":"tile","today":60},"""}
           {"id":"creatine","name":"Creatina","unit":"g","value":5,"surface":"tile","today":0},
-          {"id":"bad","name":"x","unit":"u","value":1,"surface":"elsewhere","today":0}
+          {"id":"bad","name":"x","unit":"u","value":1,"surface":"elsewhere","today":0},
+          {"id":"zero","name":"x","unit":"g","value":0,"surface":"tile","today":0}
         ],
         "hr":""")
 
@@ -34,9 +35,28 @@ class LogMenuTest {
     @Test
     fun splitsFaceAndTileTrackersWithTodaysValues() {
         val menu = logMenu(parseDialData(catalogJson()), emptyList())
-        assertEquals(listOf("caffeine" to "2", "cigarettes" to "3", "alcohol" to "0", "water" to "750 ml"), menu.face.map { it.id to it.today })
+        // Coffees and drinks are counted as logs on the dial (one each in the sample), cigarettes as units.
+        assertEquals(listOf("caffeine" to "1", "cigarettes" to "3", "alcohol" to "1", "water" to "750 ml"), menu.face.map { it.id to it.today })
         assertEquals(listOf("melatonin" to "1 mg", "protein" to "60 g", "creatine" to "0 g"), menu.supplements.map { it.id to it.today })
         assertEquals(0.375f, menu.face.single { it.id == "water" }.progress)
+    }
+
+    @Test
+    fun aCoffeeOfAnyDoseCountsAsOne() {
+        val d = parseDialData(catalogJson().replace("\"value\":80,\"surface\":\"face\",\"today\":160", "\"value\":80,\"surface\":\"face\",\"today\":200"))
+        assertEquals("1", logMenu(d, emptyList()).face.first().today)
+    }
+
+    @Test
+    fun aCatalogOfOnlyMoodsStillCountsTheDialsMarks() {
+        val d = parseDialData(sampleJson()).copy(trackers = listOf(CatalogItem("mood_bien", "Ánimo: bien", "u", 1.0, "face", 1.0)))
+        assertEquals(listOf("1", "1", "1"), logMenu(d, emptyList()).face.map { it.today })
+    }
+
+    @Test
+    fun beforeTheFirstSyncOnlyTodaysTapsCount() {
+        val yesterday = at - 86400
+        assertEquals("0", logMenu(null, listOf(Tap("c1", "caffeine", yesterday))).face.first().today)
     }
 
     @Test

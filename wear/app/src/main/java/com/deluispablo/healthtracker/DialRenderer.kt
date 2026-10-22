@@ -186,7 +186,7 @@ private fun mark(c: Canvas, kind: String, deg: Float, which: String?) {
             c.drawPath(drop, fill(M_WATER))
         }
         "suplemento" -> {
-            // One capsule for every supplement, in its own colour (marks/suplemento.svg).
+            // One capsule for every supplement, in its colour token (all share one rose today; marks/suplemento.svg).
             val style = styleOf(which ?: "")
             val capsule = RectF(-2.7f, -5.8f, 2.7f, 5.8f)
             c.drawRoundRect(capsule, 2.7f, 2.7f, stroke(HALO, 2.2f))

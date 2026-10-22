@@ -34,11 +34,10 @@ fun kindOf(tracker: String): String = when {
     tracker == "alcohol" -> "alcohol"
     tracker == "water" -> "agua"
     tracker.startsWith("mood_") -> "animo"
-    // Everything else the watch logs comes from the Suplementos ring.
+    // Everything else the watch logs comes from the Suplementos ring; a new face tracker needs its own case.
     else -> "suplemento"
 }
 
-/** Acks from another [run] are dropped: the tap is simply sent again, which the idempotency key makes safe. */
 /** The mood's name, or the supplement's id, that a mark of [tracker] carries in its `m`. */
 fun which(tracker: String): String? = when (kindOf(tracker)) {
     "animo" -> tracker.removePrefix("mood_")
@@ -46,6 +45,7 @@ fun which(tracker: String): String? = when (kindOf(tracker)) {
     else -> null
 }
 
+/** Acks from another [run] are dropped: the tap is simply sent again, which the idempotency key makes safe. */
 fun parseTaps(json: String, run: String = RUN): List<Tap> = JSONArray(json).let { a ->
     List(a.length()) { i ->
         runCatching {
