@@ -2,6 +2,7 @@ import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { route } from "../src/app";
+import { logEvent } from "../src/mcp/tools/trackers";
 
 const TOKEN = "watch-token-0123456789abcdef0123456789";
 const NOW = Date.parse("2026-10-21T20:00:00Z") / 1000;
@@ -144,7 +145,7 @@ describe("POST /watch/log", () => {
     expect(again.status).toBe(200);
     expect(await again.json()).toMatchObject({ created: false, day_total: 80, event: { local_date: "2026-10-21" } });
     const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: { t: number; k: string }[] }>();
-    expect(body.events).toEqual([{ t: 21 * 60 + 58, k: "cafe" }]);
+    expect(body.events).toEqual([{ t: 21 * 60 + 58, k: "cafe", i: "tap-0001-abcd" }]);
   });
 
   it("logs a mood", async () => {
@@ -172,7 +173,7 @@ describe("POST /watch/log", () => {
       env.DB.prepare(`INSERT INTO tracker (id, name, unit, value_type, default_value, min_value, max_value, created_at)
         VALUES ('water', 'Agua', 'ml', 'amount', 250, 0, 2000, 1) ON CONFLICT(id) DO NOTHING`),
       env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at)
-        VALUES ('k_w-other-0001', 'water', ?, 120, '2026-10-21', 250, 'private', 'mcp', 1)`).bind(NOW - 60),
+        VALUES ('kw_other-0001', 'water', ?, 120, '2026-10-21', 250, 'private', 'mcp', 1)`).bind(NOW - 60),
     ]);
     const res = await post({ ...tap, idempotency_key: "other-0001" });
     expect(res.status).toBe(409);
@@ -207,16 +208,21 @@ describe("DELETE /watch/log", () => {
     expect((await del({ idempotency_key: "water-key-0001" })).status).toBe(404);
     expect((await env.DB.prepare("SELECT deleted_at FROM event WHERE id = 'k_water-key-0001'").first())?.deleted_at).toBeNull();
     expect((await del({ idempotency_key: "missing-key-0001" })).status).toBe(404);
-    expect((await del({ idempotency_key: "x".repeat(63) })).status).toBe(400);
+    expect((await del({ idempotency_key: "x".repeat(65) })).status).toBe(400);
     expect((await del({ idempotency_key: "short" })).status).toBe(400);
     expect((await del({ idempotency_key: "undo-0001-abcd" }, `Bearer ${TOKEN.slice(0, -1)}x`)).status).toBe(401);
   });
 
-  it("cannot undo an MCP log of a watch tracker with the same key", async () => {
-    await env.DB.prepare(`INSERT INTO event (id, tracker_id, ts, tz_offset_min, local_date, value, origin, created_at)
-      VALUES ('k_mcp-cafe-0001', 'caffeine', ?, 120, '2026-10-21', 80, 'mcp', 1)`).bind(NOW - 60).run();
+  it("can neither undo nor read back an MCP log, whatever its key", async () => {
+    for (const key of ["mcp-cafe-0001", "w-mcp-cafe-0001"]) {
+      await logEvent(env.DB, { tracker_id: "caffeine", at: "2026-10-21T19:00:00Z", note: "private", idempotency_key: key },
+        { now: NOW, tz: "Europe/Madrid" });
+    }
     expect((await del({ idempotency_key: "mcp-cafe-0001" })).status).toBe(404);
-    expect((await env.DB.prepare("SELECT deleted_at FROM event WHERE id = 'k_mcp-cafe-0001'").first())?.deleted_at).toBeNull();
-    expect((await post({ ...tap0, idempotency_key: "mcp-cafe-0001" })).status).toBe(201);
+    const posted = await post({ ...tap0, idempotency_key: "mcp-cafe-0001" });
+    expect(posted.status).toBe(201);
+    expect(await posted.text()).not.toContain("private");
+    const live = await env.DB.prepare("SELECT id FROM event WHERE note = 'private' AND deleted_at IS NULL ORDER BY id").all();
+    expect(live.results).toEqual([{ id: "k_mcp-cafe-0001" }, { id: "k_w-mcp-cafe-0001" }]);
   });
 });

@@ -101,12 +101,12 @@ function eventTime(at: string, now: number): number {
 
 export async function logEvent(db: D1Database, args: {
   tracker_id: string; value?: number; at?: string; note?: string; idempotency_key?: string;
-}, { now, tz }: { now: number; tz: string }) {
+}, { now, tz, idPrefix = "k_" }: { now: number; tz: string; idPrefix?: string }) {
   if (args.idempotency_key !== undefined) {
     if (typeof args.idempotency_key !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(args.idempotency_key)) {
       throw new RangeError("idempotency_key must contain 8 to 64 ASCII letters, digits, underscores or hyphens");
     }
-    const existing = await eventById(db, `k_${args.idempotency_key}`);
+    const existing = await eventById(db, `${idPrefix}${args.idempotency_key}`);
     if (existing) return logResult(db, existing, false);
   }
   const tracker = await db.prepare(`
@@ -132,7 +132,7 @@ export async function logEvent(db: D1Database, args: {
     .formatToParts(ts * 1000).find((part) => part.type === "timeZoneName")?.value.match(/^GMT([+-])(\d{2}):(\d{2})$/);
   const tz_offset_min = offset ? (offset[1] === "+" ? 1 : -1) * (Number(offset[2]) * 60 + Number(offset[3])) : 0;
   const event: EventRow = {
-    id: args.idempotency_key === undefined ? crypto.randomUUID() : `k_${args.idempotency_key}`,
+    id: args.idempotency_key === undefined ? crypto.randomUUID() : `${idPrefix}${args.idempotency_key}`,
     tracker_id: tracker.id, ts, tz_offset_min,
     local_date: new Date((ts + tz_offset_min * 60) * 1000).toISOString().slice(0, 10), value, note,
   };

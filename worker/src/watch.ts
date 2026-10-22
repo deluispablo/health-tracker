@@ -9,8 +9,10 @@ const KINDS: Record<string, string> = { caffeine: "cafe", cigarettes: "cigarro",
 const MOODS = ["genial", "bien", "tranquilo", "cansado", "estresado", "ansioso", "triste", "enfadado"];
 // The watch token can only log the trackers the watch has buttons for.
 const LOGGABLE = new Set([...Object.keys(KINDS), ...MOODS.map((m) => `mood_${m}`)]);
-// Watch keys live apart from MCP keys, so the watch token can neither replay nor undo an MCP log.
-const watchKey = (key: unknown) => typeof key === "string" && /^[A-Za-z0-9_-]{8,62}$/.test(key) ? `w-${key}` : null;
+// Watch logs are stored as kw_<key>, an id MCP (always k_<key>) can never produce, so the watch token
+// can neither replay nor undo an MCP log.
+const WATCH_ID = "kw_";
+const watchKey = (key: unknown) => typeof key === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(key) ? key : null;
 
 async function authorized(request: Request, env: AppEnv): Promise<boolean> {
   // Equal-length digests allow a constant-time comparison even when header lengths differ.
@@ -27,9 +29,9 @@ export async function handleWatchLog(request: Request, env: AppEnv, now: number)
     const body = await request.json().catch(() => null) as { idempotency_key?: unknown } | null;
     const key = watchKey(body?.idempotency_key);
     if (!key) return Response.json({ error: "idempotency_key is required" }, { status: 400 });
-    const row = await env.DB.prepare("SELECT tracker_id FROM event WHERE id = ?").bind(`k_${key}`).first<{ tracker_id: string }>();
+    const row = await env.DB.prepare("SELECT tracker_id FROM event WHERE id = ?").bind(WATCH_ID + key).first<{ tracker_id: string }>();
     if (!row || !LOGGABLE.has(row.tracker_id)) return new Response(null, { status: 404 });
-    return Response.json(await deleteEvent(env.DB, { event_id: `k_${key}` }, { now }));
+    return Response.json(await deleteEvent(env.DB, { event_id: WATCH_ID + key }, { now }));
   }
   const body = await request.json().catch(() => null) as { tracker_id?: unknown; at?: unknown; idempotency_key?: unknown } | null;
   if (!body || typeof body.tracker_id !== "string" || !LOGGABLE.has(body.tracker_id)
@@ -38,7 +40,7 @@ export async function handleWatchLog(request: Request, env: AppEnv, now: number)
   }
   try {
     const result = await logEvent(env.DB, { tracker_id: body.tracker_id, at: body.at, idempotency_key: watchKey(body.idempotency_key)! },
-      { now, tz: env.USER_TZ });
+      { now, tz: env.USER_TZ, idPrefix: WATCH_ID });
     // A replay (or a lost insert race) returns the stored event: only hand it back if it is this tap's tracker.
     if (result.event.tracker_id !== body.tracker_id) return new Response(null, { status: 409 });
     return Response.json(result, { status: result.created ? 201 : 200 });
@@ -62,10 +64,10 @@ export async function handleWatchToday(request: Request, env: AppEnv, now: numbe
     healthWorkouts(env.DB, { start: date, end: date }),
     // Every log of the day: the dial draws all of them, unlike health_trackers' 50-event page.
     env.DB.prepare(`
-      SELECT e.tracker_id, e.ts + e.tz_offset_min * 60 AS local_ts,
+      SELECT e.id, e.tracker_id, e.ts + e.tz_offset_min * 60 AS local_ts,
         CASE WHEN t.value_type = 'count' THEN e.value ELSE 1 END AS n FROM event e JOIN tracker t ON t.id = e.tracker_id
       WHERE e.local_date = ? AND e.deleted_at IS NULL AND t.archived_at IS NULL ORDER BY e.ts, e.id
-    `).bind(date).all<{ tracker_id: string; local_ts: number; n: number }>(),
+    `).bind(date).all<{ id: string; tracker_id: string; local_ts: number; n: number }>(),
     env.DB.prepare(`
       SELECT CAST((ts + tz_offset_min * 60 - ?) / 900 AS INTEGER) AS i, round(avg(value)) AS bpm
       FROM metric_minute
@@ -80,9 +82,12 @@ export async function handleWatchToday(request: Request, env: AppEnv, now: numbe
     const k = KINDS[e.tracker_id] ?? (e.tracker_id.startsWith("mood") ? "animo" : "other");
     totals[e.tracker_id] = (totals[e.tracker_id] ?? 0) + e.n;
     counts[k] = (counts[k] ?? 0) + e.n;   // count trackers (cigarettes) add their units; amounts count logs
-    // Moods carry which one, so the dial can colour it.
+    // Moods carry which one, so the dial can colour it; watch logs carry their key, so the watch can match its queue.
     const t = Math.floor((e.local_ts - midnight) / 60);
-    return k === "animo" ? { t, k, m: e.tracker_id.slice("mood_".length) } : { t, k };
+    return {
+      t, k, ...(k === "animo" ? { m: e.tracker_id.slice("mood_".length) } : {}),
+      ...(e.id.startsWith(WATCH_ID) ? { i: e.id.slice(WATCH_ID.length) } : {}),
+    };
   });
   return Response.json({
     date, generatedAt: now,
