@@ -1381,7 +1381,8 @@ describe("T11 AC5 health_sql through the authenticated connector", () => {
     const lexical = await import("../../src/mcp/tools/sqlguard");
     const parser = await import("../../src/mcp/tools/sqlviews");
     const validated = lexical.validateReadOnlyQuery(query);
-    const verdict = validated.ok ? parser.viewsOnly(validated.sql) : validated;
+    const { Parser } = await import("node-sql-parser/build/sqlite");
+    const verdict = validated.ok ? parser.viewsOnly(validated.sql, new Parser()) : validated;
     expect(verdict.ok).toBe(false);
     if (verdict.ok) throw new Error("Expected a refused query");
     google();
@@ -1396,7 +1397,7 @@ describe("T11 AC5 health_sql through the authenticated connector", () => {
     expect((await audit()).at(-1)?.error).toBe(verdict.reason);
   });
 
-  it.each([["all", 199], ["all", 200], ["all", 201], ["prepare", 201]] as const)("returns query failed for D1 %s with at most 200 message characters (length %i) and audits it", async (stage, length) => {
+  it.each([["raw", 199], ["raw", 200], ["raw", 201], ["prepare", 201]] as const)("returns query failed for D1 %s with at most 200 message characters (length %i) and audits it", async (stage, length) => {
     google();
     const token = await accessToken();
     const args = { query: "SELECT * FROM v_daily" };
@@ -1406,7 +1407,7 @@ describe("T11 AC5 health_sql through the authenticated connector", () => {
       if (property === "prepare") return (sql: string) => {
         if (sql.startsWith("SELECT * FROM (\n")) {
           if (stage === "prepare") throw new Error(message);
-          return { all: () => Promise.reject(new Error(message)) };
+          return { raw: () => Promise.reject(new Error(message)) };
         }
         return target.prepare(sql);
       };

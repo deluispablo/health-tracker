@@ -1,3 +1,4 @@
+import { Parser } from "node-sql-parser/build/sqlite";
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -72,9 +73,9 @@ describe("T11 AC4 health_sql execution", () => {
     const { db, calls } = watched();
     await healthSql(db, { query });
     expect(validate).toHaveBeenCalledExactlyOnceWith(query);
-    expect(checkViews).toHaveBeenCalledExactlyOnceWith(normalized);
+    expect(checkViews).toHaveBeenCalledExactlyOnceWith(normalized, expect.any(Parser));
     expect(order).toEqual(["lexical", "parser"]);
-    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${normalized}\n) LIMIT 201`], ["all"]]);
+    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${normalized}\n) LIMIT 201`], ["raw", { columnNames: true }]]);
   });
 
   it("stops at the lexical refusal without invoking the parser or D1", async () => {
@@ -95,7 +96,7 @@ describe("T11 AC4 health_sql execution", () => {
     const result = healthSql(db, { query: "SELECT * FROM v_daily" });
     await expect(result).rejects.toBeInstanceOf(RangeError);
     await expect(result).rejects.toThrow("parser refusal sentinel");
-    expect(checkViews).toHaveBeenCalledExactlyOnceWith("SELECT * FROM unknown_relation");
+    expect(checkViews).toHaveBeenCalledExactlyOnceWith("SELECT * FROM unknown_relation", expect.any(Parser));
     expect(calls).toEqual([]);
   });
 
@@ -108,7 +109,7 @@ describe("T11 AC4 health_sql execution", () => {
     const { db, calls } = watched();
     expect(await healthSql(db, { query })).toEqual({ columns: ["rhr", "local_date"], rows: [[61, "2026-10-21"]],
       truncated: false, row_count: 1, notes_untrusted: false });
-    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${checked.sql}\n) LIMIT 201`], ["all"]]);
+    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${checked.sql}\n) LIMIT 201`], ["raw", { columnNames: true }]]);
   });
 
   it.each([0, 199, 200, 201, 202])("caps %i database rows at 200 and sets truncation only when a 201st row returns", async (count) => {
@@ -120,8 +121,7 @@ describe("T11 AC4 health_sql execution", () => {
       rows: dates.slice(0, 200).map((date, i) => [date, i]), row_count: Math.min(count, 200),
       truncated: count > 200, notes_untrusted: false,
       ...(count > 200 ? { hint: expect.stringContaining("LIMIT") as unknown } : {}) });
-    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${sql}\n) LIMIT 201`], ["all"],
-      ...(count ? [] : [["raw", { columnNames: true }]])]);
+    expect(calls).toEqual([["prepare", `SELECT * FROM (\n${sql}\n) LIMIT 201`], ["raw", { columnNames: true }]]);
   });
 
   it("preserves stored cells and first-row column order, and marks note by its returned column name", async () => {
@@ -149,10 +149,10 @@ describe("T11 AC4 health_sql execution", () => {
       columns: ["note", "value"], rows: [], row_count: 0, truncated: false, notes_untrusted: true,
     });
     expect(calls).toEqual([["prepare", `SELECT * FROM (\n${query}\n) LIMIT 201`],
-      ["all"], ["raw", { columnNames: true }]]);
+      ["raw", { columnNames: true }]]);
   });
 
-  it("T32 propagates a raw metadata failure after a successful empty all read", async () => {
+  it("T32 propagates a raw read failure without another read", async () => {
     const failure = new Error("D1 metadata sentinel");
     const all = vi.fn().mockResolvedValue({ results: [] });
     const raw = vi.fn().mockRejectedValue(failure);
@@ -161,7 +161,7 @@ describe("T11 AC4 health_sql execution", () => {
       throw new Error(`Unexpected D1 operation: ${String(property)}`);
     } });
     await expect(healthSql(db, { query: "SELECT note, value FROM v_events WHERE 0" })).rejects.toBe(failure);
-    expect(all).toHaveBeenCalledExactlyOnceWith();
+    expect(all).not.toHaveBeenCalled();
     expect(raw).toHaveBeenCalledExactlyOnceWith({ columnNames: true });
   });
 
@@ -176,11 +176,11 @@ describe("T11 AC4 health_sql execution", () => {
     expect(await snapshot()).toEqual(before);
   });
 
-  it.each(["prepare", "all"])("throws an Error on a D1 %s failure rather than returning empty success", async (stage) => {
+  it.each(["prepare", "raw"])("throws an Error on a D1 %s failure rather than returning empty success", async (stage) => {
     const db = new Proxy(env.DB, { get(target, property) {
       if (property === "prepare") return () => {
         if (stage === "prepare") throw new Error("D1 read sentinel");
-        return { all: () => Promise.reject(new Error("D1 read sentinel")) };
+        return { raw: () => Promise.reject(new Error("D1 read sentinel")) };
       };
       const value: unknown = Reflect.get(target, property);
       return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
@@ -241,8 +241,10 @@ describe("QA1 SQL windows and response bounds", () => {
   });
 
   it("names an unsupported token with a relevant syntax hint", async () => {
+    const parse = vi.spyOn(Parser.prototype, "parse");
     await expect(healthSql(env.DB, { query: "SELECT steps FROM v_daily QUALIFY steps > 0" }))
       .rejects.toThrow(/unsupported SQL syntax near .+; check/i);
+    expect(parse).toHaveBeenCalledExactlyOnceWith("SELECT steps FROM v_daily QUALIFY steps > 0");
   });
 
   it("names unsupported identifier quoting and suggests double quotes", async () => {

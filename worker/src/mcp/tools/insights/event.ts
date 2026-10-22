@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "../../../lib/time";
 import { offsetMinutes } from "../../../ingest/drain";
 import type { AcuteTracker, Interval } from "./types";
 
@@ -95,7 +96,7 @@ export async function loadAcuteInput(db: D1Database, p: {
   `).bind(start - 16 * 3600, midnight(p.end) + 40 * 3600)
     .all<{ kind: "tap" | "sleep" | "workout" | "window"; data: string }>();
   const input: AcuteInput = { taps: [], sleeps: [], workouts: [], windows: new Map(), nowSec: p.nowSec };
-  const formatter = new Intl.DateTimeFormat("en-US", { timeZone: p.tz, timeZoneName: "longOffset" });
+  const formatter = dateTimeFormat("en-US", { timeZone: p.tz, timeZoneName: "longOffset" });
   for (const row of results) {
     if (row.kind === "tap") input.taps.push(JSON.parse(row.data) as AcuteInput["taps"][number]);
     else if (row.kind === "sleep") input.sleeps.push(JSON.parse(row.data) as Interval);
