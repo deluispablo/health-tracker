@@ -79,7 +79,9 @@ export async function handleWatchToday(request: Request, env: AppEnv, now: numbe
     const k = KINDS[e.tracker_id] ?? (e.tracker_id.startsWith("mood") ? "animo" : "other");
     totals[e.tracker_id] = (totals[e.tracker_id] ?? 0) + e.n;
     counts[k] = (counts[k] ?? 0) + e.n;   // count trackers (cigarettes) add their units; amounts count logs
-    return { t: Math.floor((e.local_ts - midnight) / 60), k };
+    // Moods carry which one, so the dial can colour it.
+    const t = Math.floor((e.local_ts - midnight) / 60);
+    return k === "animo" ? { t, k, m: e.tracker_id.slice("mood_".length) } : { t, k };
   });
   return Response.json({
     date, generatedAt: now,

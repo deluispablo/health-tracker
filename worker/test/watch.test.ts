@@ -112,6 +112,7 @@ describe("GET /watch/today", () => {
     ]);
     const body = await (await get(`Bearer ${TOKEN}`)).json<{ events: { k: string }[]; totals: Record<string, number>; counts: Record<string, number> }>();
     expect(body.events.map((e) => e.k)).toEqual(["animo", "animo"]);
+    expect(body.events.map((e) => (e as { m?: string }).m)).toEqual(["bien", "triste"]);
     expect(body.totals).toEqual({ mood_bien: 1, mood_triste: 1 });
     expect(body.counts).toEqual({ animo: 2 });
   });
