@@ -23,6 +23,7 @@ private val M_CAFFEINE = Color.parseColor("#f2c46b")  // the menu button colours
 private val BEAN_SEAM = Color.parseColor("#2a1a00")
 private val CIGARETTE = Color.WHITE
 private val M_ALCOHOL = Color.parseColor("#b48ae8")
+private val M_WATER = Color.parseColor("#38b6ff")
 private val AMBIENT_SLEEP = Color.parseColor("#2a3363")
 
 // Ring radii in the 360 design box: the log ring sits at R_LOG, the night band fills R_LOG..R_BEZEL
@@ -72,7 +73,7 @@ private fun drawLayers(c: Canvas, data: DialData, nowMin: Int, ambient: Boolean)
 
     // Log ring with marks; clusters get a bracket inside it with feet at the true times.
     c.drawCircle(0f, 0f, R_LOG, stroke(LINE, 2.25f))
-    val placed = fanOut(data.events.filter { it.t in 0..nowMin }, stepDeg = 6.5f * MARK * 102f / R_LOG)
+    val placed = fanOut(data.events.filter { it.t in 0..nowMin && it.k != "other" }, stepDeg = 6.5f * MARK * 102f / R_LOG)
     clusters(placed).filter { it.size > 1 }.forEach { cl ->
         val p = stroke(LINE_STRONG, 1.85f)
         c.drawArc(box(R_LOG - 13f * MARK), cl.first().second - 90f, cl.last().second - cl.first().second, false, p)
@@ -138,7 +139,8 @@ private val GLASS = Path().apply {
     close()
 }
 
-private fun mark(c: Canvas, kind: String, deg: Float, mood: String?) {
+/** [which] names the mood or the supplement, for their colour. */
+private fun mark(c: Canvas, kind: String, deg: Float, which: String?) {
     c.save()
     c.rotate(deg)
     c.scale(MARK, MARK, 0f, -R_LOG)
@@ -171,9 +173,29 @@ private fun mark(c: Canvas, kind: String, deg: Float, mood: String?) {
             c.drawPath(GLASS, fill(M_ALCOHOL))
             c.drawPath(foot, stroke(M_ALCOHOL, 1.6f))
         }
+        "agua" -> {
+            // Shared mark: a drop with its tip outward (docs/assets/brand/trackers/marks/agua.svg).
+            val drop = Path().apply {
+                moveTo(0f, -6.2f)
+                cubicTo(-1.6f, -3.6f, -4.2f, -1.2f, -4.2f, 1.6f)
+                arcTo(RectF(-4.2f, -2.6f, 4.2f, 5.8f), 180f, -180f)
+                cubicTo(4.2f, -1.2f, 1.6f, -3.6f, 0f, -6.2f)
+                close()
+            }
+            c.drawPath(drop, stroke(HALO, 2.2f).apply { strokeJoin = Paint.Join.ROUND })
+            c.drawPath(drop, fill(M_WATER))
+        }
+        "suplemento" -> {
+            // One capsule for every supplement, in its colour token (all share one rose today; marks/suplemento.svg).
+            val style = styleOf(which ?: "")
+            val capsule = RectF(-2.7f, -5.8f, 2.7f, 5.8f)
+            c.drawRoundRect(capsule, 2.7f, 2.7f, stroke(HALO, 2.2f))
+            c.drawRoundRect(capsule, 2.7f, 2.7f, fill(style.fill))
+            c.drawLine(-2.7f, 0f, 2.7f, 0f, stroke(style.ink, 1f))
+        }
         "animo" -> {
             c.drawCircle(0f, 0f, 4.6f, stroke(HALO, 2.2f))
-            c.drawCircle(0f, 0f, 4.6f, fill(MOOD_COLORS[mood] ?: INK))
+            c.drawCircle(0f, 0f, 4.6f, fill(MOOD_COLORS[which] ?: INK))
         }
         else -> {
             c.drawCircle(0f, 0f, 4.5f, fill(HALO))

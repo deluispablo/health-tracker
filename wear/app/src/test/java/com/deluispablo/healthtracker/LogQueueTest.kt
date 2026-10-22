@@ -28,8 +28,8 @@ class LogQueueTest {
 
     @Test
     fun kindsMatchTheWorker() {
-        assertEquals(listOf("cafe", "cigarro", "alcohol", "animo", "other"),
-            listOf("caffeine", "cigarettes", "alcohol", "mood_genial", "water").map(::kindOf))
+        assertEquals(listOf("cafe", "cigarro", "alcohol", "animo", "agua", "suplemento"),
+            listOf("caffeine", "cigarettes", "alcohol", "mood_genial", "water", "protein").map(::kindOf))
     }
 }
 

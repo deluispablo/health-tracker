@@ -32,8 +32,17 @@ fun kindOf(tracker: String): String = when {
     tracker == "caffeine" -> "cafe"
     tracker == "cigarettes" -> "cigarro"
     tracker == "alcohol" -> "alcohol"
+    tracker == "water" -> "agua"
     tracker.startsWith("mood_") -> "animo"
-    else -> "other"
+    // Everything else the watch logs comes from the Suplementos ring; a new face tracker needs its own case.
+    else -> "suplemento"
+}
+
+/** The mood's name, or the supplement's id, that a mark of [tracker] carries in its `m`. */
+fun which(tracker: String): String? = when (kindOf(tracker)) {
+    "animo" -> tracker.removePrefix("mood_")
+    "suplemento" -> tracker
+    else -> null
 }
 
 /** Acks from another [run] are dropped: the tap is simply sent again, which the idempotency key makes safe. */
@@ -82,7 +91,7 @@ fun withTaps(data: DialData, taps: List<Tap>): DialData {
     val today = taps.mapNotNull { tap ->
         val local = Instant.ofEpochSecond(tap.at).atZone(MADRID)
         if (local.toLocalDate().toString() == data.date) tap to Mark(minutesSince(data.date, local), kindOf(tap.tracker),
-            tap.tracker.removePrefix("mood_").takeIf { tap.tracker.startsWith("mood_") }, tap.id) else null
+            which(tap.tracker), tap.id) else null
     }
     if (today.isEmpty()) return data
     val shown = data.events.mapNotNull { it.i }.toSet()
@@ -150,8 +159,9 @@ private fun send(ctx: Context) {
     )
 }
 
-/** Today's dial as drawn, unsent taps included; null before the first sync. */
-fun todayWithTaps(ctx: Context): DialData? = synchronized(cacheLock) {
-    val data = chooseCached(null, File(ctx.filesDir, "dial.json").takeIf { it.exists() }?.readText()) ?: return null
-    withTaps(dataForToday(data), readTaps(ctx))
+/** The menus as of now: cached totals plus unsent taps, or the built-in trackers before the first sync. */
+fun menuNow(ctx: Context): LogMenu = synchronized(cacheLock) {
+    val data = chooseCached(null, File(ctx.filesDir, "dial.json").takeIf { it.exists() }?.readText())?.let { dataForToday(it) }
+    logMenu(data, readTaps(ctx))
 }
+

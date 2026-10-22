@@ -1,0 +1,248 @@
+{
+ "date": "2026-10-22",
+ "generatedAt": 1792692000,
+ "sleep": [
+  {
+   "start": -75,
+   "end": 445,
+   "nap": false
+  }
+ ],
+ "workouts": [
+  {
+   "start": 1080,
+   "end": 1140
+  }
+ ],
+ "events": [
+  {
+   "t": 470,
+   "k": "cafe"
+  },
+  {
+   "t": 520,
+   "k": "agua"
+  },
+  {
+   "t": 540,
+   "k": "animo",
+   "m": "bien"
+  },
+  {
+   "t": 550,
+   "k": "suplemento",
+   "id": "creatine"
+  },
+  {
+   "t": 615,
+   "k": "cafe"
+  },
+  {
+   "t": 690,
+   "k": "cigarro"
+  },
+  {
+   "t": 760,
+   "k": "agua"
+  },
+  {
+   "t": 840,
+   "k": "animo",
+   "m": "tranquilo"
+  },
+  {
+   "t": 905,
+   "k": "cigarro"
+  },
+  {
+   "t": 990,
+   "k": "animo",
+   "m": "cansado"
+  },
+  {
+   "t": 1010,
+   "k": "agua"
+  },
+  {
+   "t": 1110,
+   "k": "suplemento",
+   "id": "protein"
+  },
+  {
+   "t": 1150,
+   "k": "animo",
+   "m": "genial"
+  },
+  {
+   "t": 1170,
+   "k": "alcohol"
+  },
+  {
+   "t": 1185,
+   "k": "suplemento",
+   "id": "melatonin"
+  }
+ ],
+ "totals": {},
+ "counts": {},
+ "hr": [
+  52,
+  53,
+  55,
+  55,
+  55,
+  54,
+  52,
+  51,
+  50,
+  49,
+  49,
+  50,
+  51,
+  53,
+  54,
+  55,
+  55,
+  54,
+  53,
+  52,
+  50,
+  49,
+  49,
+  49,
+  50,
+  52,
+  53,
+  54,
+  55,
+  55,
+  58,
+  58,
+  60,
+  63,
+  66,
+  68,
+  68,
+  67,
+  67,
+  66,
+  68,
+  70,
+  73,
+  77,
+  79,
+  79,
+  77,
+  72,
+  66,
+  60,
+  56,
+  54,
+  56,
+  59,
+  64,
+  69,
+  73,
+  74,
+  74,
+  73,
+  71,
+  70,
+  70,
+  71,
+  73,
+  74,
+  73,
+  71,
+  67,
+  63,
+  58,
+  55,
+  131,
+  121,
+  118,
+  124,
+  74,
+  78,
+  80,
+  79,
+  76,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "water": {
+  "ml": 750,
+  "goal_ml": 2000
+ },
+ "trackers": [
+  {
+   "id": "caffeine",
+   "name": "Café",
+   "unit": "mg",
+   "value": 80,
+   "surface": "face",
+   "today": 160
+  },
+  {
+   "id": "cigarettes",
+   "name": "Cigarro",
+   "unit": "u",
+   "value": 1,
+   "surface": "face",
+   "today": 2
+  },
+  {
+   "id": "alcohol",
+   "name": "Copa",
+   "unit": "g",
+   "value": 13,
+   "surface": "face",
+   "today": 13
+  },
+  {
+   "id": "water",
+   "name": "Agua",
+   "unit": "ml",
+   "value": 250,
+   "surface": "face",
+   "today": 750
+  },
+  {
+   "id": "melatonin",
+   "name": "Melatonina",
+   "unit": "mg",
+   "value": 1,
+   "surface": "tile",
+   "today": 1
+  },
+  {
+   "id": "protein",
+   "name": "Batido de proteína",
+   "unit": "g",
+   "value": 30,
+   "surface": "tile",
+   "today": 30
+  },
+  {
+   "id": "creatine",
+   "name": "Creatina",
+   "unit": "g",
+   "value": 5,
+   "surface": "tile",
+   "today": 5
+  }
+ ]
+}

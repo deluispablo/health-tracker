@@ -8,9 +8,11 @@ val localProps = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 
-val watchToken = localProps.getProperty("watchToken", "")
-val watchBaseUrl = localProps.getProperty("watchBaseUrl", "https://health.deluispablo.com")
-require(watchToken.isNotBlank()) { "Set a non-blank watchToken in wear/local.properties" }
+// `-Ppreview` builds a separate app with no token for screenshots on sample data; it never reaches a Worker.
+val preview = project.hasProperty("preview")
+val watchToken = if (preview) "" else localProps.getProperty("watchToken", "")
+val watchBaseUrl = if (preview) "https://preview.invalid" else localProps.getProperty("watchBaseUrl", "https://health.deluispablo.com")
+require(preview || watchToken.isNotBlank()) { "Set a non-blank watchToken in wear/local.properties" }
 require(watchBaseUrl.startsWith("https://")) { "watchBaseUrl in wear/local.properties must start with https://" }
 
 android {
@@ -19,6 +21,7 @@ android {
 
     defaultConfig {
         applicationId = "com.deluispablo.healthtracker"
+        if (preview) applicationIdSuffix = ".preview"
         minSdk = 34
         targetSdk = 36
         versionCode = 1
