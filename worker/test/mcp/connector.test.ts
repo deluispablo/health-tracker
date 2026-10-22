@@ -369,6 +369,443 @@ describe("AC2 owner authorization and refusals", () => {
   });
 });
 
+describe("T39 tool description contract", () => {
+  it("preserves every input schema and annotation apart from descriptions", async () => {
+    google();
+    const msg = await rpc(await accessToken(), "tools/list", {});
+    expect(msg.error).toBeUndefined();
+    const contracts = Object.fromEntries((msg.result?.tools ?? []).map((tool) => [tool.name, {
+      inputSchema: JSON.parse(JSON.stringify(tool.inputSchema), (key: string, value: unknown) => key === "description" ? undefined : value) as unknown,
+      annotations: tool.annotations,
+    }]));
+    expect(contracts).toEqual({
+      "health_profile": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_set_profile": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "birth_year": {
+              "type": "number"
+            },
+            "sex": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "female",
+                    "male"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "height_cm": {
+              "type": "number"
+            },
+            "weight_kg": {
+              "type": "number"
+            },
+            "date": {
+              "type": "string"
+            },
+            "step_goal": {
+              "type": "number"
+            },
+            "sleep_goal_min": {
+              "type": "number"
+            },
+            "max_hr": {
+              "type": "number"
+            },
+            "smoker": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": {}
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_status": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_daily": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            },
+            "metrics": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_sleep": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_workouts": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_intraday": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "metric": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "resolution": {
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "metric",
+            "date",
+            "resolution"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_trackers": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "date": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "date"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_log_event": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "tracker_id": {
+              "type": "string"
+            },
+            "value": {
+              "type": "number"
+            },
+            "at": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            },
+            "idempotency_key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tracker_id"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_delete_event": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "event_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "required": [
+            "event_id"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_compare": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "behavior": {
+              "type": "string"
+            },
+            "outcome": {
+              "type": "string"
+            },
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            },
+            "lag_days": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "bins": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          },
+          "required": [
+            "behavior",
+            "outcome",
+            "start",
+            "end"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_correlate": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "string"
+            },
+            "y": {
+              "type": "string"
+            },
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            },
+            "max_lag": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "start",
+            "end"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_trend": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "metric": {
+              "type": "string"
+            },
+            "period": {
+              "type": "string"
+            },
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "metric",
+            "period",
+            "start",
+            "end"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "health_sql": {
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "query"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      }
+    });
+  });
+
+  it("pins every tool's limits, defaults, selection guidance and argument documentation", async () => {
+    // Limits checked against the handlers; tracker configuration is deliberately discovered at runtime.
+    const required: Record<string, string[]> = {
+      health_profile: ["90 dated weights", "7000 steps", "450 minutes", "USER_TZ", "health_set_profile"],
+      health_set_profile: ["at least one field", "0.1", "local today", "1920", "100–250", "30–300", "1000–50000", "240–720", "120–230", "health_profile", "midnight"],
+      health_status: ["14-day", "48 hours", "24 hours", "5 attempts", "USER_TZ", "YYYY-MM-DDTHH:MM", "health_daily"],
+      health_daily: ["90 dates", "all metrics", "mood_", "count", "null", "health_trend", "health_compare", "health_correlate", "health_sql"],
+      health_sleep: ["31 dates", "stages", "YYYY-MM-DDTHH:MM", "health_daily", "health_intraday"],
+      health_workouts: ["31 dates", "YYYY-MM-DDTHH:MM", "max_hr", "[start, end)", "null", "health_daily"],
+      health_intraday: ["1m", "5m", "1h", "180 minutes", "00:00/24:00", "[from, to)", "canonical bucket start", "HH:MM", "YYYY-MM-DDTHH:MM", "health_sleep"],
+      health_trackers: ["50 events", "exact day totals", "current units, defaults and limits", "health_log_event", "HH:MM", "untrusted"],
+      health_log_event: ["7 days", "300 seconds", "280 Unicode code points", "8–64", "now", "health_trackers", "health_delete_event", "untrusted"],
+      health_delete_event: ["1–80", "day total", "history", "retry", "health_trackers", "health_log_event", "untrusted"],
+      health_compare: ["365 dates", "95%", "0 to 7", "default 1", "1 to 5", "wake dates", "health_correlate", "health_trend", "Associational"],
+      health_correlate: ["365 dates", "AR(1)", "0 to 7", "default 3", "fewer than 5 pairs", "zero variance", "health_compare", "Associational"],
+      health_trend: ["365 dates", "ISO week", "calendar month", "sample SD", "health_daily", "health_compare", "health_correlate"],
+      health_sql: ["4000 query characters", "200 rows", "20 000-character", "UTF-16", "v_daily", "v_events", "v_sleep", "v_workouts", "health_daily", "health_trend", "health_compare", "health_correlate"],
+    };
+    google();
+    const msg = await rpc(await accessToken(), "tools/list", {});
+    expect(msg.error).toBeUndefined();
+    const tools = msg.result?.tools ?? [];
+    expect(tools.map((tool) => tool.name).sort()).toEqual(Object.keys(required).sort());
+    for (const tool of tools) {
+      for (const text of required[tool.name]) expect(tool.description, `${tool.name}: ${text}`).toContain(text);
+      expect(tool.description, tool.name).toMatch(/Infer.*do not ask/);
+      expect(tool.description, tool.name).not.toMatch(/\bcauses?\b/i);
+      if (["health_compare", "health_correlate"].includes(tool.name)) expect(tool.description).toContain("not causal");
+      if (tool.name !== "health_sql") {
+        expect(tool.description.length, tool.name).toBeLessThanOrEqual(600);
+        expect(tool.description, tool.name).not.toMatch(/[\r\n]/);
+      }
+      const schema = tool.inputSchema as { properties: Record<string, { description?: string }> };
+      for (const [field, argument] of Object.entries(schema.properties)) {
+        expect(argument.description?.trim().length ?? 0, `${tool.name}.${field}`).toBeGreaterThan(0);
+        if (["start", "end", "date"].includes(field) && tool.name !== "health_set_profile") {
+          expect(argument.description, `${tool.name}.${field}`).toMatch(/Required.*Infer.*USER_TZ.*Europe\/Madrid.*do not ask/);
+        }
+      }
+    }
+    const log = tools.find((tool) => tool.name === "health_log_event")?.inputSchema as { properties: Record<string, { description: string }> };
+    expect(log.properties.tracker_id.description).toMatch(/examples.*health_trackers.*custom trackers.*null bounds/);
+    expect(log.properties.note.description).toContain("reject");
+    for (const limit of ["hours 00–14", "minutes 00–59", "3 fractional digits", "7 days", "300 seconds"]) expect(log.properties.at.description).toContain(limit);
+    expect(log.properties.idempotency_key.description).toContain("Omit for a random event id");
+  });
+});
+
 describe("AC3 stateless read tools and audit", () => {
   it("initializes and lists exactly fourteen described tools, with profile, log and delete writing", async () => {
     google();
