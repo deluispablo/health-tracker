@@ -306,7 +306,7 @@ try {
   /* ---- tab bar: phone bottom bar ---- */
   .ht-tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
     background: var(--surface); padding: 0 max(4px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(4px, env(safe-area-inset-left, 0px)); }
-  .ht-tabs { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: var(--tabbar-height); }
+  .ht-tabs { display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: var(--tabbar-height); }
   .ht-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: var(--target-min); border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 12px; line-height: 16px; font-weight: var(--w); padding: 6px 0; }
   .ht-tab-i { display: grid; place-items: center; width: 56px; height: 30px; border-radius: var(--radius-full); transition: background var(--dur-base) var(--ease-standard); }
   .ht-tab[aria-selected="true"] { color: var(--ink); font-weight: var(--w-title); }
@@ -522,12 +522,34 @@ try {
   @media (max-width: 420px) { .act-wk-d { padding-left: 0; } }
   /* ==== end Activity tab ==== */
 
+  /* ==== Routine tab ==== */
+  .rt-grid { display: grid; gap: 16px; align-items: start; }
+  .rt-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .rt-controls .sl-seg { flex-wrap: wrap; gap: 4px; background: none; }
+  .rt-controls .sl-seg button { min-height: 36px; background: var(--surface-2); font: 400 13px/16px var(--font-sans); outline: none; }
+  .rt-controls .sl-seg button[aria-pressed="true"] { background: var(--container); color: var(--on-container); font-weight: 600; }
+  #rt-first .rt-row text { font-family: var(--font-sans); font-size: 12px; fill: var(--ink); }
+  #rt-first .rt-row text + text { font-size: 12px; fill: var(--muted); }
+  .rt-readout { min-height: 40px; margin: 12px 0 4px; font-size: 13px; line-height: 20px; color: var(--muted); }
+  .rt-plot { overflow-x: auto; }
+  .rt-plot svg { display: block; width: 100%; height: auto; }
+  .rt-row:focus { outline: none; }
+  .rt-row:focus-visible .rt-hit { stroke: var(--focus); stroke-width: 2; }
+  .rt-fact { margin-top: 20px; }
+  .rt-fact dt, .rt-fact p { color: var(--muted); font-size: 13px; line-height: 18px; }
+  .rt-fact dd { margin: 4px 0; font: 500 22px/28px var(--font-sans); }
+  @container main (min-width: 1000px) {
+    .rt-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+    .rt-days { grid-column: span 12; } .rt-first { grid-column: span 8; } .rt-short { grid-column: span 4; }
+  }
+  /* ==== end Routine tab ==== */
+
   /* Short windows (landscape phones, 400 % zoom): nothing stays fixed, so the content can scroll. */
   @media (max-height: 500px) {
     .ht-tabbar { grid-column: 1 / -1; }
     .ht-tabbar, .qw { position: static !important; }
     .ht-tabbar { order: 5; width: 100%; height: auto; border: 0; padding: 0; }
-    .ht-tabs { grid-template-columns: repeat(4, 1fr); grid-template-rows: none; grid-auto-rows: auto; }
+    .ht-tabs { grid-template-columns: repeat(5, 1fr); grid-template-rows: none; grid-auto-rows: auto; }
     .app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-bottom: 24px; }
     .side { position: static !important; height: auto !important; }
     #ev-body { overflow: visible !important; }
@@ -548,6 +570,7 @@ try {
         <button type="button" class="ht-tab" role="tab" id="tab-sleep" data-tab="sleep" aria-selected="false" aria-controls="p-sleep" tabindex="-1"></button>
         <button type="button" class="ht-tab" role="tab" id="tab-health" data-tab="health" aria-selected="false" aria-controls="p-health" tabindex="-1"></button>
         <button type="button" class="ht-tab" role="tab" id="tab-activity" data-tab="activity" aria-selected="false" aria-controls="p-activity" tabindex="-1"></button>
+        <button type="button" class="ht-tab" role="tab" id="tab-routine" data-tab="routine" aria-selected="false" aria-controls="p-routine" tabindex="-1"></button>
       </div></nav>
     <div class="qw" id="qw">
       <h2 class="quick-title" data-t="quick.title"></h2>
@@ -636,6 +659,14 @@ try {
         </div>
       </div>
       <!-- ==== end Activity tab ==== -->
+    </section>
+    <section id="p-routine" role="tabpanel" aria-labelledby="tab-routine" hidden>
+      <div class="page-h"><h1 class="page-t" data-t="tab.routine"></h1><div class="sl-nav" id="rt-nav" role="group" data-t-aria="day.navR"></div></div>
+      <div class="rt-grid" id="rt-grid">
+        <section class="ht-card rt-days" aria-labelledby="h-rt-days"><div class="ht-card-h"><h2 class="ht-card-t" id="h-rt-days" tabindex="-1" data-t="rt.days"></h2><div class="rt-controls" id="rt-controls"></div></div><p class="sl-cap" data-t="rt.daysCap"></p><div id="rt-days" data-fb="#h-rt-days"></div></section>
+        <section class="ht-card rt-first" aria-labelledby="h-rt-first"><h2 class="ht-card-t" id="h-rt-first" tabindex="-1" data-t="rt.first"></h2><p class="sl-cap" data-t="rt.firstCap"></p><div id="rt-first" data-fb="#h-rt-first"></div></section>
+        <section class="ht-card rt-short" aria-labelledby="h-rt-short"><h2 class="ht-card-t" id="h-rt-short" tabindex="-1" data-t="rt.short"></h2><div id="rt-short" data-fb="#h-rt-short"></div></section>
+      </div>
     </section>
   </main>
 </div>
@@ -1484,6 +1515,84 @@ try {
     }
   };
   /* ==== end Activity tab ==== */
+  /* ==== Routine tab ==== */
+  Object.assign(COPY, {
+    'tab.routine': ['Routine', 'Rutina'],
+    'card.routine': ['Routine', 'Rutina'],
+    'rt.days': ['Your days, hour by hour', 'Tus días, hora a hora'],
+    'rt.daysCap': ['One row per day, from 18:00 to 18:00 so the night stays whole', 'Una fila por día, de 18:00 a 18:00 para que la noche no se parta'],
+    'rt.first': ['First times of the day', 'Primeras veces del día'],
+    'rt.firstCap': ['One dot per day; the band and the median appear with 7 days', 'Un punto por día; la banda y la mediana aparecen con 7 días'],
+    'rt.short': ['In short', 'En pocas palabras'],
+    'rt.wake': ['Wake', 'Despertar'],
+    'rt.coffee': ['First coffee', 'Primer café'],
+    'rt.cigarette': ['First cigarette', 'Primer cigarro'],
+    'rt.wakeFact': ['You wake up', 'Te despiertas'],
+    'rt.cigFact': ['Wake to first cigarette', 'De despertar al primer cigarro'],
+    'rt.coffeeFact': ['Wake to first coffee', 'De despertar al primer café'],
+    'rt.workouts': ['Workouts', 'Entrenos'],
+    'rt.dayCount': ['1 day', '1 día'],
+    'rt.workoutCount': ['1 workout', '1 entreno'],
+    'rt.daysCount': ['{n} days', '{n} días'],
+    'rt.workCount': ['{n} workouts', '{n} entrenos'],
+    'rt.window': ['{n} d', '{n} d'],
+    'rt.span': ['Days shown', 'Días mostrados'],
+    'rt.filters': ['Events shown', 'Eventos mostrados'],
+    'rt.noWatch': ['No watch data', 'Sin datos del reloj'],
+    'rt.nap': ['Nap', 'Siesta'],
+    'rt.asleep': ['Asleep', 'Dormido'],
+    'rt.readout': ['Hover or focus a row to read the day.', 'Pasa el cursor o enfoca una fila para leer el día.'],
+    'rt.empty': ['No data yet', 'Aún sin datos'],
+    'rt.learning': ['Only today; the median comes in {n} days', 'Solo hoy; la mediana llega en {n} días'],
+    'rt.learningDays': ['{n} days so far; the median comes in {k} days', '{n} días por ahora; la mediana llega en {k} días'],
+    'rt.wakeRange': ['Median of {n} nights; usually between {a} and {b}', 'Mediana de {n} noches; sueles entre {a} y {b}'],
+    'rt.gapRange': ['Median of {n} days; usually between {a} and {b}', 'Mediana de {n} días; sueles entre {a} y {b}'],
+    'rt.workLine': ['{n} in {d}', '{n} en {d}'],
+    'rt.or': [' or ', ' o '],
+    'rt.truncated': ['Only the most recent logs are shown; first times may be incomplete.', 'Solo se muestran los registros más recientes; las primeras horas pueden estar incompletas.']
+  });
+  function routineStats(values) {
+    const v = values.filter(finite).sort((a, b) => a - b), n = v.length;
+    const q = (p) => { const x = (n - 1) * p, i = Math.floor(x); return n ? v[i] + (x - i) * ((v[i + 1] ?? v[i]) - v[i]) : null; };
+    return { n, low: q(.25), median: q(.5), high: q(.75) };
+  }
+  function routinePoint(date, min) {
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !finite(min) || min < 0 || min >= 1440) return null;
+    return { date: min >= 1080 ? shiftDate(date, 1) : date, min: (min + 360) % 1440 };
+  }
+  function routineSpan(start, end, date) {
+    const a = Date.parse(start + 'Z') / 60000, b = Date.parse(end + 'Z') / 60000;
+    const base = Date.parse(shiftDate(date, -1) + 'T18:00Z') / 60000;
+    return Number.isFinite(a) && Number.isFinite(b) && b > a && b > base && a < base + 1440
+      ? { from: Math.max(0, a - base), to: Math.min(1440, b - base) } : null;
+  }
+  function routineFirst(logs, date, id, wake) {
+    if (!finite(wake)) return null;
+    return logs.filter((e) => e.date === date && e.id === id && finite(e.ts) && e.ts >= wake).sort((a, b) => a.ts - b.ts)[0] ?? null;
+  }
+  function routineRows(sessions, workouts, res, end, span) {
+    const cols = res?.columns ?? [], di = cols.indexOf('local_date'), ki = cols.indexOf('tracker_id'), mi = cols.indexOf('m'), ti = cols.indexOf('ts'), oi = cols.indexOf('tz_offset_min');
+    const logs = (res?.rows ?? []).map((r) => ({ date: r[di], id: r[ki], min: r[mi], ts: r[ti], tz_offset_min: r[oi] })).filter((e) => routinePoint(e.date, e.min) && ['caffeine', 'cigarettes', 'alcohol'].includes(e.id));
+    return Array.from({ length: span }, (_, i) => {
+      const date = shiftDate(end, i - span + 1), main = mainSession(sessions, date), wake = main?.end_local?.slice(0, 10) === date ? localMinutes(main.end_local) : null;
+      const wakeTs = finite(wake) && finite(main.tz_offset_min) ? Date.parse(main.end_local + 'Z') / 1000 - main.tz_offset_min * 60 : null;
+      const coffee = routineFirst(logs, date, 'caffeine', wakeTs), cigarette = routineFirst(logs, date, 'cigarettes', wakeTs);
+      const sleep = (sessions ?? []).map((s) => ({ ...routineSpan(s.start_local, s.end_local, date), nap: !!s.is_nap })).filter((s) => finite(s.from));
+      const work = (workouts ?? []).map((w) => ({ ...routineSpan(w.start_local, w.end_local, date) })).filter((w) => finite(w.from));
+      const starts = (workouts ?? []).filter((w) => w.start_local?.slice(0, 10) === date).map((w) => localMinutes(w.start_local)).filter(finite);
+      return { date, wake, sleep, work, starts, logs: logs.filter((e) => routinePoint(e.date, e.min).date === date),
+        coffee: coffee?.min ?? null, cigarette: cigarette?.min ?? null,
+        coffeeGap: coffee ? (coffee.ts - wakeTs) / 60 : null, cigaretteGap: cigarette ? (cigarette.ts - wakeTs) / 60 : null };
+    });
+  }
+  function routineWindows(values) {
+    const bins = new Map();
+    values.filter(finite).forEach((m) => { const a = Math.floor((m + 15) / 30) * 30 - 30; bins.set(a, (bins.get(a) ?? 0) + 1); });
+    return [...bins].sort((a, b) => b[1] - a[1] || a[0] - b[0]).filter(([a], i, all) => !i || Math.abs(a - all[0][0]) >= 60).slice(0, 2).map(([a]) => [Math.max(0, a), Math.min(1440, a + 60)]);
+  }
+  Object.assign(window.HTLogic, { routineStats, routinePoint, routineSpan, routineFirst, routineRows, routineWindows });
+  /* ==== end Routine tab ==== */
+
 })();
 </script>
 <script>
@@ -1500,12 +1609,12 @@ try {
     status: () => ({}), daily: (d) => ({ start: L.shiftDate(d, -28), end: d }), sleep: (d) => ({ start: d, end: d }),
     trackers: (d) => ({ date: d }), workouts: (d) => ({ start: L.shiftDate(d, -1), end: d })
   };
-  const TABS = ['today', 'sleep', 'health', 'activity'];
+  const TABS = ['today', 'sleep', 'health', 'activity', 'routine'];
   /* One day for the whole page (the day Today shows); only these follow the calendar day: the sync status and,
      while Today shows the day that just ended, the calendar day's log (badges and "since midnight"). */
   const DAY_SRC = ['daily', 'sleep', 'trackers', 'workouts'];
   const CAL_SRC = ['status', 'trackersNow'];
-  const TAB_ICON = { today: 'hoy', sleep: 'sueno', health: 'salud', activity: 'actividad' };
+  const TAB_ICON = { today: 'hoy', sleep: 'sueno', health: 'salud', activity: 'actividad', routine: 'rutina' };
 
   let lang = 'en';
   try { lang = L.pickLang(localStorage.getItem('ht.lang')); } catch (e) { lang = 'en'; }
@@ -1520,6 +1629,7 @@ try {
     hoy: '<circle cx="12" cy="12" r="8.25"/><path d="M12 12 10.71 7.17A5 5 0 0 1 16.83 13.29Z" fill="currentColor" stroke="none"/><path d="M12 2v3.5"/>',
     sueno: '<path d="M19 14.6A7.6 7.6 0 1 1 9.4 5a6 6 0 0 0 9.6 9.6z"/>',
     salud: '<path d="M12 20s-7.5-4.6-7.5-10.2A4.1 4.1 0 0 1 12 7.3a4.1 4.1 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/>',
+    rutina: '<path d="M4 7h6M13 7h7M4 12h3M10 12h10M4 17h9M16 17h4"/>',
     actividad: '<path d="M5 19v-5M10 19V9M15 19v-7M20 19V5"/>',
     cafe: '<path d="M5 9h11v4.5A5.5 5.5 0 0 1 10.5 19h0A5.5 5.5 0 0 1 5 13.5zM16 10.5h1.2a2.6 2.6 0 0 1 0 5.2H16"/>',
     cigarro: '<path d="M3 14h14v3H3zM12.5 14v3M20 17v-3M20 11c0-1.3 1.3-1.7 1.3-3S20 6.3 20 5"/>',
@@ -1639,7 +1749,7 @@ try {
   }
   function stopAll() {
     stopped = true;
-    [...SOURCES, 'hr'].forEach((n) => { const s = S[n]; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); s.halted = true; s.error = { code: 'user_changed', message: '' }; });
+    [...SOURCES, 'hr', ...RT_SRC].forEach((n) => { const s = S[n]; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); s.halted = true; s.error = { code: 'user_changed', message: '' }; });
     { const s = S.trackersNow; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); }
     Q.clear(); target = undone = null; closeMood(false); render();
   }
@@ -2696,6 +2806,7 @@ try {
     $('app').dataset.tab = name;
     if (changed) { hide(true); document.querySelectorAll('.sl-tip').forEach((x) => { x.hidden = true; }); }
     if (name === 'health') renderHealth();   /* Health tab hook */
+    if (name === 'routine') renderRoutine();
     if (name === 'activity') renderActivity();   // Activity tab hook
     if (changed) window.scrollTo(0, scrolls[name] || 0);
     if (focus) $('tab-' + name).focus();
@@ -2704,7 +2815,7 @@ try {
   window.addEventListener('hashchange', () => activate(location.hash.slice(1)));
   TABS.forEach((n) => $('tab-' + n).addEventListener('click', () => go(n)));
   document.querySelector('[role="tablist"]').addEventListener('keydown', (e) => {
-    const i = TABS.indexOf(active), next = { ArrowRight: TABS[(i + 1) % 4], ArrowDown: TABS[(i + 1) % 4], ArrowLeft: TABS[(i + 3) % 4], ArrowUp: TABS[(i + 3) % 4], Home: TABS[0], End: TABS[3] }[e.key];
+    const i = TABS.indexOf(active), next = { ArrowRight: TABS[(i + 1) % TABS.length], ArrowDown: TABS[(i + 1) % TABS.length], ArrowLeft: TABS[(i + TABS.length - 1) % TABS.length], ArrowUp: TABS[(i + TABS.length - 1) % TABS.length], Home: TABS[0], End: TABS[TABS.length - 1] }[e.key];
     if (next) { e.preventDefault(); go(next, true); }
   });
 
@@ -2937,12 +3048,159 @@ try {
   }
   /* ==== end Sleep tab ==== */
 
+  /* ==== Routine tab ==== */
+  const RT = { day: dayDate, follow: true, span: 14, on: false, key: '', widths: [], filters: new Set(['caffeine', 'cigarettes', 'alcohol', 'workout']) };
+  const RT_SRC = ['rtSleep', 'rtWork', 'rtLogs'];
+  Object.assign(TOOLS, { rtSleep: 'health_sleep', rtWork: 'health_workouts', rtLogs: 'health_sql' });
+  Object.assign(INPUTS, {
+    rtSleep: () => ({ start: L.shiftDate(RT.day, -RT.span), end: L.shiftDate(RT.day, 0) }),
+    rtWork: () => ({ start: L.shiftDate(RT.day, -RT.span), end: L.shiftDate(RT.day, 0) }),
+    rtLogs: () => ({ query: "SELECT local_date, tracker_id, ts, tz_offset_min, ((ts + tz_offset_min * 60) % 86400) / 60 AS m FROM v_events" +
+      " WHERE tracker_id IN ('caffeine', 'cigarettes', 'alcohol') AND local_date BETWEEN '" + L.shiftDate(RT.day, -RT.span) + "' AND '" + L.shiftDate(RT.day, 0) + "' ORDER BY ts DESC" })
+  });
+  RT_SRC.forEach((n) => { S[n] = reset({ token: 0, unsubscribe: null }); ERR_CARD[n] = 'routine'; });
+  const RT_KEYS = [['caffeine', 'cafe', 'm-caffeine'], ['cigarettes', 'cigarro', 'm-cig'], ['alcohol', 'alcohol', 'm-alcohol'], ['workout', 'workout', 'm-steps']];
+  const rtClock = (m) => m == null ? '—' : hhmm(Math.round(m));
+  function rtEnsure() {
+    const key = RT.day + ':' + RT.span;
+    if (!connector || stopped || (!RT.on && active !== 'routine')) return;
+    if (RT.on && RT.key === key) return;
+    RT.on = true; RT.key = key;
+    RT_SRC.forEach((n) => { const s = S[n]; s.token++; s.unsubscribe?.(); s.unsubscribe = null; reset(s); subscribe(n); });
+  }
+  function rtSetDay(d) { if (stopped) return; RT.day = d; RT.follow = d === dayDate; renderRoutine(); }
+  function renderRtNav() {
+    const b = (dir, delta, off) => h('button', { type: 'button', class: 'ht-icon-btn', 'data-fk': 'rt-' + dir, 'aria-label': t(delta < 0 ? 'day.prev' : 'day.next', { d: fmt.day(L.shiftDate(RT.day, delta), lang) }),
+      'aria-disabled': String(off), html: icon(dir), onclick: () => { if (!off) rtSetDay(L.shiftDate(RT.day, delta)); } });
+    swap($('rt-nav'), b('prev', -1, stopped || pageLevel()), h('span', { class: 'sl-nav-l', text: fmt.day(RT.day, lang) }), b('next', 1, stopped || pageLevel() || RT.day >= dayDate));
+    swap($('rt-controls'), h('div', { class: 'sl-seg', role: 'group', 'aria-label': t('rt.filters') }, RT_KEYS.map(([id, key]) => h('button', {
+      type: 'button', 'data-fk': 'rt-filter-' + id, 'aria-pressed': String(RT.filters.has(id)), onclick: () => { RT.filters.has(id) ? RT.filters.delete(id) : RT.filters.add(id); renderRoutine(); }
+    }, t('trk.' + key)))), h('div', { class: 'sl-seg', role: 'group', 'aria-label': t('rt.span') }, [14, 30].map((n) => h('button', {
+      type: 'button', 'data-fk': 'rt-span-' + n, 'aria-pressed': String(RT.span === n), onclick: () => { RT.span = n; renderRoutine(); }
+    }, t('rt.window', { n })))));
+  }
+  function rtDayText(r) {
+    const parts = [r.sleep.length ? t('rt.asleep') + ' ' + r.sleep.map((s) => rtClock((s.from + 1080) % 1440) + '–' + rtClock((s.to + 1080) % 1440) + (s.nap ? ' (' + t('rt.nap') + ')' : '')).join(', ') : t('rt.noWatch')];
+    RT_KEYS.forEach(([id, key]) => {
+      if (!RT.filters.has(id)) return;
+      const mins = id === 'workout' ? r.work.map((w) => (w.from + 1080) % 1440) : r.logs.filter((e) => e.id === id).map((e) => e.min).sort((a, b) => (a + 360) % 1440 - (b + 360) % 1440);
+      if (mins.length) parts.push(t('trk.' + key) + ' ' + mins.map(rtClock).join(', '));
+    });
+    return new Intl.DateTimeFormat(lang, { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(r.date + 'T12:00:00')) + ': ' + parts.join('; ');
+  }
+  function rtTable(rows) {
+    return h('details', { class: 'sl-more' }, h('summary', { text: t('table.show') }), h('table', { class: 'sl-tbl' }, h('tbody', {}, rows.map(([label, value]) => h('tr', {}, h('th', { scope: 'row', text: label }), h('td', { text: value }))))));
+  }
+  function rtChart(body, width, height, lines, label, id) {
+    const readout = h('p', { class: 'rt-readout', id: id + '-readout', role: 'status', 'aria-live': 'polite', text: t('rt.readout') });
+    const fig = h('div', { class: 'rt-plot', html: svgEl(width, height, body) }), svg = fig.firstChild;
+    svg.removeAttribute('aria-hidden'); svg.removeAttribute('focusable'); svg.setAttribute('role', 'group'); svg.setAttribute('aria-label', label); svg.setAttribute('aria-describedby', readout.id);
+    const hits = [...svg.querySelectorAll('.rt-row')];
+    let hovered = null, focused = null;
+    const show = () => { readout.textContent = lines[hovered ?? focused] ?? t('rt.readout'); };
+    hits.forEach((el, i) => {
+      el.setAttribute('tabindex', i ? '-1' : '0'); el.setAttribute('role', 'img'); el.setAttribute('aria-label', lines[i]); el.setAttribute('data-fk', id + '-' + i);
+      el.addEventListener('pointerenter', () => { hovered = i; show(); }); el.addEventListener('click', show);
+      el.addEventListener('pointerleave', () => { hovered = null; show(); });
+      el.addEventListener('focus', () => { focused = i; hits.forEach((x) => x.setAttribute('tabindex', x === el ? '0' : '-1')); show(); });
+      el.addEventListener('keydown', (e) => {
+        const to = { ArrowDown: i + 1, ArrowRight: i + 1, ArrowUp: i - 1, ArrowLeft: i - 1, Home: 0, End: hits.length - 1 }[e.key];
+        if (to != null) { e.preventDefault(); hits[(to + hits.length) % hits.length].focus(); }
+      });
+    });
+    svg.addEventListener('pointerleave', () => { hovered = null; show(); });
+    svg.addEventListener('focusout', (e) => { focused = hits.includes(e.relatedTarget) ? hits.indexOf(e.relatedTarget) : null; show(); });
+    return [readout, fig];
+  }
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.rt-readout').forEach((n) => { n.textContent = t('rt.readout'); }); });
+  function renderRtDays(rows) {
+    const W = RT.widths[0] || 320, G = 52, H = 24, B = 30 + rows.length * H, x = (m) => r2(G + m / 1440 * (W - G - 8));
+    const out = ['<defs><pattern id="rt-hatch" width="6" height="6" patternUnits="userSpaceOnUse"><path d="M-1 1l2-2M0 6l6-6M5 7l2-2" stroke="var(--line)" stroke-width="1"/></pattern></defs>'];
+    [0, 360, 720, 1080, 1440].forEach((m) => out.push(txt(x(m), 13, rtClock((m + 1080) % 1440), m === 0 ? 'start' : m === 1440 ? 'end' : 'middle') + '<path d="M' + x(m) + ' 20V' + B + '" stroke="var(--line)"/>'));
+    rows.forEach((r, i) => {
+      const y = 24 + i * H;
+      out.push('<g class="rt-row">' + txt(G - 8, y + 14, r.date.slice(8) + '/' + r.date.slice(5, 7), 'end'));
+      if (!r.sleep.some((s) => !s.nap)) out.push('<rect x="' + G + '" y="' + y + '" width="' + (W - G - 8) + '" height="20" fill="url(#rt-hatch)"/>');
+      r.sleep.forEach((s) => out.push('<rect x="' + x(s.from) + '" y="' + (y + (s.nap ? 8 : 5)) + '" width="' + r2(x(s.to) - x(s.from)) + '" height="' + (s.nap ? 6 : 12) + '" rx="2" fill="var(--m-light)" fill-opacity=".6"/>'));
+      if (RT.filters.has('workout')) r.work.forEach((w) => out.push('<rect x="' + x(w.from) + '" y="' + (y + 7) + '" width="' + Math.max(2, r2(x(w.to) - x(w.from))) + '" height="8" rx="2" fill="var(--m-steps)"/>'));
+      RT_KEYS.slice(0, 3).forEach(([id, , col]) => { if (RT.filters.has(id)) r.logs.filter((e) => e.id === id).forEach((e) => out.push('<path d="M' + x(L.routinePoint(e.date, e.min).min) + ' ' + (y + 3) + 'v16" stroke="var(--' + col + ')" stroke-width="2"/>')); });
+      out.push('<rect class="rt-hit" x="1" y="' + y + '" width="' + (W - 2) + '" height="22" fill="transparent"/></g>');
+    });
+    const keys = [];
+    if (rows.some((r) => r.sleep.some((s) => !s.nap))) keys.push(['m-light', t('rt.asleep')]);
+    if (rows.some((r) => r.sleep.some((s) => s.nap))) keys.push(['m-light', t('rt.nap')]);
+    RT_KEYS.forEach(([id, key, col]) => { if (RT.filters.has(id) && rows.some((r) => id === 'workout' ? r.work.length : r.logs.some((e) => e.id === id))) keys.push([col, t('trk.' + key)]); });
+    const legend = h('div', { class: 'act-legend' }, keys.map(([col, text]) => h('span', {}, h('i', { class: 'act-k', style: 'background:var(--' + col + ')', 'aria-hidden': 'true' }), text)),
+      rows.some((r) => !r.sleep.some((s) => !s.nap)) && h('span', {}, h('i', { class: 'act-k', style: 'background:repeating-linear-gradient(135deg,transparent 0 3px,var(--line) 3px 4px)', 'aria-hidden': 'true' }), t('rt.noWatch')));
+    swap($('rt-days'), ...rtChart(out.join(''), W, B, rows.map(rtDayText), t('rt.days'), 'rt-day'), legend, rtTable(rows.map((r) => [fmt.day(r.date, lang), rtDayText(r)])));
+  }
+  function renderRtFirst(rows) {
+    const sets = [['wake', 'rt.wake', 'm-deep'], ['coffee', 'rt.coffee', 'm-caffeine'], ['cigarette', 'rt.cigarette', 'm-cig'], ['starts', 'trk.workout', 'm-steps']];
+    const W = RT.widths[1] || 320, G = W < 480 ? 92 : 190, x = (m) => r2(G + m / 1440 * (W - G - 10)), out = [], lines = [];
+    (W < 480 ? [0, 360, 720, 1080, 1440] : [0, 240, 480, 720, 960, 1200, 1440]).forEach((m) => out.push(txt(x(m), 18, m === 1440 ? '24:00' : rtClock(m), m === 0 ? 'start' : m === 1440 ? 'end' : 'middle') + '<path d="M' + x(m) + ' 26V224" stroke="var(--line)"/>'));
+    sets.forEach(([key, label, col], i) => {
+      const pts = rows.flatMap((r) => (key === 'starts' ? r.starts : r[key] == null ? [] : [r[key]]).map((m) => ({ date: r.date, m }))), stats = L.routineStats(pts.map((p) => p.m)), y = 48 + i * 50;
+      const count = t(key === 'starts' ? (pts.length === 1 ? 'rt.workoutCount' : 'rt.workCount') : (pts.length === 1 ? 'rt.dayCount' : 'rt.daysCount'), { n: pts.length });
+      lines.push(t(label) + ', ' + count + ': ' + (pts.map((p) => fmt.day(p.date, lang) + ' ' + rtClock(p.m)).join('; ') || t('rt.empty')));
+      out.push('<g class="rt-row">' + txt(4, y - 2, esc(t(label))) + txt(4, y + 13, esc(count)));
+      if (stats.n >= 7) out.push('<rect x="' + x(stats.low) + '" y="' + (y - 10) + '" width="' + Math.max(2, x(stats.high) - x(stats.low)) + '" height="20" fill="var(--band)"/><path d="M' + x(stats.median) + ' ' + (y - 13) + 'v26" stroke="var(--ink)" stroke-width="2"/>');
+      pts.forEach((p, j) => out.push('<circle cx="' + x(p.m) + '" cy="' + (y + (j % 3 - 1) * 4) + '" r="3" fill="var(--' + col + ')" fill-opacity=".75"/>'));
+      out.push('<rect class="rt-hit" x="1" y="' + (y - 20) + '" width="' + (W - 2) + '" height="42" fill="transparent"/></g>');
+    });
+    swap($('rt-first'), ...rtChart(out.join(''), W, 232, lines, t('rt.first'), 'rt-first-row'), rtTable(rows.map((r) => [fmt.day(r.date, lang), sets.map(([key, label]) => t(label) + ': ' + (key === 'starts' ? r.starts.map(rtClock).join(', ') || '—' : rtClock(r[key]))).join('; ')])));
+  }
+  function renderRtShort(rows) {
+    const today = rows.find((r) => r.date === now().date), facts = [];
+    const add = (key, values, value, clock) => {
+      const stats = L.routineStats(values), format = clock ? rtClock : (m) => fmt.dur(Math.round(m), lang), ready = stats.n >= 7;
+      facts.push([t(key), ready ? format(stats.median) : value == null ? '—' : format(value), ready ? t(clock ? 'rt.wakeRange' : 'rt.gapRange', { n: stats.n, a: format(stats.low), b: format(stats.high) }) : !stats.n ? t('rt.empty') : stats.n === 1 ? t('rt.learning', { n: 6 }) : t('rt.learningDays', { n: stats.n, k: 7 - stats.n })]);
+    };
+    add('rt.wakeFact', rows.map((r) => r.wake), today?.wake, true);
+    const gap = (r, key) => r?.[key + 'Gap'] ?? null;
+    add('rt.cigFact', rows.map((r) => gap(r, 'cigarette')), gap(today, 'cigarette'));
+    add('rt.coffeeFact', rows.map((r) => gap(r, 'coffee')), gap(today, 'coffee'));
+    const starts = rows.flatMap((r) => r.starts);
+    facts.push([t('rt.workouts'), L.routineWindows(starts).map(([a, b]) => rtClock(a) + '–' + rtClock(b)).join(t('rt.or')) || '—',
+      (!starts.length ? t('rt.empty') + '. ' : '') + t('rt.workLine', { n: t(starts.length === 1 ? 'rt.workoutCount' : 'rt.workCount', { n: starts.length }), d: t(RT.span === 1 ? 'rt.dayCount' : 'rt.daysCount', { n: RT.span }) })]);
+    swap($('rt-short'), facts.map(([label, value, note]) => h('dl', { class: 'rt-fact' }, h('dt', { text: label }), h('dd', { text: value }), h('dd', {}, h('p', { text: note })))));
+  }
+  function renderRoutine() {
+    if (RT.follow) RT.day = dayDate;
+    rtEnsure();
+    if (active !== 'routine') return;
+    $('rt-grid').hidden = pageLevel(); renderRtNav();
+    RT.widths = ['rt-days', 'rt-first'].map((id) => Math.round($(id).clientWidth));
+    const states = RT_SRC.map((n) => sourceState(n, 'routine', 3));
+    if (states.some(Boolean)) {
+      swap($('rt-days'), states.filter(Boolean));
+      const waiting = RT_SRC.some((n) => !S[n].data && !S[n].error);
+      ['rt-first', 'rt-short'].forEach((id) => swap($(id), waiting ? skeleton(t(id === 'rt-first' ? 'rt.first' : 'rt.short'), 2) : stateBox(t('st.errX', { x: t('card.routine') }), t('st.same', { x: t('rt.days') })))); return;
+    }
+    const rows = L.routineRows(S.rtSleep.data.sessions, S.rtWork.data.workouts, S.rtLogs.data, RT.day, RT.span);
+    renderRtDays(rows); renderRtFirst(rows); renderRtShort(rows);
+    if (!rows.some((r) => r.sleep.length || r.work.length || r.logs.length)) $('rt-days').prepend(stateBox(t('rt.empty')));
+    RT_SRC.forEach((n) => { const note = staleNote(n, 'routine'); if (note) $('rt-days').append(note); });
+    if (S.rtLogs.data.truncated) {
+      ['rt-days', 'rt-first', 'rt-short'].forEach((id) => $(id).append(h('p', { class: 'sl-cap', text: t('rt.truncated') })));
+    }
+  }
+  const rtResize = () => {
+    if (active === 'routine' && ['rt-days', 'rt-first'].some((id, i) => Math.round($(id).clientWidth) !== RT.widths[i])) renderRoutine();
+  };
+  try {
+    const observer = new ResizeObserver(rtResize);
+    ['rt-days', 'rt-first'].forEach((id) => observer.observe($(id)));
+  } catch (e) { /* older engines: the resize listener still runs */ }
+  window.addEventListener('resize', rtResize);
+  /* ==== end Routine tab ==== */
+
   function render() {
     const n = now();
     $('today-grid').hidden = pageLevel();   // one page-level notice instead of a copy per section
     if (pageLevel()) Q.clear();
     renderHeader(); renderPageNotice(); renderDial(n); renderSleep(); renderRecovery(); renderSteps(n); renderSummary(n); renderTimeline(); renderWorkoutsNote(); renderQuick(); renderUndo(); revealRow();
     renderSleepTab();
+    renderRoutine();
     renderHealth();   /* Health tab hook */
     renderActivity();   // Activity tab hook
     if (moodOpen) renderMoodFaces();
