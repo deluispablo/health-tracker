@@ -161,10 +161,11 @@ export async function evaluateContrast(db: D1Database, origin: ContrastOrigin, o
   return { ...family, resolved: { start: range.start, end: range.end }, excluded, tests_last_24h: t.tests_last_24h, extra: {} };
 }
 
-export async function healthContrast(db: D1Database, args: unknown, deps: { nowSec: number; tz: string }): Promise<Record<string, unknown> & Envelope> {
+export async function healthContrast(db: D1Database, args: unknown, deps: { nowSec: number; tz: string }, ctx: ExecutionContext): Promise<Record<string, unknown> & Envelope> {
   const origin = validateContrastArgs(args, deps.nowSec, deps.tz);
   const family = await evaluateContrast(db, origin, deps);
-  await analysisLogStatement(db, origin.tool, family.tests, deps.nowSec * 1000).run();
+  ctx.waitUntil(Promise.resolve().then(() => analysisLogStatement(db, origin.tool, family.tests, deps.nowSec * 1000).run())
+    .catch((cause: unknown) => { console.error("analysis_log health_contrast", cause instanceof Error ? cause.name : "UnknownError"); }));
   return { ...shapeResponse({ rows: rankRows(family.rows).map(publicRow) }, ["rows"], { range: family.resolved, excluded: family.excluded,
     tests: family.tests, tests_last_24h: family.tests_last_24h + family.tests }) };
 }

@@ -1,12 +1,15 @@
-import { applyD1Migrations } from "cloudflare:test";
+import { applyD1Migrations, createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { cusum, evaluatePeriods, healthPeriods, streaks, validatePeriodsArgs } from "../../src/mcp/tools/insights/periods";
 import { BANNED } from "../../src/mcp/tools/insights/catalog";
 import { loadDayTable, resolveRange } from "../../src/mcp/tools/insights/units";
 import type { FamilyRow, Origin } from "../../src/mcp/tools/insights/types";
 import { FIXTURE, seedInsightsFixture } from "../fixtures/insights";
 
+let ctx: ExecutionContext;
+beforeEach(() => { ctx = createExecutionContext(); });
+afterEach(async () => { await waitOnExecutionContext(ctx); });
 const deps = { nowSec: FIXTURE.now, tz: FIXTURE.tz };
 const origin: Extract<Origin, { tool: "health_periods" }> = { tool: "health_periods", args: { start: FIXTURE.start, end: FIXTURE.end, behaviors: ["cigarettes"] } };
 const dates = Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(2026, 8, i + 1)).toISOString().slice(0, 10));
@@ -89,16 +92,17 @@ it("mood week with only tired taps has null positive share", async () => {
   ]);
 });
 it("empty database returns empty lists", async () => {
-  expect(await healthPeriods(env.DB, {}, deps)).toMatchObject({ rows: [], streaks: [], changes: [], mood_weeks: [], anomalies: [], tests: 0, tests_last_24h: 0, truncated: false });
+  expect(await healthPeriods(env.DB, {}, deps, ctx)).toMatchObject({ rows: [], streaks: [], changes: [], mood_weeks: [], anomalies: [], tests: 0, tests_last_24h: 0, truncated: false });
 });
 it("evaluatePeriods writes nothing and the public call executes day table plus log", async () => {
   const prepare = vi.spyOn(env.DB, "prepare");
   await evaluatePeriods(env.DB, origin, deps);
   expect(prepare).toHaveBeenCalledTimes(1);
   prepare.mockClear();
-  await healthPeriods(env.DB, {}, deps);
+  await healthPeriods(env.DB, {}, deps, ctx);
   expect(prepare).toHaveBeenCalledTimes(2);
   prepare.mockRestore();
+  await waitOnExecutionContext(ctx);
   expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM analysis_log").first("n")).toBe(1);
 });
 it("validates arguments and preserves relative origin ranges", () => {
@@ -110,7 +114,7 @@ it("validates arguments and preserves relative origin ranges", () => {
 
 it("current 9-day cigarette absence streak returns an rhr row within 25 percent of minus 4", async () => {
   await seedInsightsFixture(env.DB);
-  const result = await healthPeriods(env.DB, origin.args, deps);
+  const result = await healthPeriods(env.DB, origin.args, deps, ctx);
   expect(result.streaks).toEqual(expect.arrayContaining([expect.objectContaining({ behavior: "cigarettes", state: "absent", days: 9, current: true })]));
   const row = (result.rows as FamilyRow[]).find(r => r.metric === "rhr");
   expect(row?.diff).toBeGreaterThanOrEqual(-5);
@@ -124,7 +128,7 @@ it("mood_enfadado during vs before", async () => {
 });
 it("anomaly listed and excluded from streak comparisons", async () => {
   await seedInsightsFixture(env.DB);
-  const result = await healthPeriods(env.DB, origin.args, deps);
+  const result = await healthPeriods(env.DB, origin.args, deps, ctx);
   expect(result.anomalies).toEqual(expect.arrayContaining([expect.objectContaining({ date: FIXTURE.planted.illnessDays[0] })]));
   const family = await evaluatePeriods(env.DB, { ...origin, args: { start: "2026-08-05", end: "2026-08-12", behaviors: ["cigarettes"] } }, deps);
   expect(family.extra.anomalies).toEqual(expect.arrayContaining([expect.objectContaining({ date: "2026-08-10" })]));
@@ -135,7 +139,7 @@ it("streak rows capped at 40 while the evaluator keeps the full families", async
   const family = await evaluatePeriods(env.DB, { tool: "health_periods", args: { start: FIXTURE.start, end: FIXTURE.end } }, deps);
   expect(family.tests).toBeGreaterThan(40);
   expect(family.rows).toHaveLength(family.tests);
-  const result = await healthPeriods(env.DB, { start: FIXTURE.start, end: FIXTURE.end }, deps);
+  const result = await healthPeriods(env.DB, { start: FIXTURE.start, end: FIXTURE.end }, deps, ctx);
   expect((result.rows as unknown[]).length).toBeLessThanOrEqual(40);
   for (const [key, max] of [["streaks", 10], ["changes", 10], ["mood_weeks", 8], ["anomalies", 10]] as const) expect((result[key] as unknown[]).length).toBeLessThanOrEqual(max);
   expect(JSON.stringify(result).length).toBeLessThanOrEqual(20000);
@@ -185,7 +189,8 @@ it("records every attempted row once and includes prior tests in the 24-hour tot
     env.DB.prepare("INSERT INTO analysis_log VALUES (?, 'health_scan', 7)").bind(FIXTURE.now * 1000 - 1),
     env.DB.prepare("INSERT INTO analysis_log VALUES (?, 'health_scan', 100)").bind(FIXTURE.now * 1000 - 86400001),
   ]);
-  const result = await healthPeriods(env.DB, smallOrigin.args, deps);
+  const result = await healthPeriods(env.DB, smallOrigin.args, deps, ctx);
   expect(result).toMatchObject({ tests: 2, tests_last_24h: 9 });
+  await waitOnExecutionContext(ctx);
   expect(await env.DB.prepare("SELECT tests FROM analysis_log WHERE tool = 'health_periods'").first("tests")).toBe(2);
 });

@@ -1,3 +1,4 @@
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { expect, it, vi } from "vitest";
 
 it("180-day contrast JS path takes ≤20 ms cold and ≤8 ms warm (median of five)", async () => {
@@ -43,10 +44,12 @@ it("180-day contrast JS path takes ≤20 ms cold and ≤8 ms warm (median of fiv
     b: { where: [...where, { metric: "steps", op: "<", value: 7000 }] } };
 
   const measure = async () => {
+    const ctx = createExecutionContext();
     const before = performance.now();
-    const result = await healthContrast(db, args, deps);
+    const result = await healthContrast(db, args, deps, ctx);
     const serialized = JSON.stringify(result);
     const elapsed = performance.now() - before;
+    await waitOnExecutionContext(ctx);
     expect(result.tests).toBe(16);
     expect(result.rows).toHaveLength(15);
     for (const row of result.rows as { n_a: number; n_b: number; diff: number | null; sensitivity: unknown }[]) {

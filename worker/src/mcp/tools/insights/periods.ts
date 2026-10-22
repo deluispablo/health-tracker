@@ -192,10 +192,11 @@ export async function evaluatePeriods(db: D1Database, origin: Extract<Origin, { 
       changes: changes.sort((a, b) => b.alarm.localeCompare(a.alarm) || a.metric.localeCompare(b.metric)).slice(0, 10), mood_weeks: moodWeeks(t), anomalies } };
 }
 
-export async function healthPeriods(db: D1Database, args: unknown, deps: { nowSec: number; tz: string }): Promise<Record<string, unknown> & Envelope> {
+export async function healthPeriods(db: D1Database, args: unknown, deps: { nowSec: number; tz: string }, ctx: ExecutionContext): Promise<Record<string, unknown> & Envelope> {
   const origin: Extract<Origin, { tool: "health_periods" }> = { tool: "health_periods", args: validatePeriodsArgs(args, deps) };
   const family = await evaluatePeriods(db, origin, deps);
-  await analysisLogStatement(db, origin.tool, family.tests, deps.nowSec * 1000).run();
+  ctx.waitUntil(Promise.resolve().then(() => analysisLogStatement(db, origin.tool, family.tests, deps.nowSec * 1000).run())
+    .catch((cause: unknown) => { console.error("analysis_log health_periods", cause instanceof Error ? cause.name : "UnknownError"); }));
   const body: Record<string, unknown> = { ...family.extra, rows: rankRows(family.rows).slice(0, 40).map(publicRow) };
   return shapeResponse(body, ["rows", "anomalies", "changes", "mood_weeks", "streaks"],
     { range: family.resolved, excluded: family.excluded, tests: family.tests, tests_last_24h: family.tests_last_24h });
