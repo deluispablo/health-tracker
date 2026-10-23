@@ -708,7 +708,8 @@ try {
     const m = typeof s === 'string' ? /(\d{2}):(\d{2})$/.exec(s) : null;
     return m ? Number(m[1]) * 60 + Number(m[2]) : null;
   }
-  const USER_TZ = 'Europe/Madrid';   // fallback until health_status reports the owner's zone  /* UTC offset in minutes of a zone at an instant, from Intl's longOffset ("GMT+02:00", "GMT" for zero). */
+  const USER_TZ = 'Europe/Madrid';   // fallback until health_status reports the owner's zone
+  /* UTC offset in minutes of a zone at an instant, from Intl's longOffset ("GMT+02:00", "GMT" for zero). */
   function tzOffset(tz, ms) {
     const n = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'longOffset' }).formatToParts(ms).find((p) => p.type === 'timeZoneName')?.value ?? '';
     const m = /([+-])(\d{2}):(\d{2})/.exec(n);
