@@ -26,6 +26,7 @@ const COPY = {
   'hoy.key.sleep': ['Sleep', 'Sueño'],
   'hoy.key.steps': ['Steps', 'Pasos'],
   'hoy.key.usual': ['usual {x}', 'habitual {x}'],
+  'hoy.key.wait': ["Tonight's sleep hasn't arrived from the watch yet.", 'La noche de hoy aún no ha llegado del reloj.'],
   'hoy.key.goal': ['of {g}', 'de {g}'],
   'hoy.key.at': ['on pace', 'al ritmo'],
   'hoy.key.ahead': ['{n} ahead', '{n} por delante'],
@@ -387,13 +388,18 @@ function render(ctx) {
   /* 2 Clave */
   const keyCard = (() => {
     const st = S.daily.state('sleep', 2); if (st) return h('section', { class: 'hx-key' }, st);
-    const bed = cell('bedtime_local'), wake = cell('waketime_local'), steps = val('steps'), azm = val('azm');
+    /* FU1 ruling b-d: today with no main session yet (decided by the sessions source, naps do not count) shows yesterday's night, labelled, with one note. */
+    const sl = S.sleep.data, fb = date === ctx.today && !!sl && !sl.truncated && !L.mainSession(sl.sessions, date), sd = fb ? y : date;
+    const sMin = val('sleep_min', sd), sR = fb ? L.typicalRange(daily, 'sleep_min', sd) : sleepR;
+    const bed = cell('bedtime_local', sd), wake = cell('waketime_local', sd), steps = val('steps'), azm = val('azm');
     const times = L.localMinutes(bed) != null && L.localMinutes(wake) != null ? hm(L.localMinutes(bed)) + ' → ' + hm(L.localMinutes(wake)) : null;
-    const sRow = row(t('hoy.key.sleep'), fin(sleepMin) && sleepR.learning == null ? strip(sleepR.low, sleepR.high, sleepMin) : null, fin(sleepMin) ? dh(sleepMin, lang) : '—', [times, usualDur(sleepR)].filter(Boolean).join(' · '));
+    const sRow = row(t('hoy.key.sleep'), fin(sMin) && sR.learning == null ? strip(sR.low, sR.high, sMin) : null, fin(sMin) ? dh(sMin, lang) : '—',
+      [fb && fin(sMin) ? t('ins.night', { d: fmt.wday(sd, lang) }) : null, times, usualDur(sR)].filter(Boolean).join(' · '));
+    const wait = fb ? h('p', { class: 'hx-note', text: t('hoy.key.wait') }) : null;
     const bar = fin(steps) ? h('div', { class: 'hx-bar', 'aria-hidden': 'true' }, h('i', { style: 'width:' + pc(Math.min(1, steps / goal)) }), isNow ? h('b', { class: 'hx-tick', style: 'left:' + pc(L.expectedSteps(end, goal) / goal) }) : null) : null;
     const pTxt = pace && isNow ? (pace.k === 'at' ? t('hoy.key.at') : t('hoy.key.' + pace.k, { n: n0(pace.d) })) : null;
     const pRow = row(t('hoy.key.steps'), bar, fin(steps) ? n0(steps) : '—', [t('hoy.key.goal', { g: n0(goal) }), pTxt, fin(azm) ? t('hoy.key.azm', { n: n0(azm) }) : null].filter(Boolean).join(' · '));
-    return h('section', { class: 'hx-key' }, sRow, pRow, S.daily.stale('sleep'));
+    return h('section', { class: 'hx-key' }, sRow, wait, pRow, S.daily.stale('sleep'));
   })();
 
   /* 3 De ayer a hoy */

@@ -77,12 +77,13 @@
     }
     const days = per.map((v) => v.length >= 3 ? { bed: med(v.map((x) => x[0])), wake: med(v.map((x) => x[1])), dur: med(v.map((x) => x[2])), n: v.length } : null);
     const valid = [0, 1, 2, 3, 4, 5, 6].filter((i) => days[i]);
-    if (!valid.length) return { learning: true, n: all.length, need: 21, counts: per.map((v) => v.length) };
+    const few = per.filter((v) => v.length).length < 4;   // FU1 ruling a: a weekday has data with 1 night; under 4 such weekdays, no Todos claim
+    if (!valid.length) return few ? { days, counts: per.map((v) => v.length), few, lateClear: false, shortClear: false } : { learning: true, n: all.length, need: 21, counts: per.map((v) => v.length) };
     const half = (k) => { const r = L.typicalRange({ columns: ['local_date', 'bed', 'dur'], rows: all }, k, date); return r.learning != null ? Infinity : (r.high - r.low) / 2; };
     const late = valid.reduce((a, i) => days[i].bed > days[a].bed ? i : a), short = valid.reduce((a, i) => days[i].dur < days[a].dur ? i : a);
-    return { days, counts: per.map((v) => v.length), late, short,
-      lateClear: valid.length >= 2 && days[late].bed - mean(valid.map((i) => days[i].bed)) > half('bed'),
-      shortClear: valid.length >= 2 && mean(valid.map((i) => days[i].dur)) - days[short].dur > half('dur') };
+    return { days, counts: per.map((v) => v.length), late, short, few,
+      lateClear: !few && days[late].bed - mean(valid.map((i) => days[i].bed)) > half('bed'),
+      shortClear: !few && mean(valid.map((i) => days[i].dur)) - days[short].dur > half('dur') };
   }
   /* Últimas noches: `span` nights to the date on the 18:00 scale; usual windows are typicalRange of bed and wake;
      the weekend shift is the median bedtime of nights waking on Saturday or Sunday minus the others', with 2 of each, named beyond 30 min. */
@@ -112,6 +113,8 @@
   const copy = {
     'su.last': ['Last night', 'Anoche'], 'su.nightOf': ['Night of {d}', 'Noche del {d}'],
     'su.none': ['No sleep recorded that night.', 'Sin sueño registrado esa noche.'],
+    'su.wait': ["Tonight's sleep hasn't arrived from the watch yet.", 'La noche de hoy aún no ha llegado del reloj.'],
+    'su.wk.fewDays': ['Not enough days yet.', 'Aún pocos días.'], 'su.noStages': ['No stages recorded this night.', 'No hay fases registradas esta noche.'],
     'su.lead': ['You slept {d}.', 'Dormiste {d}.'], 'su.lead.below': ['You slept {d}, less than usual.', 'Dormiste {d}, menos de lo habitual.'],
     'su.lead.above': ['You slept {d}, more than usual.', 'Dormiste {d}, más de lo habitual.'], 'su.lead.in': ['You slept {d}, within your usual.', 'Dormiste {d}, dentro de lo habitual.'],
     'su.bed.same': ['You went to bed at your usual time.', 'Te acostaste a tu hora de siempre.'],
@@ -220,23 +223,26 @@
     const sql = (name, key) => ctx.source(name, { tool: 'health_sql', through: (d) => d, input: (d) => ({ query: suQueries(d)[key] }) });
 
     const sl = ctx.source('slsleep'), nightsSrc = sql('suNights', 'nights'), eveSrc = sql('suEve', 'eve'), finds = ctx.source('findings');
-    const hrA = ctx.source('suHrA', { tool: 'health_intraday', through: (d) => L.shiftDate(d, -1), input: (d) => ({ metric: 'hr', date: L.shiftDate(d, -1), resolution: '5m', from: '18:00' }) });
-    const hrB = ctx.source('suHrB', { tool: 'health_intraday', through: (d) => d, input: (d) => ({ metric: 'hr', date: d, resolution: '5m', to: '12:00' }) });
+    const sessions = sl.data && !sl.data.truncated ? (sl.data.sessions ?? []) : [];
+    /* FU1 ruling b/c: today without its main night yet (naps do not count) shows yesterday's main night entirely, ranges anchored on it, with one note. */
+    const fb = date === ctx.today && !!sl.data && !sl.data.truncated && !L.mainSession(sessions, date), nd = fb ? L.shiftDate(date, -1) : date, s = L.mainSession(sessions, nd);
+    const pd = (d) => fb ? nd : d;   // the night's wake date; a fallback reads under its own source names, since a source keeps its first input
+    const hrA = ctx.source(fb ? 'suHrA:' + nd : 'suHrA', { tool: 'health_intraday', through: (d) => L.shiftDate(pd(d), -1), input: (d) => ({ metric: 'hr', date: L.shiftDate(pd(d), -1), resolution: '5m', from: '18:00' }) });
+    const hrB = ctx.source(fb ? 'suHrB:' + nd : 'suHrB', { tool: 'health_intraday', through: pd, input: (d) => ({ metric: 'hr', date: pd(d), resolution: '5m', to: '12:00' }) });
     /* A gate is the card's own state element (loading, error) or, for a truncated source, the partial note (R2.7); null when the data is whole.
        Called once per card: a DOM element can sit in one card only. */
     const gate = (src, k) => () => src.state(k, 3) ?? (src.data?.truncated ? line(t('su.partial')) : null);
     const slGate = gate(sl, 'suSleep'), nGate = gate(nightsSrc, 'suNights'), eGate = gate(eveSrc, 'suEve');
-    const sessions = sl.data && !sl.data.truncated ? (sl.data.sessions ?? []) : [], s = L.mainSession(sessions, date);
     const nights = suRows(nightsSrc.data), eves = suRows(eveSrc.data), findList = Array.isArray(finds.data?.findings) ? finds.data.findings : [];
     const FIELDS = ['minutes_asleep', 'efficiency', 'latency_min', 'deep_min', 'rem_min', 'light_min', 'awake_min'];
-    const tbl = L.sleepTable(sessions, FIELDS), rng = (f, w) => L.typicalRange(tbl, f, date, w);
+    const tbl = L.sleepTable(sessions, FIELDS), rng = (f, w) => L.typicalRange(tbl, f, nd, w);
     const bedTbl = { columns: ['local_date', 'bed'], rows: tbl.rows.map((r) => { const m = L.mainSession(sessions, r[0]); return [r[0], b18(m?.start_local)]; }) };
     const times = s ? { a: s.start_local.slice(11, 16), b: s.end_local.slice(11, 16) } : null;
     const STG = [['DEEP', 'deep_min'], ['REM', 'rem_min'], ['LIGHT', 'light_min'], ['AWAKE', 'awake_min']];
 
     /* 1. Resumen: duration vs usual and the bedtime shift (within 15 min = "your usual time"); sub line: awake time and any stage out of p10–p90. */
-    const sumGate = slGate(), sumBody = sumGate ? [sumGate] : !s ? [line(t('su.none'), 'hx-lead')] : (() => {
-      const r = rng('minutes_asleep'), st = L.rangeStatus(s.minutes_asleep, r), br = L.typicalRange(bedTbl, 'bed', date), bed = b18(s.start_local);
+    const sumGate = slGate(), sumBody = sumGate ? [sumGate] : !s ? (fb ? [] : [line(t('su.none'), 'hx-lead')]) : (() => {
+      const r = rng('minutes_asleep'), st = L.rangeStatus(s.minutes_asleep, r), br = L.typicalRange(bedTbl, 'bed', nd), bed = b18(s.start_local);
       const lead = [t(finite(s.minutes_asleep) ? (st === 'none' ? 'su.lead' : 'su.lead.' + st) : 'su.none', { d: hm(s.minutes_asleep ?? 0) })];
       if (br.learning == null && bed != null) { const d = bed - br.median; lead.push(t(Math.abs(d) < 15 ? 'su.bed.same' : d > 0 ? 'su.bed.late' : 'su.bed.early', { d: hm(Math.abs(d)) })); }
       const out = STG.map(([k, f]) => [k, L.rangeFlag(s[f], rng(f, true))]).filter((x) => x[1]), known = STG.every(([, f]) => rng(f).learning == null);
@@ -244,7 +250,8 @@
         out.length ? t('su.ph.out', { x: out.map(([k, fl]) => t('su.st.' + k).toLowerCase() + ' ' + t('su.' + fl)).join(', ') }) : known ? t('su.ph.ok') : null].filter(Boolean);
       return [line(lead.join(' '), 'hx-lead'), sub.length ? line(sub.join(' ')) : null];
     })();
-    const sum = h('section', { class: 'hx-sum' }, h('p', { class: 'met-l', text: date === ctx.today ? t('su.last') : t('su.nightOf', { d: fmt.wday(date, lang) }) }), sumBody, sl.stale('suSleep'));
+    const sum = h('section', { class: 'hx-sum' }, h('p', { class: 'met-l', text: date === ctx.today && !(fb && s) ? t('su.last') : t('su.nightOf', { d: fmt.wday(nd, lang) }) }), sumBody,
+      fb && !sumGate ? line(t('su.wait'), s ? 'hx-sub' : 'hx-lead') : null, sl.stale('suSleep'));
 
     /* 2. Clave: value, strip (band p25–p75, scale padded by the band width) and "habitual". */
     const strip = (v, r) => {
@@ -258,8 +265,8 @@
     const krow = (name, f, show, showR, pre) => { const v = s?.[f], r = rng(f);
       return h('div', { class: 'hx-row' }, h('span', { class: 'hx-n', text: name }), strip(v, r), h('span', { class: 'hx-v', text: finite(v) ? show(v) : '—' }),
         h('span', { class: 'hx-s', text: (pre ?? '') + (r.learning != null ? t('su.usualIn', { k: r.learning }) : t('su.usual', { r: showR(r) })) })); };
-    const key = h('section', { class: 'hx-key' }, slGate() ?? (!s ? line(t('su.none')) : [
-      krow(t('su.k.asleep'), 'minutes_asleep', hm, (r) => hm(r.low) + '–' + hm(r.high), t('su.span', times) + ' · '),
+    const key = h('section', { class: 'hx-key' }, slGate() ?? (!s && !fb ? line(t('su.none')) : [   // fallback without a night: the rows with — and their usual (ruling c)
+      krow(t('su.k.asleep'), 'minutes_asleep', hm, (r) => hm(r.low) + '–' + hm(r.high), times ? t('su.span', times) + ' · ' : ''),
       krow(t('su.k.eff'), 'efficiency', pct, (r) => num(r.low) + '–' + pct(r.high)),
       krow(t('su.k.lat'), 'latency_min', hm, (r) => num(r.low) + '–' + num(r.high) + (lang === 'es' ? ' min' : 'm'))]));
 
@@ -302,7 +309,7 @@
 
     /* 3. La noche (sleep.py night()): bed − 30 min to wake + 30 min, hour grid, stages, the night pulse in 5-min ticks. */
     const g = s ? L.hypnogram(s) : null;
-    const nightGate = slGate(), nightBody = nightGate ? [nightGate] : !g || !g.bars.length ? [line(t('su.none'))] : (() => {
+    const nightGate = slGate(), nightBody = nightGate ? [nightGate] : !g || !g.bars.length ? [s ? line(t('su.noStages')) : fb ? HT.ins.learning(ctx, 0, 1, { unit: 'nights' }) : line(t('su.none'))] : (() => {
       const W = wide ? 680 : 326, A = g.bed - 30, B = g.wake + 30, G = 64, HY0 = 14, PB = 140, PH = 40, AX = 156, Hh = 162;
       const X = (m) => r1(G + (m - A) / (B - A) * (W - G - 8)), o = [], ticks = [];
       for (let m = Math.ceil(A / 60) * 60; m <= B; m += 60) { ticks.push(m); o.push('<path d="M' + X(m) + ' ' + (HY0 - 6) + 'V' + PB + '" stroke="var(--line)" stroke-width="1"/>'); }
@@ -312,7 +319,7 @@
       for (const p of pts) {
         const m = L.localMinutes(p?.[0]), v = p?.[1];
         if (m == null || !finite(v) || v <= 0 || typeof p[0] !== 'string') continue;
-        const nm = m + (p[0].slice(0, 10) === date ? 720 : -720);
+        const nm = m + (p[0].slice(0, 10) === nd ? 720 : -720);
         if (nm < A || nm > B) continue;
         o.push('<path d="M' + X(nm) + ' ' + PB + 'V' + r1(PB - Math.max(2, Math.min(PH, (v - 45) * PH / 40))) + '" stroke="var(--m-hr)" stroke-width="2" stroke-linecap="round" opacity=".7"/>');
       }
@@ -368,17 +375,17 @@
     })() : null;
 
     /* 5. Fases: one stacked bar, then each stage's duration, share and usual range (pill text beyond p10–p90). */
-    const phases = card('sx-phases', t('su.ph.t'), t('su.ph.s'), slGate() ?? (!s ? line(t('su.none')) : (() => {
-      const vals = STG.map(([k, f]) => [k, f, finite(s[f]) ? s[f] : 0]), tot = vals.reduce((a, x) => a + x[2], 0) || 1;
+    const phases = card('sx-phases', t('su.ph.t'), t('su.ph.s'), slGate() ?? (!s && !fb ? line(t('su.none')) : (() => {
+      const vals = STG.map(([k, f]) => [k, f, finite(s?.[f]) ? s[f] : 0]), tot = vals.reduce((a, x) => a + x[2], 0) || 1;
       return [h('div', { class: 'sx-stack', 'aria-hidden': 'true' }, vals.map(([k, , v]) => h('i', { style: 'flex:' + v + ';background:var(--' + COL[k] + ')' }))),
-        h('div', { class: 'sx-phs' }, vals.map(([k, f, v]) => { const r = rng(f), fl = L.rangeFlag(s[f], rng(f, true));
+        h('div', { class: 'sx-phs' }, vals.map(([k, f, v]) => { const r = rng(f), fl = L.rangeFlag(s?.[f], rng(f, true));
           return h('div', { class: 'sx-ph' }, h('span', { class: 'sx-sw', style: 'background:var(--' + COL[k] + ')' }), h('span', { class: 'hx-n', text: t('su.st.' + k) }),
-            h('span', { class: 'hx-v', text: finite(s[f]) ? hm(v) : '—' }), h('span', { class: 'sx-pct', text: pct(Math.round(v * 100 / tot)) }),
+            h('span', { class: 'hx-v', text: finite(s?.[f]) ? hm(v) : '—' }), h('span', { class: 'sx-pct', text: s ? pct(Math.round(v * 100 / tot)) : '—' }),
             h('span', { class: 'hx-s', text: r.learning != null ? t('su.ph.learn', { k: r.learning }) : t('su.ph.usual', { a: num(r.low), b: num(r.high) }) + (fl ? ' · ' + t('su.' + fl) : '') })); }))];
     })()));
 
     /* 6. Qué pudo influir. */
-    const eveRow = eves?.find((r) => r.n === date) ?? null, infl = suInfluence(eveRow, findList);
+    const eveRow = eves?.find((r) => r.n === nd) ?? null, infl = suInfluence(eveRow, findList);
     const inflBody = !eves ? [eGate() ?? line(t('su.partial'))] : !eveRow ? [line(t('su.inf.noBed'))] : !infl.length ? [line(t('su.inf.none'))]
       : [h('ul', { class: 'sx-list' }, infl.map((r) => {
         const what = r.k === 'alcohol' ? t(r.drinks === 1 ? 'su.inf.alc1' : 'su.inf.alcN', { n: num(r.drinks, r.drinks % 1 ? 1 : 0), t: r.at })
@@ -387,7 +394,7 @@
         const sub = r.finding ? String(r.finding.statement ?? '') + (finite(f.n_a) && finite(f.n_b) ? ' (' + t('ins.find.n', { a: f.n_a, b: f.n_b }) + ')' : '') : fact ? t('su.inf.cafFact', { d: ago(r.before) }) : null;
         return h('li', {}, h('span', { class: 'hx-gl', html: glyph(r.k) }), h('div', {}, h('b', { text: what }), fact ? '.' : t('su.inf.before', { d: ago(r.before) }), sub ? line(sub) : null));
       }))];
-    const infl6 = HT.ins.card({ cls: 'sx-infl', title: t('su.inf.t'), sub: date === ctx.today ? t('su.inf.s') : t('su.inf.s2'), body: [...inflBody, eveSrc.stale('suEve')] });
+    const infl6 = HT.ins.card({ cls: 'sx-infl', title: t('su.inf.t'), sub: date === ctx.today && !fb ? t('su.inf.s') : t('su.inf.s2'), body: [...inflBody, eveSrc.stale('suEve')] });
     infl6.append(h('p', { class: 'hx-note sx-foot' }, t('su.inf.foot') + ' ', h('button', { type: 'button', class: 'sx-link', 'data-fk': 'su-find', text: t('su.inf.see'),
       onclick: () => { const f = ctx.root.querySelector('.hx-find'); f?.scrollIntoView?.({ block: 'start' }); f?.querySelector?.('h2')?.focus?.(); } })));
 
@@ -404,7 +411,7 @@
       const sel = HT.sel.get('sueno:wk') ?? null, d = sel == null ? null : w.days[sel];
       const text = sel != null ? (d ? t('su.wk.sel', { d: names[sel], a: hh(d.bed + 1080), b: hh(d.wake + 1080), x: hm(d.dur), n: d.n }) : t('su.wk.few', { d: names[sel], n: w.counts[sel] }))
         : w.lateClear || w.shortClear ? t(w.lateClear && w.shortClear ? 'su.wk.both' : w.lateClear ? 'su.wk.late' : 'su.wk.short',
-          { a: names[w.late], ta: hh(w.days[w.late].bed + 1080), b: names[w.short], db: hm(w.days[w.short].dur) }) : t('ins.wk.flat');
+          { a: names[w.late], ta: hh(w.days[w.late].bed + 1080), b: names[w.short], db: hm(w.days[w.short].dur) }) : t(w.few ? 'su.wk.fewDays' : 'ins.wk.flat');
       const had = weekBox.contains(document.activeElement) ? document.activeElement.getAttribute('data-fk') : null;
       weekBox.replaceChildren(HT.ins.chips(ctx, sel, (i) => { HT.sel.set('sueno:wk', i); drawWeek(); }),
         h('div', { class: 'ix-wd', role: 'img', 'aria-label': text }, w.days.flatMap((x, i) => {

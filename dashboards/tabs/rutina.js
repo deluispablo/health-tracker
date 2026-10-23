@@ -140,24 +140,24 @@
 
   /* C7 (R2.15): over the last 30 days, each A event is paired once with the first event of each other kind B in (0, 60] min after it;
      an event may be the B of several As. Nodes: the known trackers, moods and Despertar (the main sleep's wake time). A >= 5; ranked by share,
-     then matches, then A count, then name. delay: the median of the matched delays. */
+     then matches, then A count, then name. delay: the median of the matched delays.
+     R2.9: an A counts only on a known day (any log) on or after B's first log; Despertar as B has no first log. */
   function rtChains(ev, nights, date) {
     if (!ev) return [];
     const ids = [...L.CHIPS.map((c) => c.id).filter(Boolean), ...MOOD], idx = (d) => Math.round((Date.parse(d) - Date.parse(ev.s)) / 86400000);
-    const evs = ev.list.filter((e) => ids.includes(e.k) && within(e.d, date, 30)).map((e) => ({ k: e.k, t: e.t }));
-    for (const [d, r] of nights ?? []) { const w = L.localMinutes(r.waketime_local); if (w != null && within(d, date, 30)) evs.push({ k: 'wake', t: idx(d) * 1440 + w }); }
+    const evs = ev.list.filter((e) => ids.includes(e.k) && within(e.d, date, 30)).map((e) => ({ k: e.k, t: e.t, d: e.d }));
+    for (const [d, r] of nights ?? []) { const w = L.localMinutes(r.waketime_local); if (w != null && within(d, date, 30)) evs.push({ k: 'wake', t: idx(d) * 1440 + w, d }); }
     evs.sort((a, b) => a.t - b.t);
-    const pairs = new Map(), n = {};
+    const pairs = new Map(), elig = (a, b) => ev.logged.has(a.d) && (b === 'wake' || a.d >= ev.first[b]);
     evs.forEach((a, i) => {
-      n[a.k] = (n[a.k] ?? 0) + 1;
       const seen = new Set();
       for (let j = i + 1; j < evs.length && evs[j].t - a.t <= 60; j++) {
         const b = evs[j];
-        if (b.t === a.t || b.k === a.k || seen.has(b.k)) continue;
+        if (b.t === a.t || b.k === a.k || seen.has(b.k) || !elig(a, b.k)) continue;
         seen.add(b.k); const key = a.k + '>' + b.k; (pairs.get(key) ?? pairs.set(key, []).get(key)).push(b.t - a.t);
       }
     });
-    return [...pairs].map(([key, ds]) => { const [a, b] = key.split('>'); return { a, b, n: n[a], k: ds.length, share: ds.length / n[a], delay: med(ds) }; })
+    return [...pairs].map(([key, ds]) => { const [a, b] = key.split('>'), n = evs.filter((e) => e.k === a && elig(e, b)).length; return { a, b, n, k: ds.length, share: ds.length / n, delay: med(ds) }; })
       .filter((r) => r.n >= 5).sort((x, y) => y.share - x.share || y.k - x.k || y.n - x.n || (x.a + x.b).localeCompare(y.a + y.b)).slice(0, 5);
   }
 
@@ -173,7 +173,8 @@
   function rtSupps(ev, date) {
     return SUPP.map((id) => {
       const e = (ev?.list ?? []).filter((x) => x.k === id && within(x.d, date, 14)), on = new Set(e.map((x) => x.d));
-      return { id, cells: Array.from({ length: 14 }, (_, i) => on.has(L.shiftDate(date, i - 13))), k: on.size, n: e.length, time: e.length >= 3 ? med(e.map((x) => m6(x.min))) % 1440 : null };
+      const den = [...(ev?.logged ?? [])].filter((d) => within(d, date, 14) && d >= ev.first[id]).length;   // R2.9: known days from the first log
+      return { id, cells: Array.from({ length: 14 }, (_, i) => on.has(L.shiftDate(date, i - 13))), k: on.size, n: e.length, den, learning: den < 7, time: e.length >= 3 ? med(e.map((x) => m6(x.min))) % 1440 : null };
     }).filter((r) => r.n > 0);
   }
   /* Ánimo: mood logs of the 30 days, counts sorted (a tie: the mood logged most recently first). Peak: among moods with 5 logs, the most logged
@@ -546,12 +547,12 @@
       return [svg, line(t(w.k ? 'ru.w.sum' : 'ru.w.none', { g: gl, k: w.k, n: w.n, m: num(w.mean / 1000, 1) + ' l' }) + split, 'hx-sub hx-sep')];
     })());
 
-    /* 10. Suplementos: k/14, usual time and the 14-day strip; a sentence only from a matching active finding (AC7, AC8). */
+    /* 10. Suplementos: k of the known days (learning under 7), usual time and the 14-day strip; a sentence only from a matching active finding (AC7, AC8). */
     const sp = rtSupps(ev, date), fl = (Array.isArray(ctx.source('findings').data?.findings) ? ctx.source('findings').data.findings : []).filter((f) => f?.status === 'active');
     const sf = fl.find((f) => sp.some((r) => r.id === f.ref?.key?.behavior));
     const supp = card('rx-supp', t('ru.s.t'), t('ru.s.s'), !ev ? [evMissing()] : [
       ...(sp.length ? sp.map((r) => h('div', { class: 'rx-sp' }, h('span', { class: 'hx-n', text: trName(r.id) }), h('div', { class: 'rx-cells', 'aria-hidden': 'true' }, r.cells.map((x) => h('i', { class: x ? 'on' : null }))),
-        h('span', { class: 'hx-v', text: r.k + '/14' }), h('span', { class: 'hx-s', text: r.time != null ? t('ru.s.at', { t: clock(r.time) }) : t('ru.s.few') }))) : [line(t('ru.s.none'))]),
+        h('span', { class: 'hx-v', text: r.learning ? t('ru.r.few') : r.k + '/' + r.den }), h('span', { class: 'hx-s', text: r.time != null ? t('ru.s.at', { t: clock(r.time) }) : t('ru.s.few') }))) : [line(t('ru.s.none'))]),
       sf ? h('div', { class: 'hx-sub hx-sep' }, h('p', { class: 'hx-sub', text: String(sf.statement ?? '') }),
         h('p', { class: 'hx-note', text: [finite(sf.result?.n_a) && finite(sf.result?.n_b) ? t('ins.find.n', { a: sf.result.n_a, b: sf.result.n_b }) : null, t('ins.find.note')].filter(Boolean).join(' · ') })) : null]);
 

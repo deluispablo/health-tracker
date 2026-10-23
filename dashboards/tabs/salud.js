@@ -315,10 +315,14 @@
 
     // 8. Según el día (I2), 9. Cambios (I1), 7. Hallazgos (I4)
     const ser = vit ? L.series(vit, 'hrv_rmssd', D, 56) : [], band = vit ? L.typicalRange(vit, 'hrv_rmssd', D) : { learning: 7 };
-    const st = vit ? L.weekdayStats(ser, D) : null, low = st && !st.learning && st.loClear ? saWeekLow(vit, D, st.lo) : null;
+    const st = vit ? L.weekdayStats(ser, D) : null;
+    // review 2026-10-23 #4: no weekday claim (extreme or behaviour) until 4 weekdays have a mean (>= 3 samples each)
+    const few = st && !st.learning && st.means.filter((m) => m != null).length < 4, low = st && !st.learning && !few && st.loClear ? saWeekLow(vit, D, st.lo) : null;
     const clause = low ? t('sa.wkLow', { k: low.k, m: low.m, d: t('sa.wkDays').split(' ')[(st.lo + 6) % 7], x: t('sa.wkX.' + low.col) }) + ' ' + t('sa.cause') : null;
-    // the shared card redraws its sentence on every chip tap, so the clause rides on the "Todos" sentence keys (one paragraph)
-    const wctx = clause ? { ...ctx, t: (k, v) => ctx.t(k, v) + (k === 'ins.wk.lo' || k === 'ins.wk.ext' ? ' ' + clause : '') } : ctx;
+    // the shared card redraws its sentence on every chip tap, so the "Todos" sentence keys carry the clause or the too-few copy (one paragraph)
+    const TODOS = ['ins.wk.ext', 'ins.wk.hi', 'ins.wk.lo', 'ins.wk.flat'];
+    const wctx = few ? { ...ctx, t: (k, v) => TODOS.includes(k) ? t('sa.wkFew') : ctx.t(k, v) }
+      : clause ? { ...ctx, t: (k, v) => ctx.t(k, v) + (k === 'ins.wk.lo' || k === 'ins.wk.ext' ? ' ' + clause : '') } : ctx;
     const wk = vst ? card('ix-week', t('ins.wk.title'), t('sa.wk.s'), [vState()]) : ctx.ins.weekday(wctx, { id: 'hrv', series: ser,
       variant: { fmt: (x) => num(x), color: 'm-hrv', H: desk ? 170 : 120, W: W(desk ? 6 : 12), ...(band.learning == null ? { band: [band.low, band.high], lo: band.low - 9 } : {}) } });
     wk.querySelector('.ht-card-s')?.replaceChildren(t('sa.wk.s'));
@@ -416,6 +420,7 @@
     'sa.expPartial': ['Some logs from the last 30 days are missing; no averages until they are all in.', 'Faltan registros de los últimos 30 días; no hay medias hasta tenerlos todos.'],
     'sa.c5Partial': ['Heart rate is missing on some days; only logs with full heart rate count.', 'Faltan datos de pulso de algunos días; solo cuentan los registros con pulso completo.'],
     'sa.wk.s': ['mean HRV · last 8 weeks', 'VFC media · últimas 8 semanas'],
+    'sa.wkFew': ['Not enough days yet.', 'Aún pocos días.'],
     'sa.wkLow': ['{k} of the last {m} {d} you logged {x}.', '{k} de los últimos {m} {d} registraste {x}.'],
     'sa.wkDays': ['Mondays Tuesdays Wednesdays Thursdays Fridays Saturdays Sundays', 'lunes martes miércoles jueves viernes sábados domingos'],
     'sa.wkX.alcohol_g': ['alcohol', 'alcohol'], 'sa.wkX.cigarettes': ['cigarettes', 'cigarros'], 'sa.wkX.caffeine_mg': ['coffee', 'café'],
