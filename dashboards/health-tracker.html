@@ -710,8 +710,16 @@ try {
     const m = typeof s === 'string' ? /(\d{2}):(\d{2})$/.exec(s) : null;
     return m ? Number(m[1]) * 60 + Number(m[2]) : null;
   }
+  const USER_TZ = 'Europe/Madrid';   // the worker's USER_TZ; health_status sends no zone, so the dashboard falls back to it
+  /* UTC offset in minutes of a zone at an instant, from Intl's longOffset ("GMT+02:00", "GMT" for zero). */
+  function tzOffset(tz, ms) {
+    const n = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'longOffset' }).formatToParts(ms).find((p) => p.type === 'timeZoneName')?.value ?? '';
+    const m = /([+-])(\d{2}):(\d{2})/.exec(n);
+    return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
+  }
+  /* Sunrise and sunset in USER_TZ local minutes (the owner's day, whatever the device zone); the offset is the date's at 12:00 UTC. */
   function sunTimes(dateISO, lat, lon) {
-    const date = new Date(dateISO + 'T12:00:00'), jd = Date.parse(dateISO + 'T00:00:00Z') / 86400000 + 2440587.5, rad = Math.PI / 180;
+    const off = tzOffset(USER_TZ, Date.parse(dateISO + 'T12:00:00Z')), jd =Date.parse(dateISO + 'T00:00:00Z') / 86400000 + 2440587.5, rad = Math.PI / 180;
     if (!Number.isFinite(jd) || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
     const solar = (minutes) => {
       const c = (jd + minutes / 1440 - 2451545) / 36525, l = (280.46646 + c * (36000.76983 + c * .0003032)) % 360;
@@ -727,7 +735,7 @@ try {
     const event = (sign) => {
       let minutes = 720 - 4 * lon;
       for (let i = 0; i < 3; i++) { const { eq, ha } = solar(minutes); minutes = 720 - 4 * lon - eq + sign * 4 * ha; }
-      return ((minutes - date.getTimezoneOffset()) % 1440 + 1440) % 1440;
+      return ((minutes + off) % 1440 + 1440) % 1440;
     };
     const sunrise = event(-1), sunset = event(1);
     return Number.isFinite(sunrise) && Number.isFinite(sunset) ? { sunrise, sunset } : null;
@@ -808,13 +816,14 @@ try {
   /* ---- sync chip ---- */
   /* Text: the newest heart-rate minute. Stale only when the pipeline lags (data_lag alert, phone not uploading for 3 h,
      or no HR for a day); an old HR minute alone just means the watch was off the wrist. */
-  function syncLabel(status, lang) {
+  /* today: the dashboard's owner date (now().date); a cached status can carry an older now_local. */
+  function syncLabel(status, lang, today) {
     if (!status) return { kind: 'hidden', text: '' };
     const find = (name) => (status.streams ?? []).find((s) => s.stream === name);
     const hr = find('metric:hr'), w = find('watch');
     if (!hr || typeof hr.latest_local !== 'string') return { kind: 'never', text: t('sync.never', lang) };
     const date = hr.latest_local.slice(0, 10), time = hr.latest_local.slice(11, 16);
-    const text = t('sync.upto', lang, { t: (date === String(status.now_local ?? '').slice(0, 10) ? '' : day(date, lang) + ' ') + time });
+    const text = t('sync.upto', lang, { t: (date === today ? '' : day(date, lang) + ' ') + time });
     const stale = (status.alerts ?? []).some((a) => a?.code === 'data_lag') || (finite(w?.age_hours) && w.age_hours > 3) || (finite(hr.age_hours) && hr.age_hours > 24);
     return { kind: stale ? 'stale' : 'done', text };
   }
@@ -829,7 +838,7 @@ try {
 
   window.HTLogic = {
     COPY, t, tn, pickLang, fmt: { num, signed, dur, ago, day, vital, range }, VITALS, shiftDate, dayValue, typicalRange, rangeStatus, rangeFlag, outliers,
-    recovery, stepGoal, waterGoal, expectedSteps, sunTimes, localMinutes, mainSession, CHIPS, SUPPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
+    recovery, stepGoal, waterGoal, expectedSteps, USER_TZ, sunTimes, localMinutes, mainSession, CHIPS, SUPPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
     available, summary, writeQueue, doubleTap, NIGHT_END, dayFor,
     applyLog, applyUndo, acceptSnapshot, syncLabel, errorKind
   };
@@ -1091,7 +1100,6 @@ try {
   }
   Object.assign(window.HTLogic, { weekday, recoveryNight, CHG_UP, CHG_DOWN, CHG_KNOWN, changeRows, metricText, weekdayStats, neighbours, mostMood, gridSpans, stepSvg, wkbarsSvg, alikeSvg });
   window.HTLogic.fmt.wday = wday;
-  window.HTLogic.USER_TZ = 'Europe/Madrid';   // the worker's USER_TZ; health_status sends no zone, so the dashboard falls back to it
   /* ==== end Redesign shared computations ==== */
 
   /* ==== Tab files and shared insight cards (R1.5, R1.7) ====
@@ -1566,7 +1574,9 @@ try {
 
   /* ---- header, page notice, quick log, undo bar ---- */
   function renderHeader() {
-    const sync = $('sync'), s = L.syncLabel(pageLevel() || S.status.halted ? null : S.status.data, lang);
+    const sync = $('sync'), s = L.syncLabel(pageLevel() || S.status.halted ? null : S.status.data, lang, now().date);
+    // a transient status failure keeps the last good text, styled stale (consent / denial already retracted the data)
+    if (s.kind !== 'hidden' && S.status.error && L.errorKind(S.status.error.code) === 'transient') s.kind = 'stale';
     sync.hidden = s.kind === 'hidden';
     sync.className = 'ht-sync is-' + s.kind;
     const m = /^(.*?)(\d{2}:\d{2})$/.exec(s.text), off = !connector || pageLevel(), say1 = off ? null : refreshing ? t('sync.refreshing') : refreshNote?.text;
