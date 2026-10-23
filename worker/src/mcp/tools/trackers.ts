@@ -1,5 +1,6 @@
 import { dateTimeFormat, isCalendarDate } from "../../lib/time";
 import { trackerDailyStatements } from "../../rollup/trackers";
+import { offsetMinutes } from "../../ingest/drain";
 
 interface Tracker {
   id: string;
@@ -138,9 +139,7 @@ export async function logEvent(db: D1Database, args: {
     note = args.note.trim() || null;
     if (note !== null && Array.from(note).length > 280) throw new RangeError("note must contain at most 280 Unicode code points after trimming");
   }
-  const offset = dateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" })
-    .formatToParts(ts * 1000).find((part) => part.type === "timeZoneName")?.value.match(/^GMT([+-])(\d{2}):(\d{2})$/);
-  const tz_offset_min = offset ? (offset[1] === "+" ? 1 : -1) * (Number(offset[2]) * 60 + Number(offset[3])) : 0;
+  const tz_offset_min = offsetMinutes(ts, dateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" }));
   const event: EventRow = {
     id: args.idempotency_key === undefined ? crypto.randomUUID() : `${idPrefix}${args.idempotency_key}`,
     tracker_id: tracker.id, ts, tz_offset_min,

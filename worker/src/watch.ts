@@ -114,9 +114,8 @@ export async function handleWatchToday(request: Request, env: AppEnv, now: numbe
   });
   return Response.json({
     date, generatedAt: now,
-    sleep: sessions.filter((s) => s.local_date === date)
-      .map((s) => ({ start: minutes(s.start_local), end: minutes(s.end_local), nap: s.is_nap })),
-    workouts: workouts.filter((w) => w.local_date === date).map((w) => ({ start: minutes(w.start_local), end: minutes(w.end_local) })),
+    sleep: sessions.map((s) => ({ start: minutes(s.start_local), end: minutes(s.end_local), nap: s.is_nap })),
+    workouts: workouts.map((w) => ({ start: minutes(w.start_local), end: minutes(w.end_local) })),
     events: marks, totals, counts,
     water: { ml, goal_ml }, trackers,
     hr,
