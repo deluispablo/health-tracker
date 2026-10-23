@@ -180,10 +180,11 @@ it("emits the HRV exponential percentage and null percentages for zero reference
   d.stats.mean_b=null;
   expect(finalizeFamily([d],table(),origin).rows[0].pct).toBeNull();
 });
-it("percentages are null for skin temperature and for any non-positive reference, HRV included",()=>{
+it("percentages are null for skin temperature, bedtime and for any non-positive reference, HRV included",()=>{
   const pct=(metric:MetricId,mean_b:number,diff:number)=>{ const d=draft(); d.key.metric=metric; d.stats.mean_b=mean_b; d.stats.diff=diff; return finalizeFamily([d],table(),origin).rows[0].pct; };
   expect(pct("skin_temp_dev",-0.1,0.2)).toBeNull();
   expect(pct("skin_temp_dev",0.5,0.2)).toBeNull();
+  expect(pct("bedtime",1380,30)).toBeNull();
   expect(pct("rhr",-5,1)).toBeNull();
   expect(pct("hrv",0,Math.log(0.88))).toBeNull();
   expect(pct("hrv",-1,Math.log(0.88))).toBeNull();

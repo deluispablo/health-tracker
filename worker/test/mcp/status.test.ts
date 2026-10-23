@@ -425,6 +425,16 @@ describe("SY1 data_lag alert and foreign sync_state rows", () => {
       : []);
   });
 
+  it.each([
+    ["2026-10-20T12:30:00Z", "2026-10-23T08:00:00Z", "desde el 20/10 a las 14:30, aunque el reloj se sincronizó con Google a las 10:00"],
+    ["2026-10-20T12:30:00Z", "2026-10-22T08:00:00Z", "desde el 20/10 a las 14:30, aunque el reloj se sincronizó con Google el 22/10 a las 10:00"],
+  ] as const)("shows the date for times not on today's local date (%s, %s)", async (hrAt, syncAt, text) => {
+    await minute(at(hrAt), 0);
+    await watch(at(syncAt));
+    const out = await readStatus(env.DB, { now: at("2026-10-23T09:00:00Z"), tz: "Europe/Madrid" });
+    expect(lag(out)).toEqual([{ code: "data_lag", message: `Sin pulso guardado ${text}. Si lo llevabas puesto, pulsa Actualizar.` }]);
+  });
+
   it.each([["no watch row", false, true], ["null watch time", true, true], ["no HR", true, false]] as const)(
     "does not alert with %s", async (_label, watchRow, hrRow) => {
       if (hrRow) await minute(NOW - 7 * 3600);

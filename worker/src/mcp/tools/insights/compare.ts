@@ -107,7 +107,7 @@ export function finalizeFamily(drafts: RowDraft[], t: DayTable, origin: Origin, 
       result = {...result,label:"indicio",reason:"uncertain",needed:null};
     const diff = insufficient ? null : s.diff;
     // Zero-centred or non-positive references make a percentage meaningless.
-    const pct = diff === null || d.key.metric === "skin_temp_dev" || s.mean_b === null || s.mean_b <= 0 ? null : d.key.metric === "hrv" ? 100*Math.expm1(diff) : 100*diff/s.mean_b;
+    const pct = diff === null || d.key.metric === "skin_temp_dev" || d.key.metric === "bedtime" || s.mean_b === null || s.mean_b <= 0 ? null : d.key.metric === "hrv" ? 100*Math.expm1(diff) : 100*diff/s.mean_b;
     const frozen = d.key.behavior === "steps" ? cutpoints ?? tertiles(t.behavior.steps.slice(t.start,t.end+1).filter((x): x is number=>x!==null)) : undefined;
     const cached = blocks.get(d.groupIdx);
     const consistent = cached?.rope === d.rope && cached.outcome === d.outcome && cached.diff === s.diff ? cached.value : consistentBlocks(t, d, blockAt);
