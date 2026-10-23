@@ -79,10 +79,10 @@ class DialGeometryTest {
     }
 
     @Test
-    fun sunTimesUseConfiguredZone() {
+    fun sunTimesUseConfiguredZone() = inZone("Europe/Madrid") {
         // Reference: full NOAA solar calculator for the default coordinates on 2026-10-22, UTC.
         val date = LocalDate.of(2026, 10, 22)
-        val zone = ZoneId.of(BuildConfig.USER_TZ)
+        val zone = USER_ZONE
         val offset = date.atTime(12, 0).atZone(zone).offset.totalSeconds / 60
         val (rise, set) = sunTimes(date)
         assertTrue("sunrise $rise", abs(rise - (393 + offset)) <= 3)

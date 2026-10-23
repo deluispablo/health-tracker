@@ -14,6 +14,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -41,6 +42,11 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
     }
 }
 
+internal fun todayHeaders() = mapOf(
+    "Authorization" to "Bearer ${BuildConfig.WATCH_TOKEN}",
+    "X-Time-Zone" to ZoneId.systemDefault().id,
+)
+
 /**
  * Fetches today's dial and redraws; taps leave the queue only together with a body that
  * already shows them. Returns the HTTP status, or -1 when the network failed.
@@ -51,7 +57,7 @@ fun fetchToday(ctx: Context): Int {
     try {
         conn.connectTimeout = 20_000
         conn.readTimeout = 20_000
-        conn.setRequestProperty("Authorization", "Bearer ${BuildConfig.WATCH_TOKEN}")
+        todayHeaders().forEach { (k, v) -> conn.setRequestProperty(k, v) }
         val code = conn.responseCode
         Log.i(TAG, "GET /watch/today -> $code")
         if (code == 401) Log.w(TAG, "token rejected; check watchToken in local.properties")

@@ -3,16 +3,35 @@ package com.deluispablo.healthtracker
 import java.time.ZonedDateTime
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.util.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+internal fun inZone(id: String, body: () -> Unit) {
+    val saved = TimeZone.getDefault()
+    try { TimeZone.setDefault(TimeZone.getTimeZone(id)); body() } finally { TimeZone.setDefault(saved) }
+}
+
 class DialTimeTest {
     @Test
-    fun todayUsesBuildConfiguredZone() {
-        val zone = ZoneId.of(BuildConfig.USER_TZ)
-        assertEquals(zone, USER_ZONE)
+    fun userZoneFollowsSystemZone() {
+        inZone("Australia/Sydney") { assertEquals(ZoneId.of("Australia/Sydney"), USER_ZONE) }
+        inZone("Europe/Madrid") { assertEquals(ZoneId.of("Europe/Madrid"), USER_ZONE) }
+    }
+
+    @Test
+    fun todayRequestReportsSystemZone() {
+        inZone("Australia/Sydney") {
+            assertEquals("Australia/Sydney", todayHeaders()["X-Time-Zone"])
+            assertTrue(todayHeaders()["Authorization"]!!.startsWith("Bearer "))
+        }
+    }
+
+    @Test
+    fun todayUsesSystemZone() {
+        val zone = USER_ZONE
         val data = parseDialData(sampleJson())
         for (hour in 0..23) {
             val now = ZonedDateTime.parse("2026-10-23T00:00:00Z").plusHours(hour.toLong())
@@ -26,14 +45,14 @@ class DialTimeTest {
     }
 
     @Test
-    fun springForwardUsesLocalMinutes() {
+    fun springForwardUsesLocalMinutes() = inZone("Europe/Madrid") {
         val now = LocalDateTime.parse("2026-03-29T13:00:00").atZone(USER_ZONE)
         assertEquals(780, minutesSince("2026-03-29", now))
         assertEquals(1440 + 780, minutesSince("2026-03-28", now))
     }
 
     @Test
-    fun fallBackUsesLocalMinutes() {
+    fun fallBackUsesLocalMinutes() = inZone("Europe/Madrid") {
         val now = LocalDateTime.parse("2026-10-25T13:00:00").atZone(USER_ZONE)
         assertEquals(780, minutesSince("2026-10-25", now))
         assertEquals(1440 + 780, minutesSince("2026-10-24", now))

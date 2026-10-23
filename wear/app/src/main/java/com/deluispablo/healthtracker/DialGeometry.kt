@@ -79,7 +79,8 @@ fun sunTimes(
     return rise.roundToInt() to set.roundToInt()
 }
 
-val USER_ZONE: ZoneId = ZoneId.of(BuildConfig.USER_TZ)
+// A getter: the system zone changes as the wearer travels.
+val USER_ZONE: ZoneId get() = ZoneId.systemDefault()
 
 fun belongsToToday(date: String, now: ZonedDateTime = ZonedDateTime.now(USER_ZONE)): Boolean =
     LocalDate.parse(date) == now.withZoneSameInstant(USER_ZONE).toLocalDate()
