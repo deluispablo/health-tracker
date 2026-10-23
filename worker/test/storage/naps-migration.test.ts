@@ -15,7 +15,8 @@ const sequence = () => env.DB.prepare("SELECT n FROM rollup_seq WHERE id = 1").f
 const upgrade = () => applyD1Migrations(env.DB, env.TEST_MIGRATIONS.filter((m) => m.name <= "0006_daytime_naps.sql"));
 
 beforeAll(async () => {
-  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.filter((m) => m.name <= "0005_rollup_dirty.sql"));
+  // The current rollup reads the start offset from 0016; its record is cleared below so 0006 and 0011 still run as upgrades.
+  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.filter((m) => m.name <= "0005_rollup_dirty.sql" || m.name === "0016_sleep_start_offset.sql"));
 });
 
 beforeEach(async () => {

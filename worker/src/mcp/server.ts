@@ -234,7 +234,7 @@ Read-only SQL: one SELECT or WITH statement, at most 4000 query characters. Retu
 Views and columns:
 v_daily: local_date, ${DAILY_COLUMNS.join(", ")}, computed_at.
 v_events: id, tracker_id, ts, tz_offset_min, local_date, value, note, origin, created_at, deleted_at (live events only). Ids starting with 'kw_' were logged from the watch; their origin stays 'mcp'.
-v_sleep: source_id, source, start_ts, end_ts, tz_offset_min, local_date, is_nap, minutes_asleep, minutes_in_bed, efficiency, deep_min, rem_min, light_min, awake_min, latency_min, updated_at.
+v_sleep: source_id, source, start_ts, end_ts, tz_offset_min (end offset), start_tz_offset_min (start offset; NULL means tz_offset_min), local_date, is_nap, minutes_asleep, minutes_in_bed, efficiency, deep_min, rem_min, light_min, awake_min, latency_min, updated_at.
 v_workouts: source_id, source, type, start_ts, end_ts, tz_offset_min, local_date, duration_min, avg_hr, max_hr, kcal, azm, distance_m, updated_at.
 Examples: SELECT local_date, rhr FROM v_daily ORDER BY local_date DESC;
 SELECT tracker_id, SUM(value) AS total FROM v_events GROUP BY tracker_id.

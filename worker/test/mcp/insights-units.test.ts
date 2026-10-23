@@ -137,6 +137,14 @@ it("uses the stored offset for bedtime on the DST transition", async () => {
   const r=resolveRange({start:"2026-10-25",end:"2026-10-25"},now+7*86400,tz);
   const t=await loadDayTable(env.DB,r,now);
   expect(t.metric.bedtime[t.start]).toBe(360);
+  await env.DB.prepare("UPDATE sleep_session SET start_tz_offset_min = 120 WHERE source_id = 'dst'").run();
+  expect((await loadDayTable(env.DB,r,now)).metric.bedtime[t.start]).toBe(420);
+});
+it("reads the fall-back night's bedtime with its start offset", async () => {
+  await sleep("fall","2026-10-25","2026-10-24T21:30:00Z",540,"2026-10-25T06:30:00Z",0,60);
+  await env.DB.prepare("UPDATE sleep_session SET start_tz_offset_min = 120 WHERE source_id = 'fall'").run();
+  const t=await loadDayTable(env.DB,resolveRange({start:"2026-10-25",end:"2026-10-25"},now+7*86400,tz),now);
+  expect(t.metric.bedtime[t.start]).toBe(330);
 });
 it("applies wear and zero-denominator gates", async () => {
   await summary("2026-10-02",599,30);

@@ -185,11 +185,14 @@ export async function drainSyncPending(
           if (typeof payload.dataPointName !== "string" || !interval || typeof offset !== "string" || !/^-?\d+s$/.test(offset)) continue;
           const tz = Number(offset.slice(0, -1)) / 60;
           if (!Number.isInteger(tz)) continue;
+          const startOffset = object(sleep.interval).startUtcOffset;
+          const startMinutes = typeof startOffset === "string" && /^-?\d+s$/.test(startOffset) ? Number(startOffset.slice(0, -1)) / 60 : NaN;
+          const startTz = Number.isInteger(startMinutes) ? startMinutes : null;
           const [startTs, endTs] = interval;
           const summary = object(sleep.summary);
           const asleep = readNumber(summary.minutesAsleep);
           const inBed = readNumber(summary.minutesInSleepPeriod);
-          const startHour = new Date((startTs + tz * 60) * 1000).getUTCHours();
+          const startHour = new Date((startTs + (startTz ?? tz) * 60) * 1000).getUTCHours();
           const isNap = object(sleep.metadata).mainSleep !== true
             || ((inBed ?? (endTs - startTs) / 60) < 180 && startHour >= 9 && startHour < 20);
           const stageMinutes = new Map<string, number>();
@@ -205,7 +208,7 @@ export async function drainSyncPending(
               ? [[payload.dataPointName, ...times, s.type]] : [];
           });
           // A duplicate replaces the whole session, including its stages.
-          answer.set(payload.dataPointName, { session: [payload.dataPointName, "gh", startTs, endTs, tz,
+          answer.set(payload.dataPointName, { session: [payload.dataPointName, "gh", startTs, endTs, tz, startTz,
             sleepLocalDate(endTs, tz), isNap ? 1 : 0, asleep, inBed,
             asleep !== null && inBed !== null && inBed > 0 ? Math.round(asleep / inBed * 100) : null,
             ...["DEEP", "REM", "LIGHT", "AWAKE"].map((stage) => stageMinutes.get(stage) ?? null),
@@ -214,14 +217,14 @@ export async function drainSyncPending(
 
         statements.push(...dirtyStatements(db, utcDate(row.start_ts - 14 * 3600), utcDate(end + 14 * 3600), {
           table: "sleep_session", timestamp: "end_ts", start: row.start_ts, end,
-          written: [...answer].map(([id, item]) => [id, item.session[5] as string]),
+          written: [...answer].map(([id, item]) => [id, item.session[6] as string]),
         }), db.prepare(`DELETE FROM sleep_stage WHERE session_id IN
           (SELECT source_id FROM sleep_session WHERE source = 'gh' AND end_ts >= ? AND end_ts < ?)`)
           .bind(row.start_ts, end),
         db.prepare("DELETE FROM sleep_session WHERE source = 'gh' AND end_ts >= ? AND end_ts < ?").bind(row.start_ts, end));
         for (const id of answer.keys()) statements.push(db.prepare("DELETE FROM sleep_stage WHERE session_id = ?").bind(id));
         statements.push(...upsertStatements(db, "sleep_session",
-          ["source_id", "source", "start_ts", "end_ts", "tz_offset_min", "local_date", "is_nap", "minutes_asleep", "minutes_in_bed",
+          ["source_id", "source", "start_ts", "end_ts", "tz_offset_min", "start_tz_offset_min", "local_date", "is_nap", "minutes_asleep", "minutes_in_bed",
             "efficiency", "deep_min", "rem_min", "light_min", "awake_min", "latency_min", "updated_at"],
           ["source_id"], [...answer.values()].map((item) => item.session)),
         ...upsertStatements(db, "sleep_stage", ["session_id", "start_ts", "end_ts", "stage"],

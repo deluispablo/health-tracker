@@ -24,6 +24,7 @@ interface SessionRow extends Omit<Session, "is_nap" | "start_local" | "end_local
   start_ts: number;
   end_ts: number;
   is_nap: number;
+  start_offset: number;
 }
 
 interface StageRow {
@@ -45,7 +46,7 @@ export async function healthSleep(db: D1Database, { start, end }: {
 
   const [sessionsResult, stagesResult] = await db.batch<SessionRow | StageRow>([
     db.prepare(`
-      SELECT source_id, start_ts, end_ts, local_date, is_nap, tz_offset_min,
+      SELECT source_id, start_ts, end_ts, local_date, is_nap, tz_offset_min, COALESCE(start_tz_offset_min, tz_offset_min) AS start_offset,
         minutes_asleep, minutes_in_bed, efficiency, deep_min, rem_min, light_min, awake_min, latency_min
       FROM sleep_session WHERE local_date BETWEEN ? AND ? ORDER BY start_ts, source_id
     `).bind(start, end),
@@ -67,10 +68,10 @@ export async function healthSleep(db: D1Database, { start, end }: {
     ]);
     bySession.set(row.session_id, hypnogram);
   }
-  const sessions = rows.map(({ source_id, start_ts, end_ts, is_nap, ...summary }) => ({
+  const sessions = rows.map(({ source_id, start_ts, end_ts, is_nap, start_offset, ...summary }) => ({
     ...summary,
     is_nap: Boolean(is_nap),
-    start_local: localTime(start_ts, summary.tz_offset_min),
+    start_local: localTime(start_ts, start_offset),
     end_local: localTime(end_ts, summary.tz_offset_min),
     stages: bySession.get(source_id) ?? [],
   }));

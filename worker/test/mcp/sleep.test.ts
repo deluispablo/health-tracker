@@ -63,6 +63,19 @@ describe("AC1 health_sleep", () => {
     });
   });
 
+  it("reads the start with the start offset and the end with the end offset, falling back to the end offset", async () => {
+    await session("dst", "2026-10-24T21:30:00Z", "2026-10-25T06:30:00Z", "2026-10-25", {}, 60);
+    await session("legacy", "2026-10-25T12:00:00Z", "2026-10-25T12:30:00Z", "2026-10-25", { is_nap: 1 }, 60);
+    await session("normal", "2026-10-06T21:30:00Z", "2026-10-07T05:30:00Z", "2026-10-07");
+    await env.DB.prepare("UPDATE sleep_session SET start_tz_offset_min = 120 WHERE source_id IN ('dst', 'normal')").run();
+    const out = await healthSleep(env.DB, { start: "2026-10-07", end: "2026-10-25" });
+    expect(out.sessions.map((s) => [s.start_local, s.end_local, s.tz_offset_min])).toEqual([
+      ["2026-10-06T23:30", "2026-10-07T07:30", 120],
+      ["2026-10-24T23:30", "2026-10-25T07:30", 60],
+      ["2026-10-25T13:00", "2026-10-25T13:30", 60]]);
+    expect(Object.keys(out.sessions[0] ?? {})).not.toContain("start_tz_offset_min");
+  });
+
   it("uses each session's own offset, rounds stage offsets down to whole minutes and orders by start", async () => {
     await session("b", "2026-10-08T04:00:00Z", "2026-10-08T11:00:00Z", "2026-10-08", {}, -300);
     await session("a", "2026-10-07T19:00:00Z", "2026-10-08T01:30:00Z", "2026-10-08", {}, 330);

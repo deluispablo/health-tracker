@@ -12,10 +12,11 @@ async function daily(metric: string, date: string, value: number, source = "gh")
     .bind(metric, date, value, source).run();
 }
 async function sleep(id: string, start: string, end: string, localDate: string, f: Partial<Record<string, number>> = {}, source = "gh") {
-  await env.DB.prepare(`INSERT INTO sleep_session (source_id, source, start_ts, end_ts, tz_offset_min, local_date, is_nap, minutes_asleep,
-    minutes_in_bed, efficiency, deep_min, rem_min, light_min, awake_min, latency_min, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`)
-    .bind(id, source, at(start), at(end), f.tz ?? 120, localDate, f.is_nap ?? 0, f.asleep ?? null, f.in_bed ?? null, f.eff ?? null, f.deep ?? null,
-      f.rem ?? null, f.light ?? null, f.awake ?? null, f.latency ?? null).run();
+  await env.DB.prepare(`INSERT INTO sleep_session (source_id, source, start_ts, end_ts, tz_offset_min, start_tz_offset_min, local_date, is_nap,
+    minutes_asleep, minutes_in_bed, efficiency, deep_min, rem_min, light_min, awake_min, latency_min, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`)
+    .bind(id, source, at(start), at(end), f.tz ?? 120, f.start_tz ?? null, localDate, f.is_nap ?? 0, f.asleep ?? null, f.in_bed ?? null,
+      f.eff ?? null, f.deep ?? null, f.rem ?? null, f.light ?? null, f.awake ?? null, f.latency ?? null).run();
 }
 async function minute(ts: number, tz = 120, metric = "hr", source = "gh") {
   await env.DB.prepare("INSERT INTO metric_minute (metric, ts, tz_offset_min, value, source) VALUES (?, ?, ?, 60, ?)").bind(metric, ts, tz, source).run();
@@ -158,6 +159,16 @@ describe("AC1 selection edge cases", () => {
     await sleep("y", "2026-10-06T22:00:00Z", "2026-10-07T04:00:00Z", D, { asleep: 2, in_bed: 300 });
     await recomputeDailySummary(env.DB, D, D, NOW);
     expect((await row(D))?.sleep_min).toBe(2);
+  });
+
+  it("reads bedtime with the start offset and wake time with the end offset, falling back to the end offset", async () => {
+    await sleep("dst", "2026-10-24T21:30:00Z", "2026-10-25T06:30:00Z", "2026-10-25", { asleep: 480, in_bed: 540, tz: 60, start_tz: 120 });
+    await sleep("normal", "2026-10-06T21:30:00Z", "2026-10-07T05:30:00Z", D, { asleep: 480, in_bed: 480, tz: 120, start_tz: 120 });
+    await sleep("legacy", "2026-10-08T21:30:00Z", "2026-10-09T05:30:00Z", "2026-10-09", { asleep: 480, in_bed: 480, tz: 60 });
+    await recomputeDailySummary(env.DB, D, "2026-10-25", NOW);
+    expect([(await row("2026-10-25"))?.bedtime_local, (await row("2026-10-25"))?.waketime_local]).toEqual(["23:30", "07:30"]);
+    expect([(await row(D))?.bedtime_local, (await row(D))?.waketime_local]).toEqual(["23:30", "07:30"]);
+    expect([(await row("2026-10-09"))?.bedtime_local, (await row("2026-10-09"))?.waketime_local]).toEqual(["22:30", "06:30"]);
   });
 
   it("uses each session's own offset, including negative and half-hour ones, and leaves nap-only dates without sleep", async () => {

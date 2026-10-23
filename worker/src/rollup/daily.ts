@@ -41,7 +41,7 @@ INSERT INTO daily_summary (local_date, ${BASE_COLUMNS.join(", ")})
 SELECT d.local_date, m.rhr, m.hrv_rmssd, CASE WHEN m.hrv_rmssd > 0 THEN ln(m.hrv_rmssd) END,
   m.resp_rate, m.spo2_avg, m.skin_temp_dev,
   s.minutes_asleep, s.efficiency, s.deep_min, s.rem_min, s.latency_min,
-  strftime('%H:%M', s.start_ts + s.tz_offset_min * 60, 'unixepoch'),
+  strftime('%H:%M', s.start_ts + COALESCE(s.start_tz_offset_min, s.tz_offset_min) * 60, 'unixepoch'),
   strftime('%H:%M', s.end_ts + s.tz_offset_min * 60, 'unixepoch'),
   m.steps, m.azm, w.minutes, h.minutes, ?3
 FROM dates d

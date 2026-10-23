@@ -77,6 +77,21 @@ describe("GET /watch/today", () => {
     expect([body.hr[0], body.hr[72], body.hr[1]]).toEqual([60, 120, null]);
   });
 
+  it("returns valid JSON for the fall-back night and a nap inside the repeated hour", async () => {
+    const now = Date.parse("2026-10-25T20:00:00Z") / 1000;
+    const at = (iso: string) => Date.parse(iso) / 1000;
+    await env.DB.prepare(`INSERT INTO sleep_session (source_id, start_ts, end_ts, tz_offset_min, start_tz_offset_min, local_date, is_nap, updated_at)
+      VALUES ('night', ?, ?, 60, 120, '2026-10-25', 0, 1), ('repeated', ?, ?, 60, 120, '2026-10-25', 1, 1)`)
+      .bind(at("2026-10-24T21:30:00Z"), at("2026-10-25T06:30:00Z"), at("2026-10-25T00:30:00Z"), at("2026-10-25T01:15:00Z")).run();
+    const res = await route(new Request("https://example.com/watch/today", { headers: { authorization: `Bearer ${TOKEN}` } }),
+      appEnv(), { fetch, now: () => now, sleep: () => Promise.resolve() });
+    expect(res.status).toBe(200);
+    const body = await res.json<{ date: string; sleep: unknown }>();
+    expect(body.date).toBe("2026-10-25");
+    // The repeated-hour nap reads 02:30 CEST to 02:15 CET; the dial omits a start after its end.
+    expect(body.sleep).toEqual([{ start: -30, end: 450, nap: false }, { start: 150, end: 135, nap: true }]);
+  });
+
   it("empty day", async () => {
     const body = await (await get(`Bearer ${TOKEN}`)).json();
     expect(body).toMatchObject({ water: { ml: 0, goal_ml: 2000 }, date: "2026-10-21", generatedAt: NOW, sleep: [], workouts: [], events: [], totals: {}, counts: {}, hr: Array(96).fill(null) });

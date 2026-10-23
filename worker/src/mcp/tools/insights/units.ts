@@ -86,8 +86,8 @@ SELECT d.local_date, f.*, COALESCE(a.active, 0) AS active, COALESCE(prev.active,
   ds.steps, ds.workout_min, ds.hr_wear_min,
   s.start_ts AS bed, s.minutes_asleep AS sleep_min, s.deep_min, s.rem_min, s.light_min, s.awake_min,
   s.efficiency, s.latency_min,
-  ((CAST(strftime('%H', s.start_ts + s.tz_offset_min * 60, 'unixepoch') AS INTEGER) * 60
-    + CAST(strftime('%M', s.start_ts + s.tz_offset_min * 60, 'unixepoch') AS INTEGER) - 1080 + 1440) % 1440) AS bedtime,
+  ((CAST(strftime('%H', s.start_ts + COALESCE(s.start_tz_offset_min, s.tz_offset_min) * 60, 'unixepoch') AS INTEGER) * 60
+    + CAST(strftime('%M', s.start_ts + COALESCE(s.start_tz_offset_min, s.tz_offset_min) * 60, 'unixepoch') AS INTEGER) - 1080 + 1440) % 1440) AS bedtime,
   CASE WHEN EXISTS (SELECT 1 FROM sleep_stage st WHERE st.session_id = s.source_id)
     THEN (SELECT COUNT(*) FROM sleep_stage st WHERE st.session_id = s.source_id AND st.stage = 'AWAKE'
       AND st.start_ts > s.start_ts AND st.end_ts < s.end_ts) END AS awakenings,

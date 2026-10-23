@@ -30,12 +30,13 @@ function fakeClient(reply: unknown[] | Error = []) {
 // Shape of a real reconcile item (spikes/S3.md, 2026-10-21 probe), trimmed to a few stages.
 const stage = (start: string, end: string, type: string) =>
   ({ startTime: start, startUtcOffset: "7200s", endTime: end, endUtcOffset: "7200s", type, createTime: "x", updateTime: "x" });
-function session(id: string, start: string, end: string,
-  extra: { mainSleep?: boolean; summary?: unknown; stages?: unknown[]; endUtcOffset?: unknown } = {}) {
+function session(id: string, start: string, stop: string,
+  extra: { mainSleep?: boolean; summary?: unknown; stages?: unknown[]; endUtcOffset?: unknown; startUtcOffset?: unknown } = {}) {
+  const end = "endUtcOffset" in extra ? extra.endUtcOffset : "7200s";
   return {
     dataPointName: `users/1/dataTypes/sleep/dataPoints/${id}`,
     sleep: {
-      interval: { startTime: start, startUtcOffset: "7200s", endTime: end, endUtcOffset: "endUtcOffset" in extra ? extra.endUtcOffset : "7200s" },
+      interval: { startTime: start, startUtcOffset: "startUtcOffset" in extra ? extra.startUtcOffset : end, endTime: stop, endUtcOffset: end },
       type: "STAGES",
       stages: extra.stages ?? [
         stage("2026-10-06T21:15:00Z", "2026-10-06T22:28:00Z", "AWAKE"),
@@ -174,7 +175,7 @@ describe("AC1 sleep sessions", () => {
     expect(calls).toEqual([{ type: "sleep", start: "2026-10-06T21:15:00.000Z", end: "2026-10-07T04:49:00.000Z" }]);
     expect(await sessions()).toEqual([{
       source_id: `${ID}8481`, source: "gh", start_ts: at("2026-10-06T21:15:00Z"), end_ts: at("2026-10-07T04:48:00Z"),
-      tz_offset_min: 120, local_date: "2026-10-07", is_nap: 0, minutes_asleep: 380, minutes_in_bed: 453, efficiency: 84,
+      tz_offset_min: 120, start_tz_offset_min: 120, local_date: "2026-10-07", is_nap: 0, minutes_asleep: 380, minutes_in_bed: 453, efficiency: 84,
       deep_min: 74, rem_min: 118, light_min: 188, awake_min: 73, latency_min: 7, updated_at: NOW,
     }]);
     expect((await stages()).map((s) => [s.start_ts, s.end_ts, s.stage])).toEqual([
@@ -217,6 +218,41 @@ describe("AC1 sleep sessions", () => {
     await drainSyncPending(drainEnv(), client, opts);
     expect((await sessions()).map((r) => [r.source_id, r.local_date, r.tz_offset_min])).toEqual([
       [`${ID}c`, "2026-10-08", 330], [`${ID}a`, "2026-10-08", 120], [`${ID}b`, "2026-10-07", -300]]);
+  });
+
+  it("stores the start offset of a fall-back night apart from its end offset", async () => {
+    await queue(at("2026-10-24T21:30:00Z"), at("2026-10-25T06:30:00Z"));
+    const { client } = fakeClient([session("dst", "2026-10-24T21:30:00Z", "2026-10-25T06:30:00Z",
+      { stages: [], startUtcOffset: "7200s", endUtcOffset: "3600s" })]);
+    await drainSyncPending(drainEnv(), client, opts);
+    expect(await sessions()).toEqual([expect.objectContaining({ tz_offset_min: 60, start_tz_offset_min: 120, local_date: "2026-10-25" })]);
+    await recomputeDailySummary(env.DB, "2026-10-25", "2026-10-25", NOW);
+    expect(await env.DB.prepare("SELECT bedtime_local, waketime_local FROM v_daily WHERE local_date = '2026-10-25'").first())
+      .toEqual({ bedtime_local: "23:30", waketime_local: "07:30" });
+  });
+
+  it.each([["missing", undefined], ["malformed", "2h"], ["fractional", "90s"], ["non-string", 7200]])(
+    "keeps a session with a %s start offset and stores it as null", async (_name, offset) => {
+      await queue(at("2026-10-06T21:00:00Z"), at("2026-10-07T05:00:00Z"));
+      await drainSyncPending(drainEnv(), fakeClient([session("s", "2026-10-06T21:15:00Z", "2026-10-07T04:48:00Z",
+        { stages: [], startUtcOffset: offset })]).client, opts);
+      expect(await sessions()).toEqual([expect.objectContaining({ tz_offset_min: 120, start_tz_offset_min: null })]);
+    });
+
+  it.each([
+    ["start at 09:00 by its own offset", "07:00:00", "7200s", "3600s", 1],
+    ["start before 09:00 by its own offset", "07:59:59", "3600s", "7200s", 0],
+    ["start before 20:00 by its own offset", "18:59:59", "3600s", "7200s", 1],
+    ["start at 20:00 by its own offset", "18:00:00", "7200s", "3600s", 0],
+    ["missing start offset falling back to the end offset", "08:00:00", undefined, "3600s", 1],
+  ])("classifies a short main sleep by %s", async (_name, time, startOffset, endOffset, isNap) => {
+    const start = at(`2026-10-06T${time}Z`);
+    const end = start + 90 * 60;
+    await queue(start, end);
+    await drainSyncPending(drainEnv(), fakeClient([session("edge", new Date(start * 1000).toISOString(), new Date(end * 1000).toISOString(), {
+      startUtcOffset: startOffset, endUtcOffset: endOffset, summary: { minutesInSleepPeriod: "90" }, stages: [],
+    })]).client, opts);
+    expect((await sessions()).map((row) => row.is_nap)).toEqual([isNap]);
   });
 
   it("skips sessions with a missing or malformed end offset or a reversed interval, keeping valid siblings", async () => {

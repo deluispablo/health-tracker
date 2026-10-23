@@ -4,7 +4,8 @@ import { beforeAll, expect, it } from "vitest";
 import { loadDayTable, resolveRange } from "../../src/mcp/tools/insights/units";
 
 beforeAll(async () => {
-  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.filter(m => m.name < "0014_query_indexes.sql"));
+  // loadDayTable reads the start offset from 0016; it is recorded, so the later full apply skips it.
+  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.filter(m => m.name < "0014_query_indexes.sql" || m.name === "0016_sleep_start_offset.sql"));
 });
 
 it("uses range searches for workout end times, audit retention and bounded event dates", async () => {
