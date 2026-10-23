@@ -34,7 +34,7 @@ The export in `py/` dumps D1, verifies a local restore and keeps the last eight 
   The machine needs `uv`, Node.js, the `worker/` dependencies and a logged-in `wrangler`.
 - **A scheduled job with a check.** Run the same command, then compare each table's row count in the new manifest (`health-tracker-YYYY-MM-DD.json`) with the previous one. Warn when a table shrinks, or when `metric_minute` and `daily_summary` stop growing, which points to broken sync.
 
-The export already rejects a dump that lost rows against the newest previous manifest: `event` with fewer rows, `metric_minute` down by more than 1 % (Google may delete small heart-rate ranges), or either table empty. The dump is kept as `health-tracker-YYYY-MM-DD.rejected.sql` and `.json`, nothing is pruned and the export exits `1`. Find the cause before deleting the rejected pair.
+The export already rejects a dump that lost rows against the newest previous manifest: `event` with fewer rows, `metric_minute` down by more than 1 % (Google may delete small heart-rate ranges), or `metric_minute` empty. An empty `event` table is fine when the previous backup had none. The dump is kept as `health-tracker-YYYY-MM-DD.rejected.sql` and `.json`, nothing is pruned and the export exits `1`. Find the cause before deleting the rejected pair.
 
 Never print or log wrangler's own output: it can include a short-lived download URL for the whole database. The export captures that output, replaces URLs with `<url>` in its error messages and exits `1` on any failure.
 
