@@ -354,11 +354,24 @@ def test_metric_minute_tolerance(tmp_path, capsys, event, minute, status):
 
 
 @pytest.mark.parametrize("with_previous", [False, True])
-@pytest.mark.parametrize("event,minute,table", [(0, 5, "event"), (5, 0, "metric_minute")])
-def test_zero_rows_rejected(tmp_path, capsys, with_previous, event, minute, table):
+def test_zero_metric_minute_rejected(tmp_path, capsys, with_previous):
     if with_previous:
         previous(tmp_path, event=0, minute=0)
-    assert_rejected(tmp_path, snapshot(tmp_path), dump(event, minute), capsys, f"{table} has 0")
+    assert_rejected(tmp_path, snapshot(tmp_path), dump(5, 0), capsys, "metric_minute has 0")
+
+
+@pytest.mark.parametrize("with_previous", [False, True])
+def test_zero_events_allowed_without_earlier_events(tmp_path, with_previous):
+    if with_previous:
+        previous(tmp_path, event=0, minute=5)
+    assert invoke(tmp_path, run=runner(dump(event=0, minute=5))) == 0
+    assert json.loads((tmp_path / f"{BASE}.json").read_text())["tables"]["event"] == 0
+
+
+def test_events_dropping_to_zero_rejected(tmp_path, capsys):
+    previous(tmp_path, event=7, minute=5)
+    assert_rejected(tmp_path, snapshot(tmp_path), dump(event=0, minute=5), capsys,
+                    "event has 0 rows, health-tracker-2026-10-20.json had 7")
 
 
 def test_first_run_succeeds(tmp_path):
