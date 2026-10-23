@@ -92,6 +92,11 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
   if (google && (watch?.synced_until == null || now - watch.synced_until > 86400)) {
     alerts.push({ code: "watch_not_syncing", message: "El reloj no se ha sincronizado en las últimas 24 h." });
   }
+  const hr = metrics.find((row) => row.metric === "hr");
+  if (hr && watch?.synced_until != null && watch.synced_until - hr.ts > 3600) {
+    alerts.push({ code: "data_lag", message: `El reloj se sincronizó con Google a las ${localTime(watch.synced_until).slice(11)}`
+      + ` pero el último pulso guardado es de las ${localTime(hr.ts).slice(11)}.` });
+  }
   const minutesByDate = new Map(coverage.map((row) => [row.date, row.hr_minutes]));
   let gap: string[] = [];
   for (const date of dates) {

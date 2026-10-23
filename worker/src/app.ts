@@ -2,7 +2,7 @@ import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { finishGoogleConnect, loadGoogleRefreshToken, startGoogleConnect } from "./auth/googleHealthConnect";
 import { createGoogleClient } from "./google/client";
 import { drainSyncPending } from "./ingest/drain";
-import { enqueueReconcile } from "./ingest/poll";
+import { enqueueLagPull, enqueueReconcile } from "./ingest/poll";
 import { handleGoogleWebhook } from "./ingest/webhook";
 import { dateTimeFormat } from "./lib/time";
 import { FAVICON_PNG } from "./favicon";
@@ -44,6 +44,8 @@ export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps):
   const today = ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
   const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
   if (cron === "30 4 * * *") {
+    // Rows exhausted by a long Google outage get one fresh round of retries a day.
+    await env.DB.prepare("UPDATE sync_pending SET attempts = 0 WHERE attempts >= 5").run();
     await enqueueReconcile(env.DB, now);
     await env.DB.prepare("DELETE FROM oauth_state WHERE expires_at < ?").bind(now).run();
     await env.DB.prepare("DELETE FROM audit_log WHERE ts < ?").bind(now - 90 * 86400).run();
@@ -63,9 +65,9 @@ export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps):
     });
     await drainSyncPending(env, client, { now: () => now });
     if (watchDue) {
+      let syncedUntil: number | null = null;
+      let lastError: string | null = null;
       try {
-        let syncedUntil: number | null = null;
-        let lastError: string | null = null;
         try {
           const lastSyncTime = await client.watchLastSync();
           if (lastSyncTime !== null) {
@@ -86,6 +88,14 @@ export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps):
       } catch (error) {
         // Watch persistence failures must not skip the rollups.
         console.error("watch persistence", error instanceof Error ? error.message : String(error));
+      }
+      if (lastError === null && syncedUntil !== null) {
+        try {
+          await enqueueLagPull(env.DB, now, syncedUntil);
+        } catch (error) {
+          // A failed lag pull must not skip the rollups either.
+          console.error("lag pull", error instanceof Error ? error.message : String(error));
+        }
       }
     }
   }

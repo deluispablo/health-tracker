@@ -132,7 +132,9 @@ describe("AC1 five-minute cron", () => {
     expect((await env.DB.prepare("SELECT local_date, hr_wear_min, computed_at FROM daily_summary ORDER BY local_date").all()).results).toEqual([
       { local_date: "2026-10-20", hr_wear_min: 1, computed_at: NOW },
       { local_date: "2026-10-21", hr_wear_min: null, computed_at: NOW }]);
-    expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first()).toEqual({ n: 0 });
+    // The drained row is gone; the watch lag (sync 04:00 vs HR 21:00) queues the SY1 lag pull instead.
+    expect(await env.DB.prepare("SELECT count(*) AS n, min(start_ts) AS s FROM sync_pending").first())
+      .toEqual({ n: 10, s: at("2026-10-20T21:00:00Z") });
   });
 
   it("skips Google entirely without a stored token but still recomputes", async () => {
@@ -249,7 +251,10 @@ describe("T10e AC1/AC2 watch sync in the five-minute cron", () => {
     expect(await state()).toEqual({ data_type: "watch", synced_until: at(recovered), last_ok_at: NOW + 3600, last_error: null });
     await handleScheduled("*/5 * * * *", appEnv(), { ...deps(google([], null).fetch), now: () => NOW + 5400 });
     expect(await state()).toEqual({ data_type: "watch", synced_until: null, last_ok_at: NOW + 5400, last_error: null });
-    await rollupsCompleted();
+    // The SY1 lag pull queued at NOW was drained on later ticks, so earlier dates were recomputed too.
+    expect(await env.DB.prepare("SELECT steps, computed_at FROM daily_summary WHERE local_date = '2026-10-21'").first())
+      .toEqual({ steps: 8123, computed_at: NOW + 5400 });
+    expect(await env.DB.prepare("SELECT * FROM sync_state WHERE data_type = 'sleep'").first()).toEqual(other);
   });
 
   it("stores a successful null result on the first watch lookup", async () => {
@@ -312,7 +317,122 @@ describe("T10e AC1/AC2 watch sync in the five-minute cron", () => {
   });
 });
 
+describe("SY1 lag pull on the watch tick", () => {
+  const TYPES = ["heart-rate", "steps", "daily-resting-heart-rate", "sleep", "daily-heart-rate-variability",
+    "daily-oxygen-saturation", "daily-respiratory-rate", "daily-sleep-temperature-derivations", "active-zone-minutes", "exercise"];
+  // Fractional second just after a minute boundary: floored to 04:00:00, so the window ends at 04:01:00.
+  const SYNC = "2026-10-21T04:00:00.500Z";
+  const LAST = at("2026-10-21T04:00:00Z");
+  // Google answers only the token and pairedDevices, so drained rows stay queued with one more attempt.
+  function offline(lastSyncTime: string | null = SYNC, paired = true) {
+    const g = google([], lastSyncTime);
+    const fetch: typeof globalThis.fetch = (input, init) => {
+      const url = new Request(input, init).url;
+      if (url === "https://oauth2.googleapis.com/token" || (paired && url.endsWith("/pairedDevices"))) return g.fetch(input, init);
+      return Promise.resolve(new Response("down", { status: 503 }));
+    };
+    return fetch;
+  }
+  const tick = (fetch: typeof globalThis.fetch, now = NOW) => handleScheduled("*/5 * * * *", appEnv(), { ...deps(fetch), now: () => now });
+  const hr = (ts: number, source = "gh") => env.DB.prepare(`INSERT INTO metric_minute (metric, ts, tz_offset_min, value, source)
+    VALUES ('hr', ?, 120, 60, ?)`).bind(ts, source).run();
+  const queued = async () => (await env.DB.prepare(`SELECT data_type, start_ts, end_ts, operation, received_at, attempts
+    FROM sync_pending ORDER BY data_type, start_ts`).all()).results;
+  const window = (start: number, now = NOW) => [...TYPES].sort().map((data_type) => ({
+    data_type, start_ts: start, end_ts: LAST + 60, operation: "UPSERT", received_at: now, attempts: 0 }));
+  const marker = () => env.DB.prepare("SELECT * FROM sync_state WHERE data_type = 'lag_pull'").first();
+  const states = async () => (await env.DB.prepare("SELECT data_type FROM sync_state ORDER BY data_type").all()).results.map((r) => r.data_type);
+
+  beforeEach(storeRefreshToken);
+
+  it("a 2-hour lag enqueues all ten types from the newest gh HR minute, ignoring newer non-gh rows and per-type state", async () => {
+    await hr(LAST - 7200 + 30);
+    await hr(LAST - 60, "manual");
+    await tick(offline());
+    expect(await queued()).toEqual(window(LAST - 7200));
+    expect(await marker()).toEqual({ data_type: "lag_pull", synced_until: null, last_ok_at: NOW, last_error: null });
+    expect(await states()).toEqual(["lag_pull", "watch"]);
+  });
+
+  it("without any HR row the window starts 48 hours before the floored sync time", async () => {
+    await tick(offline());
+    expect(await queued()).toEqual(window(LAST - 48 * 3600));
+  });
+
+  it("caps the window at 48 hours before the sync time when the newest HR is older", async () => {
+    await hr(LAST - 72 * 3600);
+    await tick(offline());
+    expect(await queued()).toEqual(window(LAST - 48 * 3600));
+  });
+
+  it.each([["30 minutes", LAST - 1800], ["exactly one hour of floored lag", LAST - 3600]])("a lag of %s enqueues nothing", async (_label, ts) => {
+    await hr(ts);
+    await tick(offline());
+    expect(await queued()).toEqual([]);
+    expect(await marker()).toBeNull();
+  });
+
+  it.each([["a pairedDevices failure", offline(SYNC, false)], ["a null lastSyncTime", offline(null)]])("%s enqueues nothing", async (_label, fetch) => {
+    await tick(fetch);
+    expect(await queued()).toEqual([]);
+    expect(await marker()).toBeNull();
+  });
+
+  it("does not duplicate a type that is already pending and leaves that row to the drain", async () => {
+    await env.DB.prepare("INSERT INTO sync_pending (data_type, start_ts, end_ts, operation, received_at, attempts) VALUES ('sleep', 0, 60, 'UPSERT', 1, 0)").run();
+    await tick(offline());
+    expect(await queued()).toEqual([
+      ...window(LAST - 48 * 3600).filter((row) => row.data_type !== "sleep"),
+      { data_type: "sleep", start_ts: 0, end_ts: 60, operation: "UPSERT", received_at: 1, attempts: 1 },
+    ].sort((a, b) => a.data_type.localeCompare(b.data_type) || a.start_ts - b.start_ts));
+  });
+
+  it("resets an exhausted row with the exact same key to attempts 0", async () => {
+    await env.DB.prepare("INSERT INTO sync_pending (data_type, start_ts, end_ts, operation, received_at, attempts) VALUES ('heart-rate', ?, ?, 'UPSERT', 1, 5)")
+      .bind(LAST - 48 * 3600, LAST + 60).run();
+    await tick(offline());
+    expect(await queued()).toEqual(window(LAST - 48 * 3600));
+  });
+
+  it("pulls at most once per three hours", async () => {
+    await tick(offline());
+    await env.DB.prepare("DELETE FROM sync_pending").run();
+    await tick(offline(), NOW + 1800);
+    expect(await queued()).toEqual([]);
+    expect(await marker()).toMatchObject({ last_ok_at: NOW });
+    const later = NOW + 3 * 3600 + 60;
+    expect(Math.floor(later / 300) % 6).toBe(0);
+    await tick(offline(), later);
+    expect(await queued()).toEqual(window(LAST - 48 * 3600, later));
+    expect(await marker()).toMatchObject({ last_ok_at: later });
+  });
+
+  it("writes nothing, not even the marker, when every type is already pending, and pulls once that work is gone", async () => {
+    await env.DB.batch(TYPES.map((type) => env.DB.prepare(`INSERT INTO sync_pending (data_type, start_ts, end_ts, operation, received_at, attempts)
+      VALUES (?, 0, 60, 'UPSERT', 1, 0)`).bind(type)));
+    await tick(offline());
+    expect((await queued()).map((row) => [row.data_type, row.start_ts, row.attempts])).toEqual([...TYPES].sort().map((type) => [type, 0, 1]));
+    expect(await marker()).toBeNull();
+    await env.DB.prepare("DELETE FROM sync_pending").run();
+    await tick(offline(), NOW + 1800);
+    expect(await queued()).toEqual(window(LAST - 48 * 3600, NOW + 1800));
+  });
+});
+
 describe("AC2 daily cron", () => {
+  it("SY1 resets exhausted queue rows to attempts 0 before the reconcile", async () => {
+    await env.DB.prepare(`INSERT INTO sync_pending (data_type, start_ts, end_ts, operation, received_at, attempts)
+      VALUES ('heart-rate', 0, 60, 'UPSERT', 1, 5), ('steps', 0, 60, 'UPSERT', 1, 7)`).run();
+    await storeRefreshToken();
+    await handleScheduled("*/5 * * * *", appEnv(), { ...deps(google().fetch), now: () => NOW + 300 });
+    expect((await env.DB.prepare("SELECT data_type, attempts FROM sync_pending ORDER BY data_type").all()).results)
+      .toEqual([{ data_type: "heart-rate", attempts: 5 }, { data_type: "steps", attempts: 7 }]);
+    await env.DB.prepare("INSERT INTO sync_pending (data_type, start_ts, end_ts, operation, received_at, attempts) VALUES ('sleep', 0, 60, 'UPSERT', 1, 2)").run();
+    await handleScheduled("30 4 * * *", appEnv(), deps(google().fetch));
+    expect((await env.DB.prepare("SELECT data_type, attempts FROM sync_pending WHERE start_ts = 0 ORDER BY data_type").all()).results)
+      .toEqual([{ data_type: "heart-rate", attempts: 0 }, { data_type: "sleep", attempts: 2 }, { data_type: "steps", attempts: 0 }]);
+  });
+
   it.each(["2026-10-21T04:30:27Z", "2026-10-20T22:30:00Z"])(
     "repairs exactly the last eight local dates at %s, removing stale and deleted totals", async (iso) => {
       const dates = Array.from({ length: 10 }, (_, i) => `2026-10-${String(i + 13)}`);

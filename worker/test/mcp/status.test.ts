@@ -408,3 +408,37 @@ describe("T27 AC3 sleep gap and AC4 sleep stream", () => {
     expect(codes(out).includes("no_sleep_48h")).toBe(mainEnd < NOW - 172800);
   });
 });
+
+describe("SY1 data_lag alert and foreign sync_state rows", () => {
+  const lag = (out: Status) => out.alerts.filter((alert) => alert.code === "data_lag");
+
+  it.each([[3601, true], [3600, false]] as const)("alerts when the watch sync is %i s newer than the newest gh HR minute", async (gap, alert) => {
+    const hr = at("2026-10-21T05:00:00Z");
+    await minute(hr, 0);
+    // A newer non-gh HR row must not count as stored Google data.
+    await minute(hr + gap, 0, "hr", "manual");
+    await watch(hr + gap);
+    const out = await readStatus(env.DB, options);
+    // Both times use USER_TZ (Madrid, UTC+2), not the stored offset 0.
+    expect(lag(out)).toEqual(alert
+      ? [{ code: "data_lag", message: "El reloj se sincronizó con Google a las 08:00 pero el último pulso guardado es de las 07:00." }]
+      : []);
+  });
+
+  it.each([["no watch row", false, true], ["null watch time", true, true], ["no HR", true, false]] as const)(
+    "does not alert with %s", async (_label, watchRow, hrRow) => {
+      if (hrRow) await minute(NOW - 7 * 3600);
+      if (watchRow) await watch(hrRow ? null : NOW);
+      expect(lag(await readStatus(env.DB, options))).toEqual([]);
+    },
+  );
+
+  it("never reports a lag_pull or refresh row as a stream or alert", async () => {
+    await watch(NOW - 60, null, "lag_pull");
+    await watch(NOW - 60, "boom", "refresh");
+    const out = await readStatus(env.DB, options);
+    expect(out.streams.map((row) => row.stream)).toEqual(["sleep", "daily", "watch"]);
+    expect(out.streams.at(-1)).toEqual({ stream: "watch", latest_local: null, age_hours: null });
+    expect(JSON.stringify(out)).not.toMatch(/lag_pull|refresh|boom/);
+  });
+});

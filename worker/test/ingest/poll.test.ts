@@ -1,7 +1,7 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { enqueueReconcile, RECONCILE_TYPES } from "../../src/ingest/poll";
+import { enqueueLagPull, enqueueReconcile, RECONCILE_TYPES } from "../../src/ingest/poll";
 
 const at = (iso: string) => Date.parse(iso) / 1000;
 const NOW = at("2026-10-21T04:30:27Z");
@@ -88,5 +88,21 @@ describe("AC1 48-hour reconcile", () => {
       await env.DB.prepare("DROP TRIGGER fail_q").run();
       expect([await pending(), await state()]).toEqual(before);
     }
+  });
+});
+
+describe("SY1 lag pull", () => {
+  const LAST_SYNC = at("2026-10-21T04:00:00Z");
+
+  it("writes the queue rows and the lag_pull marker atomically, whichever write fails, then succeeds on retry", async () => {
+    for (const [table, type] of [["sync_state", "lag_pull"], ["sync_pending", "sleep"]]) {
+      await env.DB.prepare(`CREATE TRIGGER fail_q BEFORE INSERT ON ${table} WHEN NEW.data_type = '${type}' BEGIN SELECT RAISE(ABORT, 'x'); END`).run();
+      await expect(enqueueLagPull(env.DB, NOW, LAST_SYNC)).rejects.toThrow();
+      await env.DB.prepare("DROP TRIGGER fail_q").run();
+      expect([await pending(), await state()]).toEqual([[], []]);
+    }
+    expect(await enqueueLagPull(env.DB, NOW, LAST_SYNC)).toBe(10);
+    expect(await pending()).toHaveLength(10);
+    expect(await state()).toEqual([{ data_type: "lag_pull", synced_until: null, last_ok_at: NOW, last_error: null }]);
   });
 });

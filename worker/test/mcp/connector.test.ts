@@ -780,7 +780,7 @@ describe("T39 tool description contract", () => {
       health_context: ["9000 characters", "no data read", "ROPEs", "physiology"],
       health_profile: ["90 dated weights", "7000 steps", "450 minutes", "2000 ml", "water_goal_ml", "USER_TZ", "health_set_profile"],
       health_set_profile: ["at least one field", "0.1", "local today", "1920", "100–250", "30–300", "1000–50000", "240–720", "water_goal_ml", "500–6000", "120–230", "health_profile", "midnight"],
-      health_status: ["14-day", "48 hours", "24 hours", "5 attempts", "USER_TZ", "YYYY-MM-DDTHH:MM", "health_daily"],
+      health_status: ["14-day", "48 hours", "24 hours", "5 attempts", "data_lag", "USER_TZ", "YYYY-MM-DDTHH:MM", "health_daily"],
       health_daily: ["90 dates", "all metrics", "mood_", "count", "null", "health_trend", "health_compare", "health_correlate", "health_sql"],
       health_sleep: ["31 dates", "stages", "YYYY-MM-DDTHH:MM", "health_daily", "health_intraday"],
       health_workouts: ["31 dates", "YYYY-MM-DDTHH:MM", "max_hr", "[start, end)", "null", "health_daily"],
