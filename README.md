@@ -138,7 +138,7 @@ The deep reference for ingest, rollups, the Google client and each tool is [docs
 | `py/` | Weekly backup export with restore check (uv, Python 3.12+) |
 | `wear/` | Wear OS companion app (`app`) and Watch Face Format face (`watchface`) |
 | `dashboards/` | Dashboard shell `health-tracker.html` and tab modules `tabs/*.js` |
-| `landing/` | Product landing page, a single static `index.html` published at [deluispablo.com/healthtracker](https://deluispablo.com/healthtracker/) |
+| `landing/` | Product landing page: a static `index.html` plus dashboard screenshots with sample data in `img/`, published at [deluispablo.com/healthtracker](https://deluispablo.com/healthtracker/) |
 | `docs/` | [Architecture](docs/architecture.md), [watch](docs/watch.md), [operations](docs/operations.md) and brand assets |
 
 ## Getting started

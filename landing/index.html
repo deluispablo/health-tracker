@@ -192,21 +192,14 @@ a { color: inherit; }
 }
 .tabs button:hover { color: var(--ink); background: var(--surface-2); }
 .tabs button[aria-selected="true"] { background: var(--container); color: var(--on-container); }
-.panel { padding: 28px; display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 28px; align-items: center; min-height: 320px; }
-.panel h3 { font-size: 26px; margin-bottom: 10px; }
-.panel p { color: var(--muted); }
-.panel svg { width: 100%; height: auto; display: block; }
+.panel { padding: 24px 28px 28px; }
+.panel .cap { color: var(--muted); margin-bottom: 18px; max-width: 68ch; }
+.panel .cap strong { color: var(--ink); font-weight: 600; }
+.shots { position: relative; padding: 0 12% 6% 0; }
+.shots img { display: block; width: 100%; height: auto; border: 1px solid var(--line); background: var(--surface-2); }
+.shot-d { border-radius: 14px; }
+.shot-m { position: absolute; right: 0; bottom: 0; width: 22% !important; border-radius: 22px; box-shadow: 0 18px 40px -12px rgb(0 0 0 / .45); }
 .dash-note { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 14px; font-size: 14px; color: var(--muted); }
-.vitals { display: grid; gap: 14px; }
-.vrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 38%) 3.6em; gap: 4px 12px; align-items: center; }
-.vn { font-size: 16px; }
-.vv { font-size: 18px; text-align: right; }
-.vs { position: relative; height: 14px; }
-.vs i { position: absolute; display: block; }
-.vl { left: 0; right: 0; top: 6px; height: 2px; background: var(--line); }
-.vb { top: 2px; height: 10px; border-radius: var(--radius-full); background: var(--band); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.vd { top: 1px; width: 12px; height: 12px; margin-left: -6px; border-radius: var(--radius-full); background: var(--ink); box-shadow: 0 0 0 2px var(--surface); }
-.vsub { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
 
 /* Tuyo */
 .three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
@@ -255,7 +248,10 @@ footer.author img { width: 96px; height: 96px; border-radius: 50%; object-fit: c
   .scene p { font-size: 17px; }
   .cards, .more { grid-template-columns: minmax(0, 1fr); }
   .card.feature { grid-template-columns: minmax(0, 1fr); padding: 24px; }
-  .panel { grid-template-columns: minmax(0, 1fr); padding: 20px; align-content: start; min-height: 400px; }
+  .panel { padding: 18px 16px 20px; }
+  .shots { padding: 0; }
+  .shot-d { display: none !important; }
+  .shot-m { position: static; width: min(100%, 320px) !important; margin-inline: auto; box-shadow: none; }
   .tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; padding: 6px; }
   .tabs button { padding: 10px 2px; font-size: 13.5px; }
   .three { grid-template-columns: minmax(0, 1fr); }
@@ -589,22 +585,17 @@ footer.author img { width: 96px; height: 96px; border-radius: 50%; object-fit: c
     'honest': ['Claude keeps what your data says apart from what is known in general, never claims a cause without evidence and doesn’t diagnose. That’s your doctor’s job.',
       'Claude separa lo que dicen tus datos de lo que se sabe en general, nunca habla de causas sin pruebas y no hace diagnósticos. Para eso está tu médico.'],
     'dash.h': ['And all the detail, in five tabs.', 'Y todo el detalle, en cinco pestañas.'],
-    'dash.lead': ['When you want more than the dial, the dashboard shows it calmly. Tap each tab.', 'Cuando quieras más que la esfera, el dashboard lo enseña con calma. Toca cada pestaña.'],
+    'dash.lead': ['This is the real dashboard, filled with sample data. Tap each tab.', 'Este es el dashboard de verdad, con datos de ejemplo. Toca cada pestaña.'],
+    'dash.alt': ['The dashboard\'s {0} tab on a computer, with sample data', 'La pestaña {0} del dashboard en el ordenador, con datos de ejemplo'],
+    'dash.altm': ['The same tab on a phone', 'La misma pestaña en el móvil'],
     'dash.tabs': ['Dashboard tabs', 'Pestañas del dashboard'],
     'dash.note': ['Works on your phone and your computer, in light and dark.', 'Funciona en el móvil y en el ordenador, en claro y en oscuro.'],
     'tab.hoy': ['Today', 'Hoy'], 'tab.sueno': ['Sleep', 'Sueño'], 'tab.salud': ['Health', 'Salud'], 'tab.actividad': ['Activity', 'Actividad'], 'tab.rutina': ['Routine', 'Rutina'],
-    'p.hoy': ['One sentence to start the day: how you slept, how your body is doing and what suits you today.', 'Una frase para empezar el día: cómo has dormido, cómo está tu cuerpo y qué te conviene hoy.'],
-    'p.sueno': ['The night in stages. Deep sleep comes early in the night and dream sleep towards the end.', 'La noche por fases. El sueño profundo llega al principio de la noche y el de los sueños, hacia el final.'],
-    'p.salud': ['Last night against your usual. The band is normal for you; the dot is last night. All within your usual.', 'Anoche frente a tu habitual. La franja es lo normal para ti; el punto, anoche. Todo dentro de lo habitual.'],
-    'p.actividad': ['Steps hour by hour, against your daily goal.', 'Tus pasos hora a hora, frente a tu objetivo del día.'],
-    'p.rutina': ['Your typical day: when you usually log each thing. Each peak is a habit; the higher, the more often.', 'Tu día tipo: a qué horas sueles apuntar cada cosa. Cada pico es una costumbre; cuanto más alto, más se repite.'],
-    'hoy.title': ['Good day to train.', 'Buen día para entrenar.'], 'hoy.sub': ['You slept well and your resting pulse is normal for you.', 'Dormiste bien y tu pulso en reposo está en tu normal.'],
-    'hoy.sleep': ['sleep', 'sueño'], 'hoy.rhr': ['resting pulse', 'pulso en reposo'], 'hoy.cof': ['coffees', 'cafés'], 'hoy.rec': ['Recovery: good', 'Recuperación: buena'],
-    'sl.st': [['Awake', 'Dreams (REM)', 'Light', 'Deep'], ['Despierto', 'Sueños (REM)', 'Ligero', 'Profundo']],
-    'vit': [[['Resting pulse', '57', 'usual 55 to 60 per minute'], ['Heart rate variability', '44 ms', 'usual 38 to 47 ms'], ['Breathing', '14', 'usual 13 to 15 per minute']],
-      [['Pulso en reposo', '57', 'habitual 55 a 60 por minuto'], ['Variabilidad del pulso', '44 ms', 'habitual 38 a 47 ms'], ['Respiración', '14', 'habitual 13 a 15 por minuto']]],
-    'act.steps': ['11,240 steps', '11.240 pasos'], 'act.goal': ['goal', 'objetivo'],
-    'rut.rows': [['Coffee', 'Water', 'Cigarette', 'Drink'], ['Café', 'Agua', 'Cigarro', 'Copa']],
+    'p.hoy': ['Your night, your recovery and everything you logged since yesterday evening, on one timeline.', 'Tu noche, tu recuperación y todo lo que apuntaste desde ayer por la tarde, en una sola línea de tiempo.'],
+    'p.sueno': ['Last night stage by stage, your pulse underneath and what may have played a part.', 'Anoche fase a fase, tu pulso debajo y lo que pudo influir.'],
+    'p.salud': ["Last night's vitals against your usual range, and today's heart rate with your logs on top.", 'Las constantes de anoche frente a tu franja habitual, y el pulso de hoy con tus registros encima.'],
+    'p.actividad': ['Steps hour by hour against your usual day, your active minutes and your workouts.', 'Tus pasos hora a hora frente a tu día habitual, tus minutos activos y tus entrenos.'],
+    'p.rutina': ['Your typical day: when you usually log each thing, and how long from waking to your first coffee.', 'Tu día tipo: a qué horas sueles apuntar cada cosa y cuánto pasa desde que te levantas hasta el primer café.'],
     'own.h': ['Yours and nobody else’s.', 'Tuyo y de nadie más.'],
     'own.lead': ['Health Tracker is for one person: you. No company in the middle keeping your data.', 'Health Tracker es para una persona: tú. No hay empresa en medio guardando tus datos.'],
     'own.1h': ['Only you get in', 'Solo entras tú'], 'own.1p': ['Only your Google account can open it. No other users, no ads, nobody watching.', 'Solo tu cuenta de Google puede abrirlo. No hay más usuarios, ni anuncios, ni nadie mirando.'],
@@ -1014,67 +1005,19 @@ footer.author img { width: 96px; height: 96px; border-radius: 50%; object-fit: c
   }
 
   // Pestañas del dashboard, con datos de ejemplo.
-  const PANEL = {
-    hoy: () => `<svg viewBox="0 0 440 210" role="img" aria-label="${tx('hoy.title')} ${tx('hoy.sub')}">
-        <rect width="440" height="210" rx="12" fill="var(--surface-2)"/>
-        <text x="22" y="42" font-size="18" fill="var(--ink)" font-weight="500">${tx('hoy.title')}</text>
-        <text x="22" y="66" font-size="14" fill="var(--muted)">${tx('hoy.sub')}</text>
-        <g ${mono}><text x="22" y="124" font-size="30" fill="var(--ink)">7 h 40</text><text x="170" y="124" font-size="30" fill="var(--ink)">57</text><text x="318" y="124" font-size="30" fill="var(--ink)">2</text></g>
-        <g font-size="13" fill="var(--muted)"><text x="22" y="148">${tx('hoy.sleep')}</text><text x="170" y="148">${tx('hoy.rhr')}</text><text x="318" y="148">${tx('hoy.cof')}</text></g>
-        <rect x="22" y="172" width="396" height="8" rx="4" fill="var(--line)"/><rect x="22" y="172" width="300" height="8" rx="4" fill="var(--m-steps)"/>
-        <text x="22" y="200" font-size="12" fill="var(--muted)">${tx('hoy.rec')}</text></svg>`,
-    sueno: () => {
-      // Noche normal: cuatro ciclos tranquilos; el profundo pesa al principio y el REM al final.
-      const seg = [[2, 15], [3, 60], [2, 20], [1, 15], [2, 25], [3, 40], [2, 25], [1, 25], [2, 40], [3, 15], [2, 25], [1, 35], [0, 5], [2, 60], [1, 55], [2, 50], [0, 10]];
-      const col = ['var(--m-awake)', 'var(--m-rem)', 'var(--m-light)', 'var(--m-deep)'], lab = tx('sl.st');
-      const total = seg.reduce((a, x) => a + x[1], 0), X = m => 110 + m / total * 330, yc = s => 24 + s * 38;
-      let m = 0, d = '', bars = '';
-      seg.forEach(([s, len], i) => { d += `${i ? 'L' : 'M'}${f(X(m))} ${yc(s)}H${f(X(m + len))}`; bars += `<rect x="${f(X(m))}" y="${yc(s) - 8}" width="${f(X(m + len) - X(m))}" height="16" rx="3" fill="${col[s]}"/>`; m += len; });
-      return `<svg viewBox="0 0 440 210" role="img" aria-label="${tx('p.sueno')}">
-        ${lab.map((l, i) => `<text x="0" y="${yc(i) + 4}" font-size="13" fill="var(--muted)">${l}</text><line x1="110" x2="440" y1="${yc(i)}" y2="${yc(i)}" stroke="var(--line)" stroke-dasharray="2 4"/>`).join('')}
-        <path d="${d}" fill="none" stroke="var(--line-strong)" stroke-width="1.5"/>${bars}
-        <g font-size="12" fill="var(--muted)" ${mono}><text x="110" y="196">22:45</text><text x="${f(X(255))}" y="196" text-anchor="middle">03:00</text><text x="440" y="196" text-anchor="end">07:25</text></g></svg>`;
-    },
-    salud: () => {
-      const v = tx('vit'), dom = [[57, 55, 60, 50, 66], [44, 38, 47, 30, 54], [14.2, 13, 15, 11, 17]];
-      return `<div class="vitals" role="img" aria-label="${tx('p.salud')}">${v.map(([n, val, sub], i) => {
-        const [x, lo, hi, a, b] = dom[i], P = y => f((y - a) / (b - a) * 100) + '%';
-        return `<div class="vrow"><span class="vn">${n}</span><span class="vs" aria-hidden="true"><i class="vl"></i><i class="vb" style="left:${P(lo)};width:${f((hi - lo) / (b - a) * 100)}%"></i><i class="vd" style="left:${P(x)}"></i></span><span class="vv mono">${val}</span><span class="vsub">${sub}</span></div>`;
-      }).join('')}</div>`;
-    },
-    actividad: () => {
-      let bars = '';
-      for (let h = 0; h < 24; h++) {
-        const s = h < 7 ? 0 : h === 18 ? 3600 : h === 8 || h === 14 ? 900 : h > 22 ? 0 : 300 + (h * 137) % 500, hgt = s / 3600 * 140;
-        bars += `<rect x="${f(h * 18.3)}" y="${f(175 - hgt)}" width="13" height="${f(Math.max(hgt, 2))}" rx="3" fill="var(--m-steps)" opacity="${h === 18 ? 1 : .55}"/>`;
-      }
-      return `<svg viewBox="0 0 440 210" role="img" aria-label="${tx('p.actividad')}">${bars}
-        <g font-size="12" fill="var(--muted)" ${mono}><text x="0" y="198">00</text><text x="219" y="198" text-anchor="middle">12</text><text x="440" y="198" text-anchor="end">24</text></g>
-        <text x="440" y="20" font-size="14" fill="var(--ink)" text-anchor="end" ${mono}>${tx('act.steps')}</text></svg>`;
-    },
-    rutina: () => {
-      // Día tipo: a qué horas sueles apuntar cada cosa; cada pico es una costumbre, con su hora.
-      const rows = [['var(--m-caffeine)', [[8.5, .9, 1], [17, .8, .7]]], ['var(--m-water)', [[9.5, 1.4, .6], [13, 1.4, .8], [19.5, 1.6, .6]]],
-        ['var(--m-cig)', [[13.25, .8, .8], [21.25, .8, 1]]], ['var(--m-alcohol)', [[20.75, .9, 1]]]], names = tx('rut.rows');
-      const X = h => 80 + (h - 6) / 18 * 360;
-      let o = [6, 12, 18, 24].map(h => `<line x1="${X(h)}" x2="${X(h)}" y1="8" y2="200" stroke="var(--line)"/><text x="${X(h)}" y="224" font-size="12" fill="var(--muted)" ${mono} text-anchor="${h === 6 ? 'start' : h === 24 ? 'end' : 'middle'}">${String(h).padStart(2, '0')}:00</text>`).join('');
-      rows.forEach(([c, peaks], i) => {
-        const base = 54 + i * 48, pts = [];
-        for (let h = 6; h <= 24; h += .1) pts.push(f(X(h)) + ' ' + f(base - 26 * peaks.reduce((a, [m, sd, w]) => a + w * Math.exp(-((h - m) ** 2) / (2 * sd * sd)), 0)));
-        o += `<text x="0" y="${base - 4}" font-size="13" fill="var(--ink)">${names[i]}</text><path d="M${X(6)} ${base}L${pts.join('L')}L${X(24)} ${base}Z" fill="${c}" fill-opacity=".35" stroke="${c}" stroke-width="1.6"/>`;
-        peaks.filter(p => p[2] >= .7).forEach(([m]) => { o += `<text x="${f(X(m))}" y="${base - 31}" font-size="12" fill="var(--muted)" ${mono} text-anchor="middle">${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}</text>`; });
-      });
-      return `<svg viewBox="0 0 440 240" role="img" aria-label="${tx('p.rutina')}">${o}</svg>`;
-    }
-  };
+  // Capturas reales del dashboard con datos de ejemplo: idioma × tema × ordenador/móvil.
+  const TAB_IMG = { hoy: 'today', sueno: 'sleep', salud: 'health', actividad: 'activity', rutina: 'routine' };
+  const light = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'light' : matchMedia('(prefers-color-scheme: light)').matches;
+  const shot = (k, dev) => `img/${lang}-${light() ? 'light' : 'dark'}-${dev}-${TAB_IMG[k]}.webp`;
   const panel = $('panel'), tabs = [...document.querySelectorAll('[role="tab"]')];
   let current = 'hoy';
   const show = k => {
     current = k;
-    panel.innerHTML = `<div><h3>${tx('tab.' + k)}</h3><p>${tx('p.' + k)}</p></div>${PANEL[k]()}`;
+    panel.innerHTML = `<p class="cap"><strong>${tx('tab.' + k)}.</strong> ${tx('p.' + k)}</p><div class="shots"><img class="shot-d" src="${shot(k, 'd')}" width="1280" height="800" alt="${tx('dash.alt').replace('{0}', tx('tab.' + k))}"><img class="shot-m" src="${shot(k, 'm')}" width="390" height="760" alt="${tx('dash.altm')}"></div>`;
     tabs.forEach(b => { const on = b.id === 'tab-' + k; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
     panel.setAttribute('aria-labelledby', 'tab-' + k);
   };
+  matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => show(current));
   tabs.forEach((b, i) => {
     b.addEventListener('click', () => show(b.id.slice(4)));
     b.addEventListener('keydown', e => {
