@@ -13,10 +13,26 @@ import pytest
 from health_tracker import export
 
 NOW = datetime(2026, 10, 21, tzinfo=UTC)
-SQL = "\n".join(f'CREATE TABLE "{name}" (id INTEGER);' for name in export.REQUIRED_TABLES)
-SQL += '\nCREATE TABLE "extra" (value TEXT); INSERT INTO extra VALUES (\'hello\');'
+SCHEMA = "\n".join(f'CREATE TABLE "{name}" (id INTEGER);' for name in export.REQUIRED_TABLES)
+SCHEMA += '\nCREATE TABLE "extra" (value TEXT); INSERT INTO extra VALUES (\'hello\');'
 BASE = "health-tracker-2026-10-21"
 WRANGLER_URL = "https://example.r2.cloudflarestorage.com/db.sql?X-Amz-Signature=abc"
+
+
+def dump(event=1, minute=1):
+    """Return the fixture SQL with the given row counts in the guarded tables."""
+    return SCHEMA + "".join(
+        f"\nWITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < {count})"
+        f" INSERT INTO {table} SELECT i FROM n;"
+        for table, count in (("event", event), ("metric_minute", minute)) if count
+    )
+
+
+def manifest_text(event=1, minute=1):
+    return json.dumps({"tables": {"event": event, "metric_minute": minute}})
+
+
+SQL = dump()
 
 
 def runner(contents=SQL, *, failure=False):
@@ -42,7 +58,9 @@ def invoke(directory, **kwargs):
 def seed_pairs(directory, count=10):
     for number in range(1, count + 1):
         for suffix in ("sql", "json"):
-            (directory / f"health-tracker-2026-09-{number:02}.{suffix}").write_text("old")
+            (directory / f"health-tracker-2026-09-{number:02}.{suffix}").write_text(
+                manifest_text() if suffix == "json" else "old"
+            )
 
 
 def test_wrangler_captures_text_and_checks_exit_status(tmp_path):
@@ -115,7 +133,10 @@ def test_success_manifest_and_same_day_replacement(tmp_path, monkeypatch):
     assert manifest == {
         "date": "2026-10-21", "sha256": hashlib.sha256(SQL.encode()).hexdigest(),
         "bytes": len(SQL.encode()),
-        "tables": {**{name: 0 for name in export.REQUIRED_TABLES}, "extra": 1},
+        "tables": {
+            **{name: 0 for name in export.REQUIRED_TABLES}, "event": 1, "metric_minute": 1,
+            "extra": 1,
+        },
     }
     assert list(manifest["tables"]) == sorted(manifest["tables"])
     updated = SQL + "\nINSERT INTO extra VALUES ('second');"
@@ -286,3 +307,88 @@ def test_export_rejects_missing_required_table(tmp_path, capsys, table):
     assert invoke(tmp_path, run=runner(contents)) == 1
     assert f"Missing required tables: {table}" in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []
+
+
+def snapshot(directory):
+    return {path.name: path.read_bytes() for path in directory.iterdir()}
+
+
+def previous(directory, date="2026-10-20", event=1, minute=1):
+    (directory / f"health-tracker-{date}.sql").write_text("old")
+    (directory / f"health-tracker-{date}.json").write_text(manifest_text(event, minute))
+
+
+def assert_rejected(directory, before, contents, capsys, text):
+    """The export exits 1, keeps its files as .rejected and leaves every other file alone."""
+    assert invoke(directory, run=runner(contents)) == 1
+    err = capsys.readouterr().err
+    assert "Rejected" in err and text in err
+    after = snapshot(directory)
+    assert after.pop(f"{BASE}.rejected.sql") == contents.encode()
+    rejected = json.loads(after.pop(f"{BASE}.rejected.json"))
+    assert rejected["sha256"] == hashlib.sha256(contents.encode()).hexdigest()
+    assert after == before
+
+
+def test_event_shrink_rejects_without_pruning(tmp_path, capsys):
+    seed_pairs(tmp_path)
+    previous(tmp_path, event=5)
+    assert_rejected(tmp_path, snapshot(tmp_path), dump(event=4), capsys, "event has 4 rows")
+
+
+@pytest.mark.parametrize("event,minute,status", [
+    (10, 995, 0),    # -0.5 %
+    (10, 990, 0),    # exactly -1 %
+    (10, 980, 1),    # -2 %
+    (11, 1200, 0),   # growth
+    (10, 1000, 0),   # unchanged
+])
+def test_metric_minute_tolerance(tmp_path, capsys, event, minute, status):
+    previous(tmp_path, event=10, minute=1000)
+    if status:
+        assert_rejected(tmp_path, snapshot(tmp_path), dump(event, minute), capsys, "metric_minute")
+    else:
+        assert invoke(tmp_path, run=runner(dump(event, minute))) == 0
+        assert (tmp_path / f"{BASE}.json").exists()
+        assert not (tmp_path / f"{BASE}.rejected.json").exists()
+
+
+@pytest.mark.parametrize("with_previous", [False, True])
+@pytest.mark.parametrize("event,minute,table", [(0, 5, "event"), (5, 0, "metric_minute")])
+def test_zero_rows_rejected(tmp_path, capsys, with_previous, event, minute, table):
+    if with_previous:
+        previous(tmp_path, event=0, minute=0)
+    assert_rejected(tmp_path, snapshot(tmp_path), dump(event, minute), capsys, f"{table} has 0")
+
+
+def test_first_run_succeeds(tmp_path):
+    assert invoke(tmp_path, run=runner(dump(event=3, minute=7))) == 0
+    assert sorted(snapshot(tmp_path)) == [f"{BASE}.json", f"{BASE}.sql"]
+
+
+def test_newest_previous_by_filename_date_skipping_rejected_and_malformed(tmp_path, capsys):
+    previous(tmp_path, "2026-10-10", event=50)
+    (tmp_path / "health-tracker-2026-10-10.sql").unlink()  # orphan manifests still count
+    previous(tmp_path, "2026-10-01", event=1)
+    for date, text in [("2026-10-19", "not json"), ("2026-10-18", "{}"),
+                       ("2026-10-17", '{"tables": {"event": "9"}}'),
+                       ("2026-10-16", '{"tables": {"event": true, "metric_minute": 1}}')]:
+        (tmp_path / f"health-tracker-{date}.json").write_text(text)
+    (tmp_path / "health-tracker-2026-10-20.rejected.json").write_text(manifest_text(1))
+    os.utime(tmp_path / "health-tracker-2026-10-01.json", (2e9, 2e9))  # mtime is ignored
+    assert_rejected(tmp_path, snapshot(tmp_path), dump(event=40), capsys, "had 50")
+
+
+def test_same_day_pair_is_not_the_baseline_and_survives_rejections(tmp_path, capsys):
+    previous(tmp_path, "2026-10-20", event=5)
+    assert invoke(tmp_path, run=runner(dump(event=9))) == 0
+    before = snapshot(tmp_path)
+    assert_rejected(tmp_path, before, dump(event=4), capsys, "event has 4")
+    assert_rejected(tmp_path, before, dump(event=3), capsys, "event has 3")  # overwrites
+    assert invoke(tmp_path, run=runner(dump(event=6))) == 0  # above 5, below today's 9
+    assert json.loads((tmp_path / f"{BASE}.json").read_text())["tables"]["event"] == 6
+
+
+def test_legacy_zero_baseline_allows_growth(tmp_path):
+    previous(tmp_path, event=0, minute=0)
+    assert invoke(tmp_path, run=runner(dump(event=1, minute=1))) == 0

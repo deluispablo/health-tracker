@@ -20,6 +20,34 @@ REQUIRED_TABLES = {
 WORKER = Path(__file__).resolve().parents[3] / "worker"
 
 
+def shrink(directory, day, counts):
+    """Return why the export looks truncated against the newest previous manifest, or None."""
+    for table in ("event", "metric_minute"):
+        if not counts.get(table):
+            return f"Rejected: {table} has 0 rows"
+    names = sorted((
+        path.name for path in directory.glob("health-tracker-*.json")
+        if re.fullmatch(r"health-tracker-\d{4}-\d{2}-\d{2}\.json", path.name)
+        and path.name != f"health-tracker-{day}.json"
+    ), reverse=True)
+    for name in names:
+        try:
+            tables = json.loads((directory / name).read_text(encoding="utf-8"))["tables"]
+            event, minute = tables["event"], tables["metric_minute"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if not all(type(value) is int and value >= 0 for value in (event, minute)):
+            continue
+        if counts["event"] < event:
+            return f"Rejected: event has {counts['event']} rows, {name} had {event}"
+        # Google may delete small heart-rate ranges, so allow up to 1 % fewer minutes.
+        if counts["metric_minute"] * 100 < minute * 99:
+            return (f"Rejected: metric_minute has {counts['metric_minute']} rows, "
+                    f"{name} had {minute} (more than 1 % fewer)")
+        return None
+    return None
+
+
 def main(argv=None, *, run=subprocess.run, now=None):
     """Export and verify a backup, returning one on any operational failure.
 
@@ -66,6 +94,7 @@ def main(argv=None, *, run=subprocess.run, now=None):
                 ).fetchone()[0]
                 for name in tables
             }
+        reason = shrink(directory, day, counts)
         manifest = {
             "date": day, "sha256": hashlib.sha256(contents).hexdigest(),
             "bytes": len(contents), "tables": counts,
@@ -76,10 +105,14 @@ def main(argv=None, *, run=subprocess.run, now=None):
             temporary.append(Path(file.name))
             json.dump(manifest, file)
             file.write("\n")
-        # Invalidate the old pair before either replacement can fail or be interrupted.
-        (directory / f"health-tracker-{day}.sql").unlink(missing_ok=True)
-        os.replace(temporary[1], directory / f"health-tracker-{day}.json")
-        os.replace(sql, directory / f"health-tracker-{day}.sql")
+        base = f"health-tracker-{day}" + (".rejected" if reason else "")
+        if not reason:
+            # Invalidate the old pair before either replacement can fail or be interrupted.
+            (directory / f"{base}.sql").unlink(missing_ok=True)
+        os.replace(temporary[1], directory / f"{base}.json")
+        os.replace(sql, directory / f"{base}.sql")
+        if reason:
+            raise ValueError(f"{reason}; kept as {base}.sql and {base}.json, nothing pruned")
     except Exception as error:
         message = str(error)
         if isinstance(error, subprocess.CalledProcessError):
