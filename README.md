@@ -11,6 +11,11 @@
 
 <a href="https://deluispablo.com/healthtracker/"><img src="https://img.shields.io/badge/See_the_product_page-deluispablo.com%2Fhealthtracker-5b6cff?style=for-the-badge" alt="See the product page at deluispablo.com/healthtracker"></a>
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner/banner-dark.svg">
+  <img src="docs/assets/banner/banner-light.svg" width="100%" alt="Animated overview: log water with one tap on the watch face, see the night in the dashboard, ask your AI assistant what helps you sleep, all running on your own Cloudflare account">
+</picture>
+
 [![CI](https://github.com/deluispablo/health-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/deluispablo/health-tracker/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
