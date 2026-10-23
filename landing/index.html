@@ -185,6 +185,7 @@ a { color: inherit; }
 
 /* Dashboard */
 .dash { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+#panel:focus-visible { outline-offset: -3px; }   /* inside, so .dash does not clip it */
 .tabs { display: flex; gap: 4px; padding: 10px; border-bottom: 1px solid var(--line); }
 .tabs button {
   font: inherit; font-size: 15px; font-weight: 500; color: var(--muted); background: none; border: 0; cursor: pointer;
