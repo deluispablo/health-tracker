@@ -46,7 +46,7 @@ export interface FamilyResult { rows: FamilyRow[]; resolved: { start: string; en
 export interface Envelope { range: { start: string; end: string } | null; excluded: Record<string, number>; truncated: boolean; tests: number; tests_last_24h: number | null }
 export interface FindingsEvaluator {
   validateOrigin(origin: unknown): Origin;                                                    // RangeError on any invalid origin
-  family(origin: Origin, opts: { range?: { start: string; end: string } }): Promise<FamilyResult>; // full family, no analysis_log write
+  family(origin: Origin, opts: { range?: { start: string; end: string }; nowSec?: number }): Promise<FamilyResult>; // full family, no analysis_log write; nowSec replays an earlier clock
   single(ref: StoredRef, range: { start: string; end: string }): Promise<FamilyRow | null>;   // only the saved row, family of 1 (q = p), frozen cutpoints; null when the key cannot be evaluated on that range
   newDataRange(savedAtMs: number): { start: string; end: string } | null;                     // bday after saved_at's bday … last completed bday, clamped to 180 days; null when empty
 }

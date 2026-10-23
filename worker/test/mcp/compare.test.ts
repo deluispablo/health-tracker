@@ -12,7 +12,9 @@ interface Result {
   behavior_logging: { logged_days: number; first_logged_date: string | null; last_logged_date: string | null };
   min_days_per_group: number;
 }
-const compare: (db: D1Database, args: Args) => Promise<Result> = healthCompare;
+// Deterministic clock after every fixture date (2099-12-31 plus lags).
+const clock = { nowSec: Date.parse("2100-02-01T12:00:00Z") / 1000, tz: "Europe/Madrid" };
+const compare = (db: D1Database, args: Args) => healthCompare(db, args, clock) as Promise<Result>;
 const outcomes = ["rhr", "hrv_rmssd", "ln_rmssd", "resp_rate", "spo2_avg", "skin_temp_dev", "sleep_min", "sleep_eff",
   "deep_min", "rem_min", "sleep_latency_min", "steps", "azm", "readiness_proxy"];
 const base = { behavior: "cigarettes", outcome: "rhr", start: "2026-01-01", end: "2026-01-07", lag_days: 0 };
@@ -94,7 +96,7 @@ describe("T17 AC1/AC3 health_compare", () => {
       await env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES (?, ?, 7, 1, 0)")
         .bind(date(4), tracker).run();
       const seen = observed();
-      const out = await analysisSeries(seen.db, date(1), date(4), 0, [behavior, "rhr"]);
+      const out = await analysisSeries(seen.db, date(1), date(4), 0, [behavior, "rhr"], clock);
       expect(out.series).toEqual([[null, null, 0, 7], [null, null, null, null]]);
       expect(seen.executions()).toBe(1);
       expect(seen.reads[0].sql.match(/EXISTS/g)).toHaveLength(1);
@@ -150,7 +152,7 @@ describe("T17 AC1/AC3 health_compare", () => {
     await trackingWindow();
     await log(date(5), "alcohol");
     const seen = observed();
-    const out = await analysisSeries(seen.db, base.start, base.end, 0, ["cigarettes", "alcohol_g", "caffeine_mg"]);
+    const out = await analysisSeries(seen.db, base.start, base.end, 0, ["cigarettes", "alcohol_g", "caffeine_mg"], clock);
     expect(out.series).toEqual([
       [null, null, null, 1, 1, 0, 0],
       [null, null, null, null, null, 0, 0],
@@ -168,7 +170,7 @@ describe("T17 AC1/AC3 health_compare", () => {
     expect(out.n).toBe(0);
     expect(out.groups.every(({ n }) => n === 0)).toBe(true);
     expect(out.notes).toContain(comparisonRequirement);
-    expect((await analysisSeries(env.DB, base.start, base.end, 0, ["cigarettes"])).series[0]).toEqual(Array(7).fill(null));
+    expect((await analysisSeries(env.DB, base.start, base.end, 0, ["cigarettes"], clock)).series[0]).toEqual(Array(7).fill(null));
   });
 
   it.each([["cigarettes", ["0", ">0–5", ">5–10", ">10"]], ["alcohol_g", ["0", ">0–20", ">20–40", ">40"]],
@@ -290,7 +292,7 @@ describe("T28 AC3 compare notes", () => {
     for (let i = 1; i <= 5; i++) await row(date(i), 60 + i);
     await env.DB.prepare("INSERT INTO tracker_daily (local_date, tracker_id, total, n, evening_total) VALUES (?, ?, ?, 1, 0)")
       .bind(date(7), "cigarettes", 5).run();
-    const out = await healthCompare(env.DB, { ...base, lag_days: 1 });
+    const out = await healthCompare(env.DB, { ...base, lag_days: 1 }, clock);
     expect(out.n).toBe(4);
     expect(out.groups.map(({ n }) => n)).toEqual([4, 0, 0, 0]);
     expect(out.comparisons).toEqual([]);

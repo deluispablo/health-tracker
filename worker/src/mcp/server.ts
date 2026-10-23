@@ -208,7 +208,7 @@ function buildServer(env: ConnectorEnv, ctx: ExecutionContext): McpServer {
       lag_days: z.number().int().optional().describe("Integer from 0 to 7; default 1. Behavior on D pairs with outcome on D + lag_days, including dates after end."),
       bins: z.array(z.number()).optional().describe("1 to 5 ascending positive finite thresholds, inclusive at each upper bound. Defaults: cigarettes [5, 10], alcohol_g [20, 40], caffeine_mg [200, 400]."),
     }), annotations,
-  }, (args) => call("health_compare", args, () => healthCompare(env.DB, args)));
+  }, (args) => call("health_compare", args, () => healthCompare(env.DB, args, insightDeps())));
   server.registerTool("health_correlate", {
     description: "Correlate distinct dated series after AR(1) prewhitening with x's coefficient, for 1 to 365 dates inclusive. max_lag: 0 to 7, default 3; positive lags pair x on D with y on D + lag. Returns phi, r and pair counts per lag; r is null with fewer than 5 pairs or zero variance. Dates/x/y are required. Associational, not causal. Use for lagged associations, health_compare for behavior groups. Infer inputs from context and the owner's local today in USER_TZ; do not ask for resolvable values.",
     inputSchema: z.object({
@@ -217,7 +217,7 @@ function buildServer(env: ConnectorEnv, ctx: ExecutionContext): McpServer {
       ...analysisDates,
       max_lag: z.number().int().optional().describe("Integer from 0 to 7; default 3. Returns lags 0 through max_lag, reading y through end + max_lag; r is null with fewer than 5 pairs or zero variance."),
     }), annotations,
-  }, (args) => call("health_correlate", args, () => healthCorrelate(env.DB, args)));
+  }, (args) => call("health_correlate", args, () => healthCorrelate(env.DB, args, insightDeps())));
   server.registerTool("health_trend", {
     description: "Summarize a daily metric by ISO week (Monday start) or calendar month for 1 to 365 dates inclusive. Returns period means, sample SD, min/max, counts and z relative to the range's daily baseline; partial periods include only requested dates. All arguments are required, without server defaults. Use for period summaries, health_daily for daily values, health_compare for groups, health_correlate for lagged associations. Infer inputs from context and the owner's local today in USER_TZ; do not ask for resolvable values.",
     inputSchema: z.object({
@@ -227,7 +227,7 @@ function buildServer(env: ConnectorEnv, ctx: ExecutionContext): McpServer {
     }), annotations,
   }, (args) => call("health_trend", args, () => healthTrend(env.DB, {
     ...args, period: args.period as Parameters<typeof healthTrend>[1]["period"],
-  })));
+  }, insightDeps())));
   server.registerTool("health_sql", {
     description: `Use for custom queries beyond health_daily, health_trend, health_compare or health_correlate. The query is required with no server defaults. Infer views, columns and local date filters from context and the owner's local today in USER_TZ; do not ask for resolvable query details.
 Read-only SQL: one SELECT or WITH statement, at most 4000 query characters. Returns at most 200 rows and 800 cells with a 20 000-character cap on JSON.stringify(rows), measured in UTF-16 code units. Stops at the first row that would exceed any cap; truncated signals omitted rows, row_count counts returned rows, and hint suggests narrowing the window, selecting fewer columns or adding LIMIT.

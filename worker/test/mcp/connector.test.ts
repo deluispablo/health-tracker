@@ -1700,6 +1700,8 @@ describe("T18 AC5 health_trend through the authenticated connector", () => {
   });
 
   it.each(["week", "month"])("returns a seeded %s trend in both JSON forms and audits exactly one successful read", async (period) => {
+    // Deterministic clock after the fixture dates (2027-01-10 is complete at 06:00 Madrid next day).
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2027-01-11T12:00:00Z"));
     google();
     const token = await accessToken();
     await initialize(token);

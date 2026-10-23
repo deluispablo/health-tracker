@@ -40,8 +40,9 @@ export function createEvaluator(db: D1Database, deps: { nowSec: number; tz: stri
       }
     },
     family(origin, opts) {
-      const range = opts.range ?? rangeFromOrigin(origin.args, deps.nowSec, deps.tz);
-      return evaluate(origin, { ...deps, range });
+      const nowSec = opts.nowSec ?? deps.nowSec;
+      const range = opts.range ?? rangeFromOrigin(origin.args, nowSec, deps.tz);
+      return evaluate(origin, { ...deps, nowSec, range });
     },
     async single(ref, range) {
       const family = await evaluate(ref.origin, { ...deps, range, only: ref.key, cutpoints: ref.cutpoints });

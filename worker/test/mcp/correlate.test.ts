@@ -5,7 +5,9 @@ import { healthCorrelate } from "../../src/mcp/tools/correlate";
 
 interface Args { x: string; y: string; start: string; end: string; max_lag?: number }
 interface Result { x: string; y: string; start: string; end: string; phi: number; lags: { lag: number; r: number | null; n: number }[]; caveats: string }
-const correlate: (db: D1Database, args: Args) => Promise<Result> = healthCorrelate;
+// Deterministic clock after every fixture date (2099-12-31 plus lags).
+const clock = { nowSec: Date.parse("2100-02-01T12:00:00Z") / 1000, tz: "Europe/Madrid" };
+const correlate = (db: D1Database, args: Args) => healthCorrelate(db, args, clock) as Promise<Result>;
 const behaviors = ["cigarettes", "alcohol_g", "caffeine_mg"];
 const names = [...behaviors, "rhr", "hrv_rmssd", "ln_rmssd", "resp_rate", "spo2_avg", "skin_temp_dev", "sleep_min", "sleep_eff",
   "deep_min", "rem_min", "sleep_latency_min", "steps", "azm", "readiness_proxy"];

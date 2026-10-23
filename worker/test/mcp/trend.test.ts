@@ -7,7 +7,9 @@ interface Args { metric: string; period: string; start: string; end: string }
 interface Summary { mean: number | null; sd: number | null; n: number }
 interface Bucket extends Summary { period_start: string; days: number; min: number | null; max: number | null; z: number | null }
 interface Result extends Args { baseline: Summary; buckets: Bucket[]; caveats: string }
-const trend = healthTrend as (db: D1Database, args: Args) => Promise<Result>;
+// Deterministic clock after every fixture date (2099-12-31).
+const clock = { nowSec: Date.parse("2100-02-01T12:00:00Z") / 1000, tz: "Europe/Madrid" };
+const trend = (db: D1Database, args: Args) => (healthTrend as (db: D1Database, args: Args, c: typeof clock) => Promise<Result>)(db, args, clock);
 const names = ["cigarettes", "alcohol_g", "caffeine_mg", "rhr", "hrv_rmssd", "ln_rmssd", "resp_rate", "spo2_avg", "skin_temp_dev",
   "sleep_min", "sleep_eff", "deep_min", "rem_min", "sleep_latency_min", "steps", "azm", "readiness_proxy"];
 const base = { metric: "rhr", period: "week", start: "2026-12-28", end: "2027-01-10" };

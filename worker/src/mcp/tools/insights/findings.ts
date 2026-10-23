@@ -151,7 +151,7 @@ export async function healthFindings(db: D1Database, args: { action: string; id?
   let fresh: FamilyRow | null = null;
   let verdict: Verdict | "reproduced" | "changed";
   if (ref.mode === "historical") {
-    fresh = byKey((await evaluator.family(ref.origin, { range: ref.resolved })).rows, ref.key);
+    fresh = byKey((await evaluator.family(ref.origin, { range: ref.resolved, nowSec: Math.floor(record.saved_at / 1000) })).rows, ref.key);
     verdict = historicalVerdict(saved, fresh);
   } else {
     const range = evaluator.newDataRange(record.saved_at);

@@ -1,4 +1,5 @@
 import { dateRangeDays } from "../../lib/time";
+import { lastCompletedBday } from "./insights/units";
 import { mean, sampleSd, welch } from "./stats";
 
 export const BEHAVIORS: readonly string[] = ["cigarettes", "alcohol_g", "caffeine_mg"];
@@ -9,6 +10,10 @@ export const OUTCOMES: readonly string[] = [
 const DEFAULT_BINS: Record<string, number[]> = { cigarettes: [5, 10], alcohol_g: [20, 40], caffeine_mg: [200, 400] };
 const MIN_DAYS_PER_GROUP = 2;
 const DAY = 86_400_000;
+// Measured over the night ending on the wake date, so complete on the open behaviour day.
+const NIGHT: readonly string[] = ["hrv_rmssd", "ln_rmssd", "resp_rate", "spo2_avg", "skin_temp_dev",
+  "sleep_min", "sleep_eff", "deep_min", "rem_min", "sleep_latency_min", "z_ln_rmssd", "z_sleep", "bedtime_local", "waketime_local"];
+export interface Clock { nowSec: number; tz: string }
 
 export function round(value: number): number;
 export function round(value: number | null): number | null;
@@ -21,10 +26,12 @@ export function caveats(n: number): string {
 }
 
 // Callers validate column names before interpolation; dates always use bound parameters.
-function analysisSeriesQuery(db: D1Database, start: string, end: string, lag: number, columns: string[]) {
+function analysisSeriesQuery(db: D1Database, start: string, end: string, lag: number, columns: string[], clock: Clock) {
   const days = dateRangeDays(start, end, 365, true);
   const first = Date.parse(`${start}T00:00:00Z`);
   const dates = Array.from({ length: days + lag }, (_, i) => new Date(first + i * DAY).toISOString().slice(0, 10));
+  const last = lastCompletedBday(clock.nowSec, clock.tz);
+  const today = new Date(Date.parse(`${last}T00:00:00Z`) + DAY).toISOString().slice(0, 10);
   const trackers: Record<string, string> = { cigarettes: "cigarettes", alcohol_g: "alcohol", caffeine_mg: "caffeine" };
   const behaviors = [...new Set(columns.filter((column) => BEHAVIORS.includes(column)))];
   const eligibility = behaviors.length === 0 ? [] : [
@@ -46,6 +53,7 @@ function analysisSeriesQuery(db: D1Database, start: string, end: string, lag: nu
   const parse = (results: { local_date: string; [column: string]: unknown }[]) => {
     const rows = new Map(results.map((row) => [row.local_date, row]));
     return { days, series: columns.map((column) => dates.map((date) => {
+      if (date > today || (date > last && !NIGHT.includes(column))) return null;
       const row = rows.get(date);
       if (BEHAVIORS.includes(column)) {
         const firstBday = row?.[`first_bday_${column}`];
@@ -58,22 +66,22 @@ function analysisSeriesQuery(db: D1Database, start: string, end: string, lag: nu
   return { statement, parse };
 }
 
-export async function analysisSeries(db: D1Database, start: string, end: string, lag: number, columns: string[]) {
-  const query = analysisSeriesQuery(db, start, end, lag, columns);
+export async function analysisSeries(db: D1Database, start: string, end: string, lag: number, columns: string[], clock: Clock) {
+  const query = analysisSeriesQuery(db, start, end, lag, columns, clock);
   const { results } = await query.statement.all<{ local_date: string; [column: string]: unknown }>();
   return query.parse(results);
 }
 
 export async function healthCompare(db: D1Database, { behavior, outcome, start, end, lag_days = 1, bins = DEFAULT_BINS[behavior] }: {
   behavior: string; outcome: string; start: string; end: string; lag_days?: number; bins?: number[];
-}) {
+}, clock: Clock) {
   if (!BEHAVIORS.includes(behavior)) throw new RangeError(`behavior must be one of: ${BEHAVIORS.join(", ")}`);
   if (!OUTCOMES.includes(outcome)) throw new RangeError(`outcome must be one of: ${OUTCOMES.join(", ")}`);
   if (!Number.isInteger(lag_days) || lag_days < 0 || lag_days > 7) throw new RangeError("lag_days must be an integer from 0 to 7");
   if (bins.length < 1 || bins.length > 5 || bins.some((t, i) => !Number.isFinite(t) || t <= 0 || (i > 0 && t <= bins[i - 1]))) {
     throw new RangeError("bins must be 1 to 5 ascending positive finite numbers");
   }
-  const query = analysisSeriesQuery(db, start, end, lag_days, [behavior, outcome]);
+  const query = analysisSeriesQuery(db, start, end, lag_days, [behavior, outcome], clock);
   const tracker = { cigarettes: "cigarettes", alcohol_g: "alcohol", caffeine_mg: "caffeine" }[behavior];
   const [seriesResult, loggingResult] = await db.batch<{ local_date: string; [column: string]: unknown } | { logged_days: number; first_logged_date: string | null; last_logged_date: string | null }>([
     query.statement,

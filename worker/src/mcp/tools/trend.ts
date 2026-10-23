@@ -1,4 +1,4 @@
-import { analysisSeries, round } from "./compare";
+import { analysisSeries, type Clock, round } from "./compare";
 import { ANALYSIS_NAMES } from "./correlate";
 import { mean, sampleSd } from "./stats";
 
@@ -6,10 +6,10 @@ const DAY = 86_400_000;
 
 export async function healthTrend(db: D1Database, { metric, period, start, end }: {
   metric: string; period: "week" | "month"; start: string; end: string;
-}) {
+}, clock: Clock) {
   if (!ANALYSIS_NAMES.includes(metric)) throw new RangeError(`unknown metric "${metric}"; valid: ${ANALYSIS_NAMES.join(", ")}`);
   if (!["week", "month"].includes(period)) throw new RangeError("period must be week or month");
-  const { days, series: [series] } = await analysisSeries(db, start, end, 0, [metric]);
+  const { days, series: [series] } = await analysisSeries(db, start, end, 0, [metric], clock);
   const values = series.filter((value) => value !== null);
   const baselineMean = mean(values);
   const baselineSd = sampleSd(values);

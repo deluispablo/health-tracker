@@ -180,7 +180,8 @@ describe("verdicts", () => {
     const { id } = finding(await save(ref));
     evaluator.family.mockResolvedValue({ rows: [row({ ref, diff: 5 })], resolved, tests: 1, excluded: {}, tests_last_24h: 0, extra: {} });
     expect(await call({ action: "recheck", id })).toMatchObject({ verdict: "reproduced", diff_saved: 4, diff_new: 5 });
-    expect(evaluator.family).toHaveBeenLastCalledWith(ref.origin, { range: resolved });
+    const savedAt = (await env.DB.prepare("SELECT saved_at FROM finding WHERE id = ?").bind(id).first<{ saved_at: number }>())?.saved_at ?? NaN;
+    expect(evaluator.family).toHaveBeenLastCalledWith(ref.origin, { range: resolved, nowSec: Math.floor(savedAt / 1000) });
     evaluator.family.mockResolvedValue({ rows: [], resolved, tests: 0, excluded: {}, tests_last_24h: 0, extra: {} });
     expect(await call({ action: "recheck", id })).toMatchObject({ verdict: "changed", diff_new: null });
     expect(await checks()).toHaveLength(2);
