@@ -147,10 +147,6 @@ try {
   .ht-sync.is-never .ht-sync-dot { background: none; box-shadow: inset 0 0 0 2px var(--muted); }
   .ht-sync.is-stale { background: var(--attention-container); color: var(--on-attention-container); }
   .ht-sync.is-stale .ht-sync-dot { background: var(--attention); }
-  .ht-lang { display: inline-flex; background: var(--surface-2); border-radius: var(--radius-full); padding: 0; }
-  .ht-lang button { min-height: 48px; min-width: 48px; padding: 0 12px; border: 0; background: none; border-radius: var(--radius-full); cursor: pointer;
-    font: 500 13px/16px var(--font-sans); letter-spacing: .04em; color: var(--muted); }
-  .ht-lang button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: var(--w-title); }
 
   /* ---- notices ---- */
   .notice { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; padding: 14px 16px; border-radius: var(--radius-md); background: var(--attention-container); color: var(--on-attention-container); margin: 4px 0 16px; }
@@ -254,9 +250,10 @@ try {
   /* ---- 1200 and up: sidebar and content ---- */
   .quick-title { display: none; }
   .ht-settings { display: flex; align-items: center; gap: 8px; }
-  .ht-theme { display: flex; }
-  .ht-theme button { display: grid; place-items: center; width: 48px; min-height: 48px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; cursor: pointer; color: var(--muted); }
-  .ht-theme button[aria-pressed="true"] { background: var(--container); color: var(--on-container); }
+  /* Theme and language: one button each that steps to the next option */
+  .ht-cycle { display: grid; place-items: center; min-width: 48px; min-height: 48px; padding: 0 12px; border: 0; border-radius: var(--radius-full); background: var(--surface-2); color: var(--ink); cursor: pointer;
+    font: var(--w-title) 13px/16px var(--font-sans); letter-spacing: .04em; }
+  .ht-cycle:hover { background: var(--container); color: var(--on-container); }
   @media (min-width: 1200px) {
     .app { grid-template-columns: 264px minmax(0, 1fr); grid-template-areas: "side main"; align-items: start; column-gap: 24px; padding: 0 max(24px, env(safe-area-inset-right, 0px)) 0 max(24px, env(safe-area-inset-left, 0px)); }
     .side { grid-area: side; display: flex; flex-direction: column; gap: 24px; position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; padding: 20px 0 24px; }
@@ -408,11 +405,8 @@ try {
       <div class="top-r">
         <span id="sync" class="ht-sync" hidden></span>
         <div class="ht-settings">
-          <div class="ht-theme" role="group" data-t-aria="theme.label"><button type="button" data-theme="auto" aria-pressed="true"></button><button type="button" data-theme="light" aria-pressed="false"></button><button type="button" data-theme="dark" aria-pressed="false"></button></div>
-        <div id="lang" class="ht-lang" role="group" data-t-aria="lang.label">
-          <button type="button" lang="en" data-lang="en" aria-pressed="true" aria-label="English"></button>
-          <button type="button" lang="es" data-lang="es" aria-pressed="false" aria-label="Español"></button>
-        </div>
+          <button type="button" id="theme-btn" class="ht-cycle"></button>
+          <button type="button" id="lang-btn" class="ht-cycle"></button>
         </div>
       </div>
     </div>
@@ -470,14 +464,14 @@ try {
   /* Dictionary: one entry per string, [en, es]; {x} placeholders. Base entries from the design system, then this page's own. */
   const COPY = {
     'app.name': ['Health Tracker', 'Health Tracker'],
-    'theme.label': ['Theme', 'Tema'],
-    'theme.auto': ['Auto', 'Auto'],
-    'theme.light': ['Light', 'Claro'],
-    'theme.dark': ['Dark', 'Oscuro'],
+    'theme.auto': ['auto', 'automático'],
+    'theme.light': ['light', 'claro'],
+    'theme.dark': ['dark', 'oscuro'],
+    'theme.cycle': ['Theme: {x}. Switch to {y}', 'Tema: {x}. Cambiar a {y}'],
+    'lang.cycle': ['Language: English. Switch to Spanish', 'Idioma: español. Cambiar a inglés'],
     'quick.title': ['Log', 'Registrar'],
     'rec.fromHrv': ['Mostly from HRV', 'Sobre todo por la VFC'],
     'rec.seeHealth': ['See in Health', 'Ver en Salud'],
-    'lang.label': ['Language', 'Idioma'],
     'tab.list': ['Sections', 'Secciones'],
     'tab.routine': ['Routine', 'Rutina'],
     'wk.walking': ['Walk', 'Caminata'], 'wk.running': ['Run', 'Carrera'], 'wk.biking': ['Bike ride', 'Bicicleta'], 'wk.hiking': ['Hike', 'Senderismo'],
@@ -1707,22 +1701,24 @@ try {
     document.documentElement.lang = lang;
     document.querySelectorAll('[data-t]').forEach((n) => { n.textContent = t(n.getAttribute('data-t')); });
     document.querySelectorAll('[data-t-aria]').forEach((n) => { n.setAttribute('aria-label', t(n.getAttribute('data-t-aria'))); });
-    document.querySelectorAll('[data-lang]').forEach((b) => { b.textContent = t('lang.' + b.dataset.lang); b.setAttribute('aria-pressed', String(b.dataset.lang === lang)); });
-    document.querySelectorAll('.ht-theme [data-theme]').forEach((b) => { b.innerHTML = icon(b.dataset.theme); b.setAttribute('aria-label', t('theme.' + b.dataset.theme)); b.title = t('theme.' + b.dataset.theme); b.setAttribute('aria-pressed', String(b.dataset.theme === (document.documentElement.dataset.theme || 'auto'))); });
+    const th = document.documentElement.dataset.theme || 'auto', tb = $('theme-btn'), lb = $('lang-btn');
+    tb.innerHTML = icon(th); tb.title = t('theme.cycle', { x: t('theme.' + th), y: t('theme.' + nextTheme(th)) }); tb.setAttribute('aria-label', tb.title);
+    lb.textContent = t('lang.' + lang); lb.title = t('lang.cycle'); lb.setAttribute('aria-label', lb.title);
     TABS.forEach((n) => { $('tab-' + n).innerHTML = '<span class="ht-tab-i">' + icon(TAB_ICON[n]) + '</span>'; $('tab-' + n).append(h('span', { text: t('tab.' + n) })); });
     const wm = $('wordmark'); wm.innerHTML = mark(36); wm.append(h('span', { class: 'ht-wordmark-t', 'aria-hidden': 'true', text: t('app.name') }));
   }
-  document.querySelectorAll('.ht-theme [data-theme]').forEach((b) => b.addEventListener('click', () => {
-    const theme = b.dataset.theme;
+  function nextTheme(th) { return { auto: 'light', light: 'dark', dark: 'auto' }[th]; }
+  $('theme-btn').addEventListener('click', () => {
+    const theme = nextTheme(document.documentElement.dataset.theme || 'auto');
     if (theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = theme;
     try { if (theme === 'auto') localStorage.removeItem('ht.theme'); else localStorage.setItem('ht.theme', theme); } catch (e) { /* storage unavailable: keep for this view */ }
     applyStatic();
-  }));
-  document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => {
-    lang = L.pickLang(b.dataset.lang);
+  });
+  $('lang-btn').addEventListener('click', () => {
+    lang = lang === 'es' ? 'en' : 'es';
     try { localStorage.setItem('ht.lang', lang); } catch (e) { /* storage unavailable: keep for this view */ }
     applyStatic(); render(); if (moodOpen) renderMoodFaces();
-  }));
+  });
 
 
 
