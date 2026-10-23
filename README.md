@@ -58,7 +58,7 @@ Health Tracker is a single-owner health pipeline. One Cloudflare Worker receives
 
 | Area | What it does |
 |---|---|
-| Ingest | Google Health API v4 webhooks (authorization header and ECDSA P-256 signature verified) queue changed intervals; a 5-minute cron drains the queue oldest first within a 60 s and 800-statement budget; a daily 48 h reconcile repairs missed notifications and brings in workouts |
+| Ingest | Google Health API v4 webhooks (authorization header and ECDSA P-256 signature verified) queue changed intervals; a 5-minute cron drains the queue oldest first within a 60 s and 800-statement budget; when Google's watch sync is over 1 h ahead of the stored heart rate, a catch-up pull is queued (at most every 3 h); a daily 48 h reconcile repairs missed notifications, brings in workouts and retries queue items that ran out of attempts; `health_refresh` and the dashboard's refresh button pull the last 24 h on demand |
 | Metrics | Per-minute heart rate, hourly and daily steps (watch source only), resting HR, HRV (RMSSD), SpO2, respiratory rate, skin temperature deviation, active zone minutes, sleep sessions with stages, workouts |
 | Sleep | Sessions dated by wake day; short daytime sleep (under 3 h in bed, starting 09:00–19:59 local) is stored as a nap |
 | Daily summaries | One row per day with vitals, sleep and activity, z-scores against a 28-day baseline and a heuristic readiness proxy; recomputed incrementally from the dates that changed |
@@ -98,20 +98,22 @@ flowchart LR
 2. **Notify.** Google calls `POST /webhooks/google`. The Worker checks the authorization header, verifies the signature, queues the changed interval in `sync_pending` and answers `204`. Payloads only name intervals; data is always re-read from Google.
 3. **Drain.** Every 5 minutes the cron reads the queue oldest first and fetches each interval from the Google Health API (heart rate through 60 s `rollUp`, daily metrics through `listDaily` or `dailyRollUp`, sleep and exercise through `reconcile`). Each item's writes, dirty-date marks and queue removal share one atomic D1 batch, so a failure stores nothing and the item is retried.
 4. **Summarize.** The same tick recomputes `daily_summary` from the earliest dirty date through the latest one's 28-day score tail, capped at today and at 366 dates per run.
-5. **Reconcile.** At 04:30 UTC the daily cron queues a 48 h re-read of every type, rebuilds the last eight days of tracker totals and deletes expired OAuth states and audit and analysis-log rows older than 90 days.
-6. **Query.** MCP clients call `health_*` tools on `/mcp`. Tools read and write D1 only; Google is never called during a tool call.
+5. **Reconcile.** At 04:30 UTC the daily cron gives queue items that failed five times a fresh round of five attempts, queues a 48 h re-read of every type, rebuilds the last eight days of tracker totals and deletes expired OAuth states and audit and analysis-log rows older than 90 days.
+6. **Query.** MCP clients call `health_*` tools on `/mcp`. Tools read and write D1 only, except `health_refresh`, which pulls the last 24 h from Google on demand.
 7. **Log.** Tracker events arrive from `health_log_event` or the watch's `POST /watch/log`; both insert the event and rebuild that day's `tracker_daily` row in one batch.
 
 Freshness depends first on how often the watch syncs to the Google Health app (minutes, sometimes hours), then on the 5-minute cron and the queue backlog.
+
+Ingest heals itself when a webhook is missed. Every 30 minutes the cron reads the watch's last sync time from Google; when it is over 1 h ahead of the newest stored heart-rate minute, the cron queues a catch-up pull of every type from that minute (at most 48 h back), at most once every 3 h. The daily reconcile covers the rest, and `health_refresh` (or the dashboard's refresh button) pulls the last 24 h at once.
 
 ### Routes and schedules
 
 | Entry point | Auth | What it does |
 |---|---|---|
 | `POST /webhooks/google` | `WEBHOOK_SECRET` header and Google signature | Queues changed intervals; a bounded `{"type":"verification"}` handshake returns `200` |
-| `*/5 * * * *` cron | n/a | Drains the queue (at most one heart-rate item older than 24 h per tick, each covering up to one day), samples the watch's last sync every 30 min, recomputes dirty daily summaries. With an empty queue, Google is called only for the 30-minute watch sample |
-| `30 4 * * *` cron (UTC) | n/a | Queues the 48 h reconcile, rebuilds eight days of tracker totals, applies retention |
-| `/mcp` | OAuth bearer, scope `health:read` | Stateless Streamable HTTP MCP server with 19 tools |
+| `*/5 * * * *` cron | n/a | Drains the queue (at most one heart-rate item older than 24 h per tick, each covering up to one day), samples the watch's last sync every 30 min and queues a catch-up pull when it is over 1 h ahead of the stored heart rate (at most every 3 h), recomputes dirty daily summaries. With an empty queue, Google is called only for the 30-minute watch sample |
+| `30 4 * * *` cron (UTC) | n/a | Resets queue items that failed five times, queues the 48 h reconcile, rebuilds eight days of tracker totals, applies retention |
+| `/mcp` | OAuth bearer, scope `health:read` | Stateless Streamable HTTP MCP server with 20 tools |
 | `/authorize`, `/oauth/token`, `/oauth/register` | n/a | OAuth 2.1 provider: consent, token and dynamic client registration, plus its `/.well-known/` metadata |
 | `/oauth/google/callback` | Google sign-in | Completes connector sign-in; only `ALLOWED_EMAIL` is accepted |
 | `GET /google/connect`, `GET /google/callback` | Google sign-in | One-time Google Health consent; stores the encrypted refresh token for `ALLOWED_EMAIL` only |
@@ -131,7 +133,7 @@ The deep reference for ingest, rollups, the Google client and each tool is [docs
 | `worker/src/ingest/` | Webhook, queue drain and daily reconcile |
 | `worker/src/google/` | Google Health API client with token cache and retries |
 | `worker/src/rollup/` | Daily summary and tracker totals |
-| `worker/src/mcp/` | MCP server and the 19 tools (`tools/insights/` holds the insight engine) |
+| `worker/src/mcp/` | MCP server and the 20 tools (`tools/insights/` holds the insight engine) |
 | `worker/src/watch.ts` | Watch endpoints |
 | `worker/migrations/` | D1 schema, `0001`–`0015` |
 | `worker/test/` | Vitest suites running in the Workers runtime |
@@ -289,15 +291,16 @@ uv run --directory py python src/health_tracker/export.py              # writes 
 uv run --directory py python src/health_tracker/export.py --out <dir>  # or to another directory
 ```
 
-The export dumps D1 with `wrangler d1 export`, restores the dump into an in-memory SQLite database, checks the required tables, writes a `health-tracker-YYYY-MM-DD.sql` and `.json` manifest pair (SHA-256, size and row count per table) and keeps the last eight pairs. It exits `1` on any failure. Nothing in the repository schedules it; see [Operations](#operations).
+The export dumps D1 with `wrangler d1 export`, restores the dump into an in-memory SQLite database, checks the required tables, writes a `health-tracker-YYYY-MM-DD.sql` and `.json` manifest pair (SHA-256, size and row count per table) and keeps the last eight pairs. An export that lost rows against the newest previous manifest (`event` has fewer rows, `metric_minute` dropped by more than 1 %, or either table is empty) is kept as `health-tracker-YYYY-MM-DD.rejected.sql` and `.json`, nothing is pruned and the export exits `1`. It exits `1` on any other failure too. Nothing in the repository schedules it; see [Operations](#operations).
 
 ## MCP tools reference
 
-Nineteen tools. All use the single OAuth scope `health:read`, including the writes. Dates are local `YYYY-MM-DD` in `USER_TZ`, and ranges are inclusive.
+Twenty tools. All use the single OAuth scope `health:read`, including the writes. Dates are local `YYYY-MM-DD` in `USER_TZ`, and ranges are inclusive.
 
 | Tool | Access | Returns | Input limits |
 |---|---|---|---|
 | `health_status` | read | Stream freshness, watch last sync, queue counts, Google connection, 14-day HR coverage, alerts | none |
+| `health_refresh` | write | Pulls the last 24 h of every type from Google, drains what fits in about 20 s and recomputes summaries; returns processed, failed and pending items and the newest stored heart-rate minute | No arguments; at most once per 120 s, otherwise `throttled` with `retry_after_s` |
 | `health_daily` | read | Daily summary rows with units and coverage, including cigarette, alcohol, caffeine and per-mood totals | 1–90 dates; optional metric list |
 | `health_intraday` | read | Heart rate avg/min/max at `1m`, `5m` or `1h`; steps at `1h` | One date in 2000–2099; optional `from`/`to` (`HH:MM`); at most 150 points and 20,000 JSON characters, with a `truncated` flag |
 | `health_sleep` | read | Sleep sessions, naps and stages | 1–31 dates |
@@ -384,8 +387,9 @@ The dashboard reads live data through the MCP connector of the client that hosts
 - **Quick log:** one tap for coffee, cigarette, alcohol and water; mood and supplements open a picker. Every log can be undone, and taps are sent in order with a retry.
 - **Usual ranges:** strips show the p25–p75 band and median over the previous 28 days; a value is flagged only outside p10–p90. With few days of data a card says so.
 - **Insights:** cards built on `health_periods`, `health_scan` and `health_findings` say what goes with what and how sure the comparison is, without claiming causes.
+- **Sync chip and refresh:** the header shows how fresh the data is ("Datos hasta HH:MM", or "Data up to HH:MM" in English), from the newest stored heart-rate minute. It is marked stale on a `data_lag` alert, a watch sync over 3 h old or heart rate over 24 h old. The refresh button calls `health_refresh` and reloads the open tabs; within 120 s of the last refresh it says how long to wait.
 - **Layout:** English and Spanish; light, dark and automatic themes; phone, tablet and desktop; keyboard and screen-reader support.
-- **Tools used:** the page declares 13 tools in its `mcp-manifest` block: the read tools except `health_trend`, `health_compare`, `health_correlate` and `health_context`, plus `health_log_event`, `health_delete_event`, `health_scan`, `health_periods` and `health_findings`.
+- **Tools used:** the page declares 14 tools in its `mcp-manifest` block: the read tools except `health_trend`, `health_compare`, `health_correlate` and `health_context`, plus `health_log_event`, `health_delete_event`, `health_scan`, `health_periods`, `health_findings` and `health_refresh`.
 
 Nights are named by the evening they start ("night of Thu 22" ends on Friday morning). Until tonight's sleep syncs, Sleep and Today show the previous night and say so.
 
@@ -446,6 +450,7 @@ This is a personal project, not a medical device, and not medical advice.
 | Task | How |
 |---|---|
 | Check health | Call `health_status`; see the alerts below |
+| Data not arriving | Sync the phone, then press refresh or call `health_refresh`: [docs/operations.md](docs/operations.md#data-not-arriving) |
 | Read logs | `npx wrangler tail --config wrangler.production.jsonc`; Workers observability is enabled in the config |
 | Back up weekly | Run the export from cron or launchd, or from a scheduled job that also compares row counts: [docs/operations.md](docs/operations.md#back-up-weekly) |
 | Rotate the webhook secret | 24-hour overlap through `WEBHOOK_SECRET_PREV`: [docs/operations.md](docs/operations.md#rotate-the-webhook-secret) |
@@ -459,18 +464,20 @@ This is a personal project, not a medical device, and not medical advice.
 | `google_disconnected` | No Google refresh token is stored |
 | `no_data_48h` | No heart rate in the last 48 hours |
 | `no_sleep_48h` | Google is connected and no main sleep ended in the last 48 hours |
-| `queue_stuck` | Queue items have failed five times |
+| `queue_stuck` | Queue items have failed five times; the 04:30 UTC run gives them another round |
 | `daily_stale` | The latest daily summary is older than yesterday |
 | `watch_not_syncing` | Google is connected and the watch's last sync is missing or more than 24 hours old |
+| `data_lag` | Google's last watch sync is more than 3 hours ahead of the newest stored heart-rate minute |
 | `hr_coverage_gap` | Three or more consecutive past days have at most one heart-rate minute |
 
 ### Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Today's data is missing | The watch has not synced to the Google Health app | Open the Google Health app on the phone; check `watch_not_syncing` |
+| Today's data is missing | The watch has not synced to the Google Health app | Open the Google Health app on the phone, then press refresh in the dashboard or call `health_refresh`; check `watch_not_syncing` and `data_lag` |
 | `google_disconnected` | No stored refresh token | Open `https://<your-domain>/google/connect` |
-| `queue_stuck` | Items failed five times, often after Google access expired or was revoked | Reconnect through `/google/connect`, which resets their attempts |
+| `queue_stuck` | Items failed five times, often during a Google outage or after Google access expired or was revoked | Wait for the 04:30 UTC run, which retries them; if Google access was lost, reconnect through `/google/connect`, which resets their attempts at once |
+| `data_lag` | A webhook was missed or the queue is behind | The cron usually queues a catch-up pull within 30 minutes; at most one automatic pull every 3 hours. Press refresh or call `health_refresh` to pull now |
 | `daily_stale` | The cron is not running or fails | Check `wrangler tail` and that both cron triggers are deployed |
 | Webhooks return `503` | `WEBHOOK_SECRET` is unset or shorter than 16 characters, or Google's public keyset is unreachable | Set the secret; the keyset is fetched again on the next call |
 | `400 Missing scopes` on consent | A scope was unticked on the consent screen | Repeat `/google/connect` and grant all four |
@@ -515,7 +522,7 @@ cd wear
 | Measured CPU | Over one hour in production: MCP calls p50 166 ms (mostly cold starts; 3–27 ms warm), cron ticks p50 20 ms |
 | D1 and KV | Within the plan's included usage for one person |
 | Freshness | Watch sync, then the 5-minute cron with its 60 s budget; historical heart rate drains one day per tick |
-| Retries | An item that fails five times stops retrying until Google is reconnected; the daily reconcile re-reads the last 48 h |
+| Retries | An item that fails five times waits for the 04:30 UTC run, which gives it five more attempts, or for a Google reconnect; the daily reconcile re-reads the last 48 h |
 | Missing metrics | Readiness, Sleep Score and stress are not offered by the Google Health API at the time of writing; `readiness_proxy` is a local heuristic (`0.5·z_ln_rmssd − 0.3·z_rhr + 0.2·z_sleep`) |
 | History | Starts at consent plus the reconcile window; no bulk backfill |
 | Analysis | Single person, observational data: associations, not causes |
@@ -535,7 +542,7 @@ cd wear
 
 **Can a client delete my data?** No. The only removal is a soft delete of a logged tracker event; health data has no delete tool.
 
-**Why is today's data missing?** Usually the watch has not synced yet. `health_status` shows the Google connection, failed queue items and the watch's last sync.
+**Why is today's data missing?** Usually the watch has not synced yet. `health_status` shows the Google connection, failed queue items and the watch's last sync. After the phone syncs, press refresh in the dashboard or call `health_refresh`.
 
 **Does it work with other watches?** Data comes from the Pixel Watch through the Google Health API. The watch face needs Wear OS 6 on a round watch.
 

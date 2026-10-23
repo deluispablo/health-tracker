@@ -2,6 +2,25 @@
 
 Procedures for a running deployment. Run Worker commands from `worker/`. Setup is in the [README](../README.md#getting-started).
 
+## Data not arriving
+
+Data reaches the Worker only after the watch syncs to the Google Health app on the phone. Ingest repairs most gaps on its own: a catch-up pull when Google's watch sync is over 1 hour ahead of the stored heart rate (at most every 3 hours), and a daily 48-hour reconcile at 04:30 UTC that also retries queue items that ran out of attempts. When data still looks old:
+
+1. Call `health_status` and read `streams`, `queue` and `alerts`.
+2. Open the Google Health app on the phone so the watch syncs.
+3. Press refresh in the dashboard header, or call `health_refresh`. It pulls the last 24 hours and returns `latest_hr_local`; within 120 seconds of the last refresh it returns `throttled` with `retry_after_s`.
+4. Call `health_status` again and act on any alert left:
+
+| Alert | Meaning | Action |
+|---|---|---|
+| `data_lag` | Google has the watch synced more than 3 hours past the newest stored heart-rate minute, usually a missed webhook | Refresh; the cron also queues a catch-up pull, usually within 30 minutes; at most one automatic pull every 3 hours. If it persists, check `wrangler tail` for drain errors |
+| `watch_not_syncing` | Google has no watch sync in the last 24 hours | The problem is between the watch, the phone and Google: open the Google Health app, check Bluetooth and that the watch is paired |
+| `queue_stuck` | Queue items failed five times, often during a Google outage or after Google access was lost | The 04:30 UTC run gives them another five attempts. If `google_disconnected` is also raised or drains fail with auth errors, reconnect through `/google/connect`, which resets them at once |
+
+### Daily check
+
+Once a day, call `health_status`. With no alerts there is nothing to do. The dashboard's sync chip ("Datos hasta HH:MM") shows the newest stored heart-rate minute and turns stale on `data_lag`, a watch sync over 3 hours old or heart rate over 24 hours old; follow the steps above when it does.
+
 ## Back up weekly
 
 The export in `py/` dumps D1, verifies a local restore and keeps the last eight backup pairs in `~/health-tracker-backups` (or `--out <dir>`). Nothing in the repository schedules it. Two ways to run it weekly:
@@ -14,6 +33,8 @@ The export in `py/` dumps D1, verifies a local restore and keeps the last eight 
 
   The machine needs `uv`, Node.js, the `worker/` dependencies and a logged-in `wrangler`.
 - **A scheduled job with a check.** Run the same command, then compare each table's row count in the new manifest (`health-tracker-YYYY-MM-DD.json`) with the previous one. Warn when a table shrinks, or when `metric_minute` and `daily_summary` stop growing, which points to broken sync.
+
+The export already rejects a dump that lost rows against the newest previous manifest: `event` with fewer rows, `metric_minute` down by more than 1 % (Google may delete small heart-rate ranges), or either table empty. The dump is kept as `health-tracker-YYYY-MM-DD.rejected.sql` and `.json`, nothing is pruned and the export exits `1`. Find the cause before deleting the rejected pair.
 
 Never print or log wrangler's own output: it can include a short-lived download URL for the whole database. The export captures that output, replaces URLs with `<url>` in its error messages and exits `1` on any failure.
 
