@@ -296,7 +296,7 @@ describe("AC2 one 24-hour window per invocation", () => {
     const start = at("2026-10-20T18:00:00Z");
     await queue("heart-rate", start, start + 2 * 86400, "UPSERT", NOW - 300, 3);
     await queue("heart-rate", start + 86400, start + 2 * 86400, "UPSERT", NOW - 30, 4);
-    await drainSyncPending(drainEnv(), fakeClient().client);
+    await drainSyncPending(drainEnv(), fakeClient().client, { now: () => NOW });
     expect(await pending()).toEqual([]);
   });
 
