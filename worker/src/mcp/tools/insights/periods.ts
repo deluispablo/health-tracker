@@ -1,19 +1,23 @@
 import { round } from "../compare";
 import { dependentRiskDiff, dependentWelch, mean } from "../stats";
-import { anomalyFlags, computeBaselines } from "./baseline";
+import { anomalyFlags, baseline, computeBaselines } from "./baseline";
 import { behaviorExcluded, METRICS, MOODS, NIGHT_ANCHORED, PHRASES } from "./catalog";
 import { analysisLogStatement, finalizeFamily, publicRow, rankRows, shapeResponse } from "./compare";
 import type { RowDraft } from "./compare";
-import type { BehaviorId, Envelope, EvalOptions, FamilyResult, MetricId, MoodId, Origin, PeriodsOriginArgs } from "./types";
+import type { BehaviorId, ChangeBehaviorId, Envelope, EvalOptions, FamilyResult, MetricId, MoodId, Origin, PeriodsOriginArgs } from "./types";
 import { loadDayTable, originRange, rangeFromOrigin, resolveRange } from "./units";
 import type { DayTable } from "./units";
 
 const LOGGED: readonly BehaviorId[] = ["cigarettes", "caffeine", "alcohol", "mood_negative", "mood_tired", "water", "melatonin", "protein", "creatine"];
+// Scale floors (ROPE) for behaviour CUSUM baselines: cigarettes, mg caffeine, g alcohol, ml water.
+const BEHAVIOR_ROPE: Record<ChangeBehaviorId, number> = { cigarettes: 1, caffeine: 40, alcohol: 10, water: 250 };
+const CHANGE_BEHAVIORS = Object.keys(BEHAVIOR_ROPE) as ChangeBehaviorId[];
+const isChangeBehavior = (id: string): id is ChangeBehaviorId => id in BEHAVIOR_ROPE;
 const DAY = 86400000;
 const dayNumber = (date: string): number => Date.parse(date + "T00:00:00Z") / DAY;
 
 export interface CusumChange {
-  metric: MetricId; start: string; alarm: string; direction: "up" | "down"; shift: number;
+  metric: MetricId | ChangeBehaviorId; start: string; alarm: string; direction: "up" | "down"; shift: number;
   observed_days: number; calendar_days: number; label: "cambio"; phrase: string;
 }
 export function cusum(dates: string[], z: (number | null)[], values: (number | null)[], median: (number | null)[]): Omit<CusumChange, "metric" | "label" | "phrase">[] {
@@ -84,11 +88,11 @@ export function validatePeriodsArgs(args: unknown, deps: { nowSec: number; tz: s
   if ("window_days" in input && ("start" in input || "end" in input)) throw new RangeError("Use window_days or start/end, never both.");
   const range = "window_days" in input ? { window_days: input.window_days as number } : originRange(input, deps.nowSec, deps.tz);
   rangeFromOrigin(range, deps.nowSec, deps.tz);
-  const selected: { behaviors?: BehaviorId[]; metrics?: MetricId[] } = {};
+  const selected: Pick<PeriodsOriginArgs, "behaviors" | "metrics"> = {};
   for (const key of ["behaviors", "metrics"] as const) {
     if (!(key in input)) continue;
     const values = input[key];
-    const allowed: readonly string[] = key === "behaviors" ? LOGGED : Object.keys(METRICS).filter(m => m !== "hr_delta");
+    const allowed: readonly string[] = key === "behaviors" ? LOGGED : [...Object.keys(METRICS).filter(m => m !== "hr_delta"), ...CHANGE_BEHAVIORS];
     if (!Array.isArray(values) || values.some((v: unknown) => typeof v !== "string" || !allowed.includes(v))) throw new RangeError(`Invalid periods ${key}.`);
     Object.assign(selected, { [key]: [...new Set(values)] });
   }
@@ -131,13 +135,14 @@ export async function evaluatePeriods(db: D1Database, origin: Extract<Origin, { 
   const range = opts.range ? resolveRange(opts.range, opts.nowSec, opts.tz) : rangeFromOrigin(origin.args, opts.nowSec, opts.tz);
   const t = await loadDayTable(db, range, opts.nowSec);
   const baselines = computeBaselines(t), flags = anomalyFlags(baselines, t.dates.length);
+  const selectedMetrics = origin.args.metrics?.filter((m): m is MetricId => !isChangeBehavior(m));
   const allStreaks = (origin.args.behaviors ?? LOGGED).flatMap(b => streaks(t, b));
   const rows: FamilyResult["rows"] = [];
   const excluded = { exposure_unknown: 0, outcome_missing: 0, anomaly: 0 };
   for (const streak of allStreaks.filter(s => s.current && s.days >= 3)) {
     const drafts: RowDraft[] = [];
     const start = t.idx(streak.start);
-    for (const metric of origin.args.metrics ?? Object.keys(t.metric) as (keyof DayTable["metric"])[]) {
+    for (const metric of selectedMetrics ?? Object.keys(t.metric) as (keyof DayTable["metric"])[]) {
       if (metric === "hr_delta" || behaviorExcluded(streak.behavior, metric)) continue;
       const key = { kind: "period" as const, behavior: streak.behavior, timing: "streak", metric };
       if (opts.only && (opts.only.kind !== key.kind || opts.only.behavior !== key.behavior || opts.only.timing !== key.timing || opts.only.metric !== key.metric || opts.only.exposure || opts.only.planned_id)) continue;
@@ -175,12 +180,19 @@ export async function evaluatePeriods(db: D1Database, origin: Extract<Origin, { 
     rows.push(...family);
   }
   const changes: CusumChange[] = [];
-  for (const metric of origin.args.metrics ?? Object.keys(t.metric) as (keyof DayTable["metric"])[]) {
+  for (const metric of selectedMetrics ?? Object.keys(t.metric) as (keyof DayTable["metric"])[]) {
     const bl = baselines[metric];
     if (metric === "hr_delta" || !bl) continue;
     const displayed = <T>(values: T[]) => values.slice(t.start, t.end + 1);
     changes.push(...cusum(displayed(t.dates), displayed(bl.z), displayed(t.metric[metric]), displayed(bl.median))
       .map(c => ({ ...c, metric, label: "cambio" as const, phrase: PHRASES.cambio })));
+  }
+  const behaviorChanges: CusumChange[] = [];
+  for (const b of origin.args.metrics?.filter(isChangeBehavior) ?? CHANGE_BEHAVIORS) {
+    const bl = baseline(t.behavior[b], BEHAVIOR_ROPE[b]);
+    const displayed = <T>(values: T[]) => values.slice(t.start, t.end + 1);
+    behaviorChanges.push(...cusum(displayed(t.dates), displayed(bl.z), displayed(t.behavior[b]), displayed(bl.median))
+      .map(c => ({ ...c, metric: b, label: "cambio" as const, phrase: PHRASES.cambio })));
   }
   const anomalies = t.dates.flatMap((date, i) => i < t.start || i > t.end || !flags[i] ? [] : [{ date,
     metrics: ["rhr", "skin_temp_dev", "resp_rate"].flatMap(m => {
@@ -189,7 +201,8 @@ export async function evaluatePeriods(db: D1Database, origin: Extract<Origin, { 
     }) }]).reverse().slice(0, 10);
   return { rows, resolved: { start: range.start, end: range.end }, tests: rows.length, excluded, tests_last_24h: t.tests_last_24h + rows.length,
     extra: { streaks: allStreaks.sort((a, b) => Number(b.current) - Number(a.current) || b.end.localeCompare(a.end) || a.behavior.localeCompare(b.behavior)).slice(0, 10),
-      changes: changes.sort((a, b) => b.alarm.localeCompare(a.alarm) || a.metric.localeCompare(b.metric)).slice(0, 10), mood_weeks: moodWeeks(t), anomalies } };
+      changes: changes.sort((a, b) => b.alarm.localeCompare(a.alarm) || a.metric.localeCompare(b.metric)).slice(0, 10), mood_weeks: moodWeeks(t), anomalies,
+      behavior_changes: behaviorChanges.sort((a, b) => b.alarm.localeCompare(a.alarm) || a.metric.localeCompare(b.metric)).slice(0, 10) } };
 }
 
 export async function healthPeriods(db: D1Database, args: unknown, deps: { nowSec: number; tz: string }, ctx: ExecutionContext): Promise<Record<string, unknown> & Envelope> {
@@ -197,7 +210,13 @@ export async function healthPeriods(db: D1Database, args: unknown, deps: { nowSe
   const family = await evaluatePeriods(db, origin, deps);
   ctx.waitUntil(Promise.resolve().then(() => analysisLogStatement(db, origin.tool, family.tests, deps.nowSec * 1000).run())
     .catch((cause: unknown) => { console.error("analysis_log health_periods", cause instanceof Error ? cause.name : "UnknownError"); }));
-  const body: Record<string, unknown> = { ...family.extra, rows: rankRows(family.rows).slice(0, 40).map(publicRow) };
-  return shapeResponse(body, ["rows", "anomalies", "changes", "mood_weeks", "streaks"],
+  const { behavior_changes, ...legacy } = family.extra;
+  const body: Record<string, unknown> = { ...legacy, rows: rankRows(family.rows).slice(0, 40).map(publicRow) };
+  const result = shapeResponse(body, ["rows", "anomalies", "changes", "mood_weeks", "streaks"],
     { range: family.resolved, excluded: family.excluded, tests: family.tests, tests_last_24h: family.tests_last_24h });
+  // behavior_changes takes only the room left after the legacy response is sized, and is omitted when even [] does not fit.
+  const items = [...behavior_changes as CusumChange[]];
+  const withChanges = () => ({ ...result, behavior_changes: items });
+  while (items.length && JSON.stringify(withChanges()).length > 20000) items.pop();
+  return JSON.stringify(withChanges()).length <= 20000 ? withChanges() : result;
 }

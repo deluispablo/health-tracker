@@ -11,6 +11,7 @@ export type BehaviorTiming = "following_night" | "before_bed" | "next_day" | "sa
 export type ExposureMetric = "bedtime" | "sleep_min" | "hrv" | "steps" | "workout_min";
 export type MetricTiming = "after_waking" | "next_night" | "following_night" | "that_night";
 export type AcuteTracker = "cigarettes" | "caffeine" | "alcohol";
+export type ChangeBehaviorId = AcuteTracker | "water";
 export type Interval = [number, number];
 
 export interface Inference { diff: number | null; ci95: Interval | null; p: number | null; df: number | null; phi: number; n_eff_a: number; n_eff_b: number }
@@ -27,7 +28,7 @@ export interface Filter { from?: string; to?: string; weekdays?: number[]; where
 export type RangeArgs = { start: string; end: string } | { window_days: number };
 export type ScanOriginArgs = RangeArgs & { behaviors?: BehaviorId[]; metrics?: MetricId[]; timings?: string[] };
 export type ContrastOriginArgs = RangeArgs & { a: Filter; b: Filter; metrics?: MetricId[]; timing: BehaviorTiming | MetricTiming };
-export type PeriodsOriginArgs = RangeArgs & { behaviors?: BehaviorId[]; metrics?: MetricId[] };
+export type PeriodsOriginArgs = RangeArgs & { behaviors?: BehaviorId[]; metrics?: (MetricId | ChangeBehaviorId)[] };
 export type Origin = { tool: "health_scan"; args: ScanOriginArgs } | { tool: "health_contrast"; args: ContrastOriginArgs } | { tool: "health_periods"; args: PeriodsOriginArgs };
 export interface RowKey { kind: "behavior" | "acute" | "period" | "metric"; behavior?: BehaviorId | AcuteTracker; exposure?: { metric: ExposureMetric; side: "high" | "low" | "filter" }; planned_id?: string; timing: string; metric: MetricId }
 export interface Cutpoints { lo: number; hi: number }

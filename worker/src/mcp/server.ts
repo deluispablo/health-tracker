@@ -155,8 +155,10 @@ function buildServer(env: ConnectorEnv, ctx: ExecutionContext): McpServer {
     }), annotations: insightAnnotations,
   }, args => call("health_scan", args, () => healthScan(env.DB, args, insightDeps(), ctx)));
   server.registerTool("health_periods", {
-    description: `Explore streaks (10), CUSUM changes (10), mood weeks (8), anomalies (10), and streak comparisons (40). Behaviors are cigarettes, caffeine, alcohol, mood_negative, mood_tired, water, melatonin, protein, creatine; hr_delta is excluded. See health_context for the insights playbook and catalogue ids. Infer arguments from context; do not ask for resolvable inputs.`,
-    inputSchema: z.looseObject({ ...insightDates, ...insightSelection }), annotations: insightAnnotations,
+    description: `Explore streaks (10), CUSUM changes (10), behaviour CUSUM changes as behavior_changes (10), mood weeks (8), anomalies (10), and streak comparisons (40). Behaviors are cigarettes, caffeine, alcohol, mood_negative, mood_tired, water, melatonin, protein, creatine; hr_delta is excluded. See health_context for the insights playbook and catalogue ids. Infer arguments from context; do not ask for resolvable inputs.`,
+    inputSchema: z.looseObject({ ...insightDates, ...insightSelection,
+      metrics: insightSelection.metrics.describe("Optional outcome metric ids listed in health_context, plus cigarettes, caffeine, alcohol, water for behavior_changes; omit for all, [] for none."),
+    }), annotations: insightAnnotations,
   }, args => call("health_periods", args, () => healthPeriods(env.DB, args, insightDeps(), ctx)));
   server.registerTool("health_contrast", {
     description: `Verify two filtered groups; filter dates are clipped to start/end. Widen start/end instead of reading sin_datos as no difference. See health_context for the insights playbook and catalogue ids. Infer arguments from context; do not ask for resolvable inputs.`,

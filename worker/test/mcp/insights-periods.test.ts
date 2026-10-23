@@ -2,7 +2,7 @@ import { applyD1Migrations, createExecutionContext, waitOnExecutionContext } fro
 import { env } from "cloudflare:workers";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { cusum, evaluatePeriods, healthPeriods, streaks, validatePeriodsArgs } from "../../src/mcp/tools/insights/periods";
-import { BANNED } from "../../src/mcp/tools/insights/catalog";
+import { BANNED, METRICS, PHRASES } from "../../src/mcp/tools/insights/catalog";
 import { loadDayTable, resolveRange } from "../../src/mcp/tools/insights/units";
 import type { FamilyRow, Origin } from "../../src/mcp/tools/insights/types";
 import { FIXTURE, seedInsightsFixture } from "../fixtures/insights";
@@ -193,4 +193,82 @@ it("records every attempted row once and includes prior tests in the 24-hour tot
   expect(result).toMatchObject({ tests: 2, tests_last_24h: 9 });
   await waitOnExecutionContext(ctx);
   expect(await env.DB.prepare("SELECT tests FROM analysis_log WHERE tool = 'health_periods'").first("tests")).toBe(2);
+});
+
+// DR0: 60 logged days from 2026-07-01 (day 0 is the unknown first day); from day 40 caffeine 100 → 300 mg and alcohol 30 → 0 g; water flat.
+const behaviorDays = Array.from({ length: 60 }, (_, i) => new Date(Date.UTC(2026, 6, i + 1)).toISOString().slice(0, 10));
+async function seedBehaviors() {
+  await env.DB.batch(behaviorDays.flatMap((day, i) => {
+    const ts = Date.parse(day + "T12:00:00Z") / 1000;
+    const tap = (tracker: string, value: number) => env.DB.prepare("INSERT INTO event (id,tracker_id,ts,tz_offset_min,local_date,value,origin,created_at) VALUES (?,?,?,0,?,?,'import',1)")
+      .bind(`${tracker}-${String(i)}`, tracker, ts, day, value);
+    return [tap("caffeine", i < 40 ? 100 : 300), tap("water", 1000), ...(i < 40 ? [tap("alcohol", 30)] : [])];
+  }));
+}
+// Ends two days after the shift: CUSUM keeps re-alarming while the trailing baseline lags (R0.4), so the list stays small.
+const behaviorRange = { start: behaviorDays[0], end: behaviorDays[42] };
+const metricIds = Object.keys(METRICS).filter(m => m !== "hr_delta");
+
+it("behavior_changes reports sustained behaviour shifts with direction and start, and not flat behaviours", async () => {
+  await seedBehaviors();
+  const result = await healthPeriods(env.DB, behaviorRange, deps, ctx);
+  const change = (metric: string, start: number, alarm: number, direction: string, shift: number, days: number) =>
+    ({ metric, start: behaviorDays[start], alarm: behaviorDays[alarm], direction, shift, observed_days: days, calendar_days: days, label: "cambio", phrase: PHRASES.cambio });
+  expect(result.behavior_changes).toEqual([
+    change("caffeine", 42, 42, "up", 200, 1),
+    change("alcohol", 39, 41, "down", -20, 3),
+    change("caffeine", 41, 41, "up", 200, 1),
+    change("caffeine", 39, 40, "up", 100, 2),
+  ]);
+});
+it("behavior_changes never changes the legacy size-cap decisions near 20,000 characters", async () => {
+  await seedBehaviors();
+  const strip = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== "behavior_changes"));
+  const full = await healthPeriods(env.DB, behaviorRange, deps, ctx);
+  const legacy = strip(full), changes = full.behavior_changes as unknown[];
+  expect(legacy.truncated).toBe(false);
+  expect((legacy.streaks as unknown[]).length).toBeGreaterThan(0);
+  const stringify = JSON.stringify.bind(JSON);
+  // Pad only the size checks on the response object, so the legacy content sits exactly at a chosen length.
+  const at = async (pad: number) => {
+    const spy = vi.spyOn(JSON, "stringify").mockImplementation(((value: unknown, ...rest: []) => {
+      const s = stringify(value, ...rest);
+      return value !== null && typeof value === "object" && "truncated" in value ? s + "x".repeat(pad) : s;
+    }) as typeof JSON.stringify);
+    try { return await healthPeriods(env.DB, behaviorRange, deps, ctx); } finally { spy.mockRestore(); }
+  };
+  const tight = await at(19990 - stringify(legacy).length);
+  expect(tight).not.toHaveProperty("behavior_changes");
+  expect(tight).toEqual(legacy);
+  const one = await at(20000 - stringify({ ...legacy, behavior_changes: changes.slice(0, 1) }).length);
+  expect(strip(one)).toEqual(legacy);
+  expect(one.behavior_changes).toEqual(changes.slice(0, 1));
+});
+it("behavior_changes on a short displayed range uses the prior history for the baseline", async () => {
+  await seedBehaviors();
+  const family = await evaluatePeriods(env.DB, { tool: "health_periods", args: { start: behaviorDays[40], end: behaviorDays[42], metrics: ["caffeine"] } }, deps);
+  // Three displayed days alone could never reach the 14-value baseline; the alarm needs the fetched history.
+  expect((family.extra.behavior_changes as { alarm: string }[]).map(c => c.alarm)).toEqual([behaviorDays[42], behaviorDays[41], behaviorDays[40]]);
+  expect((family.extra.behavior_changes as unknown[])[2]).toMatchObject({ metric: "caffeine", start: behaviorDays[40], direction: "up", shift: 200 });
+});
+it("metrics selects behaviour changes: omitted gives all four, a list gives only its behaviours, empty gives none", async () => {
+  await seedBehaviors();
+  const run = async (metrics?: string[]) => ((await evaluatePeriods(env.DB, { tool: "health_periods", args: validatePeriodsArgs({ ...behaviorRange, ...(metrics && { metrics }) }, deps) }, deps))
+    .extra.behavior_changes as { metric: string }[]).map(c => c.metric).filter((m, i, all) => all.indexOf(m) === i).sort();
+  expect(await run()).toEqual(["alcohol", "caffeine"]);
+  expect(await run(["caffeine", "rhr"])).toEqual(["caffeine"]);
+  expect(await run(["water", "cigarettes"])).toEqual([]);
+  expect(await run([])).toEqual([]);
+  expect(await run(metricIds)).toEqual([]);
+  expect(() => validatePeriodsArgs({ metrics: ["melatonin"] }, deps)).toThrow(RangeError);
+});
+it("behaviour ids in metrics leave changes, streaks and streak rows unchanged on the insights fixture", async () => {
+  await seedInsightsFixture(env.DB);
+  const args = { start: FIXTURE.start, end: FIXTURE.end };
+  const plain = await evaluatePeriods(env.DB, { tool: "health_periods", args }, deps);
+  const listed = await evaluatePeriods(env.DB, { tool: "health_periods", args: validatePeriodsArgs({ ...args, metrics: [...metricIds, "cigarettes", "caffeine", "alcohol", "water"] }, deps) }, deps);
+  for (const key of ["changes", "streaks", "mood_weeks", "anomalies", "behavior_changes"]) expect(listed.extra[key]).toEqual(plain.extra[key]);
+  expect(listed.rows.map(r => ({ ...r, ref: null }))).toEqual(plain.rows.map(r => ({ ...r, ref: null })));
+  expect((plain.extra.changes as { metric: string }[]).length).toBeGreaterThan(0);
+  expect((plain.extra.changes as { metric: string }[]).every(c => metricIds.includes(c.metric))).toBe(true);
 });
