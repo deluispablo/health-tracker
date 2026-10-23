@@ -13,9 +13,6 @@ const COPY = {
   'hoy.sum.recOnly.typical': ['Your recovery is as usual', 'Tu recuperación está como siempre'],
   'hoy.sum.and': ['{a} and {b}.', '{a} y {b}.'],
   'hoy.sum.one': ['{a}.', '{a}.'],
-  'hoy.sum.pace.at': ['You are on pace for steps.', 'Vas al ritmo de pasos.'],
-  'hoy.sum.pace.ahead': ['You are ahead of your step pace.', 'Vas por delante del ritmo de pasos.'],
-  'hoy.sum.pace.behind': ['You are behind your step pace.', 'Vas por detrás del ritmo de pasos.'],
   'hoy.sum.none': ['No data for this day yet.', 'Aún no hay datos de este día.'],
   'hoy.sum.last': ['Last night: {x}.', 'Anoche: {x}.'],
   'hoy.sum.drink': ['1 drink at {t}', '1 copa a las {t}'],
@@ -28,9 +25,6 @@ const COPY = {
   'hoy.key.usual': ['usual {x}', 'habitual {x}'],
   'hoy.key.wait': ["Tonight's sleep hasn't arrived from the watch yet.", 'La noche de hoy aún no ha llegado del reloj.'],
   'hoy.key.goal': ['of {g}', 'de {g}'],
-  'hoy.key.at': ['on pace', 'al ritmo'],
-  'hoy.key.ahead': ['{n} ahead', '{n} por delante'],
-  'hoy.key.behind': ['{n} behind', '{n} por detrás'],
   'hoy.key.azm': ['{n} active min', '{n} min activos'],
   'hoy.st.title': ['From yesterday to today', 'De ayer a hoy'],
   'hoy.st.all': ['yesterday 18:00 → {e}', 'ayer 18:00 → {e}'],
@@ -216,12 +210,6 @@ function hoyWeek(series, date, skipToday) {
   if (cur.length < 4 || prev.length < 4) return { learning: true, n: Math.min(cur.length, prev.length), need: 4, spark };
   return { mean: mean(cur), delta: mean(cur) - mean(prev), spark, n: cur.length };
 }
-/* Step pace against the expected steps by this minute; within 5 % of the goal is "at pace". */
-function hoyPace(steps, min, goal) {
-  if (!fin(steps)) return null;
-  const d = steps - L0.expectedSteps(min, goal);
-  return Math.abs(d) < goal * 0.05 ? { k: 'at', d: 0 } : { k: d > 0 ? 'ahead' : 'behind', d: Math.abs(d) };
-}
 /* I3 Hoy: features sleep that night, cigarettes that day, any alcohol the day before; outcome the next night's sleep and
    its bedtime. The SQL gives c / a as NULL on a day with no log or before that behaviour's first log (unknown, R2.9). */
 function hoyAlikeDays(t, date) {
@@ -373,11 +361,10 @@ function render(ctx) {
   const sleepMin = val('sleep_min'), sleepR = L.typicalRange(daily, 'sleep_min', date), sleepS = L.rangeStatus(sleepMin, sleepR);
   const night = date === ctx.today ? L.recoveryNight(daily, date) ?? date : date;
   const rec = L.recovery(val('z_ln_rmssd', night), val('z_rhr', night));
-  const pace = hoyPace(val('steps'), end, goal);
   const sumCard = (() => {
     const st = S.daily.state('hoySum', 2);
     const a = sleepS === 'none' ? null : t('hoy.sum.sleep.' + sleepS), b = rec.word === 'learning' ? null : t((a ? 'hoy.sum.rec.' : 'hoy.sum.recOnly.') + rec.word);
-    const lead = [a && b ? t('hoy.sum.and', { a, b }) : a || b ? t('hoy.sum.one', { a: a || b }) : null, pace ? t('hoy.sum.pace.' + pace.k) : null].filter(Boolean).join(' ') || t('hoy.sum.none');
+    const lead = [a && b ? t('hoy.sum.and', { a, b }) : a || b ? t('hoy.sum.one', { a: a || b }) : null].filter(Boolean).join(' ') || t('hoy.sum.none');
     const alc = evs.filter((e) => e.k === 'alcohol' && e.min >= -360 && e.min < 300), cigs = evs.filter((e) => e.k === 'cigarettes' && e.min >= -240 && e.min < 300), cig = sum('cigarettes', cigs);
     const dr = drinks(alc);
     const parts = [alc.length ? (dr === 1 ? t('hoy.sum.drink', { t: alc[0].t }) : t('hoy.sum.drinks', { n: fmtDrinks(dr), t: alc[alc.length - 1].t })) : null, cigs.length ? (cig === 1 ? t('hoy.sum.cig') : t('hoy.sum.cigs', { n: n0(cig) })) : null].filter(Boolean);
@@ -396,9 +383,8 @@ function render(ctx) {
     const sRow = row(t('hoy.key.sleep'), fin(sMin) && sR.learning == null ? strip(sR.low, sR.high, sMin) : null, fin(sMin) ? dh(sMin, lang) : '—',
       [fb && fin(sMin) ? t('ins.night', { d: fmt.wday(L.shiftDate(sd, -1), lang) }) : null, times, usualDur(sR)].filter(Boolean).join(' · '));
     const wait = fb ? h('p', { class: 'hx-note', text: t('hoy.key.wait') }) : null;
-    const bar = fin(steps) ? h('div', { class: 'hx-bar', 'aria-hidden': 'true' }, h('i', { style: 'width:' + pc(Math.min(1, steps / goal)) }), isNow ? h('b', { class: 'hx-tick', style: 'left:' + pc(L.expectedSteps(end, goal) / goal) }) : null) : null;
-    const pTxt = pace && isNow ? (pace.k === 'at' ? t('hoy.key.at') : t('hoy.key.' + pace.k, { n: n0(pace.d) })) : null;
-    const pRow = row(t('hoy.key.steps'), bar, fin(steps) ? n0(steps) : '—', [t('hoy.key.goal', { g: n0(goal) }), pTxt, fin(azm) ? t('hoy.key.azm', { n: n0(azm) }) : null].filter(Boolean).join(' · '));
+    const bar = fin(steps) ? h('div', { class: 'hx-bar', 'aria-hidden': 'true' }, h('i', { style: 'width:' + pc(Math.min(1, steps / goal)) })) : null;   // pace lives only in Actividad (R3D)
+    const pRow = row(t('hoy.key.steps'), bar, fin(steps) ? n0(steps) : '—', [t('hoy.key.goal', { g: n0(goal) }), fin(azm) ? t('hoy.key.azm', { n: n0(azm) }) : null].filter(Boolean).join(' · '));
     return h('section', { class: 'hx-key' }, sRow, wait, pRow, S.daily.stale('sleep'));
   })();
 
@@ -625,7 +611,6 @@ function render(ctx) {
 const CSS = `
 #g-today .hx-key { display: flex; flex-direction: column; justify-content: center; }
 #g-today .hx-key .hx-row:first-child { border-top: 0; padding-top: 0; } #g-today .hx-key .hx-row:last-child { padding-bottom: 0; }
-#g-today .hx-bar .hx-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
 #g-today .hx-time svg { margin: 4px 0 8px; }
 #g-today .hx-time .ht-card-h { flex-wrap: wrap; }
 #g-today .hx-pan { position: relative; border-radius: var(--radius-sm); }
@@ -664,5 +649,5 @@ const CSS = `
 }`;
 
 HT.registerTab('hoy', { copy: COPY, css: CSS, render,
-  logic: { hoyStack, hoyWin, hoyBed, hoyEvents, hoyHab, hoyMood, hoyCoffee, hoyStepStreak, hoyWeek, hoyPace, hoyAlikeDays, hoyEarly, hoyNearest, hoyStripMarks: stripMarks } });
+  logic: { hoyStack, hoyWin, hoyBed, hoyEvents, hoyHab, hoyMood, hoyCoffee, hoyStepStreak, hoyWeek, hoyAlikeDays, hoyEarly, hoyNearest, hoyStripMarks: stripMarks } });
 }

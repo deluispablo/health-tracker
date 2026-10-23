@@ -380,8 +380,8 @@
     const sql = (name, key, through = (d) => d) => ctx.source(name, { tool: 'health_sql', through, input: (d) => ({ query: rtQueries(d)[key] }) });
     const sA = sql('rtEvA', 'evA'), sB = sql('rtEvB', 'evB', (d) => L.shiftDate(d, -28)), sD = sql('rtDays', 'days');
     const prof = ctx.source('rtProf', { tool: 'health_profile', through: L.shiftDate(ctx.today, -1), input: () => ({}) }), cat = ctx.source('trackers');
-    const PAST = { cache: { staleTime: 86400000, gcTime: 7 * 86400000 } };   // a past day's hourly steps do not change
-    const stepSrc = Array.from({ length: 15 }, (_, i) => { const d = L.shiftDate(date, -i); return [d, ctx.source('rtSt:' + d, { tool: 'health_intraday', through: d, watch: d < ctx.today ? PAST : null, input: () => ({ metric: 'steps', date: d, resolution: '1h' }) })]; });
+    const PAST = { cache: { staleTime: 86400000, gcTime: 7 * 86400000 } };   // hourly steps before yesterday do not change (yesterday still syncs late)
+    const stepSrc = Array.from({ length: 15 }, (_, i) => { const d = L.shiftDate(date, -i); return [d, ctx.source('rtSt:' + d, { tool: 'health_intraday', through: d, watch: d < L.shiftDate(ctx.today, -1) ? PAST : null, input: () => ({ metric: 'steps', date: d, resolution: '1h' }) })]; });
     const ev = rtEvents(sA.data, sB.data, date), nights = rtNights(sD.data);
     /* One fresh element per card (a node cannot sit in two cards): the loading/error state, else the partial note (R2.7). */
     const evMissing = () => sA.state('ruEv', 3) ?? sB.state('ruEv', 3) ?? line(t('ru.partial'));

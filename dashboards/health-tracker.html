@@ -698,12 +698,10 @@ try {
     return { word: score >= 0.5 ? 'above' : score <= -0.5 ? 'below' : 'typical', driver: driver[0], score };
   }
 
-  /* ---- steps expected by now: an active day 07:00-23:00 ---- */
   /* The owner's step goal from health_profile; 8,000 until the profile is readable. */
   const stepGoal = (p) => Number.isInteger(p?.step_goal) && p.step_goal > 0 ? p.step_goal : 8000;
   /* The water goal from health_profile; 2,000 ml until it is readable. */
   const waterGoal = (p) => Number.isInteger(p?.water_goal_ml) && p.water_goal_ml > 0 ? p.water_goal_ml : 2000;
-  const expectedSteps = (min, goal) => Math.round(Math.min(goal, Math.max(0, goal * (min - 420) / (1380 - 420))));
 
   /* ---- local minutes from an item's own local time ("HH:MM" or a full local timestamp) ---- */
   function localMinutes(s) {
@@ -838,7 +836,7 @@ try {
 
   window.HTLogic = {
     COPY, t, tn, pickLang, fmt: { num, signed, dur, ago, day, vital, range }, VITALS, shiftDate, dayValue, typicalRange, rangeStatus, rangeFlag, outliers,
-    recovery, stepGoal, waterGoal, expectedSteps, USER_TZ, sunTimes, localMinutes, mainSession, CHIPS, SUPPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
+    recovery, stepGoal, waterGoal, USER_TZ, sunTimes, localMinutes, mainSession, CHIPS, SUPPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
     available, summary, writeQueue, doubleTap, NIGHT_END, dayFor,
     applyLog, applyUndo, acceptSnapshot, syncLabel, errorKind
   };
@@ -1477,9 +1475,11 @@ try {
     catch (e) { if (e?.code === 'user_changed') return stopAll(); if (token === s.token && !stopped) fail(name, e); }
     if (token === s.token && !stopped && !s.halted) subscribe(name);   // a later refresh of this source changes the token
   }
-  /* RF2: pull the last day from Google, then re-read every source loaded so far (any tab) through refreshTrackers:
-     its token drops older replies, last-good data stays and inputs keep the selected day. Throttle and errors only speak in the chip for 3 s. */
+  /* RF2: pull the last day from Google, then re-read the sources loaded so far (any tab) through refreshTrackers:
+     its token drops older replies, last-good data stays and inputs keep the selected day. Throttle and errors only speak in the chip for 3 s.
+     R3D: a source named with a date ('saHr:2026-10-20:0') is re-read only when that date is the day shown as health_refresh answers. */
   let refreshing = false, refreshNote = null, refreshTimer = null;
+  const shownOrUndated = (n) => { const d = n.match(/\d{4}-\d{2}-\d{2}/)?.[0]; return !d || d === dayDate; };
   async function refreshAll() {
     if (refreshing || !connector || stopped || pageLevel()) return;
     refreshing = true; refreshNote = null; clearTimeout(refreshTimer); renderHeader();
@@ -1488,7 +1488,7 @@ try {
       const p = (await connector.callTool(SERVER, 'health_refresh', {}))?.payload;
       if (stopped) return;
       if (p?.throttled) note = { text: t('sync.wait', { n: Math.max(1, Math.ceil(Number(p.retry_after_s) || 0)) }) };
-      else await Promise.all(Object.keys(S).filter((n) => (S[n].unsubscribe || S[n].data) && !S[n].halted).map((n) => refreshTrackers(n)));
+      else await Promise.all(Object.keys(S).filter((n) => (S[n].unsubscribe || S[n].data) && !S[n].halted && shownOrUndated(n)).map((n) => refreshTrackers(n)));
     } catch (e) {
       if (e?.code === 'user_changed') return stopAll();
       note = { text: t('sync.refreshFail'), bad: true };

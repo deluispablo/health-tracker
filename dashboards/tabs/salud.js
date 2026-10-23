@@ -11,7 +11,7 @@
   const VORD = ['hrv_rmssd', 'rhr', 'resp_rate', 'spo2_avg', 'skin_temp_dev'];
   const MARK = { cafe: ['caffeine_mg'], cigarro: ['cigarettes'], alcohol: ['alcohol_g'], animo: L.MOODS.map((m) => m.id) };
   const MARK_GL = { cafe: 'caffeine', cigarro: 'cig', alcohol: 'alcohol', animo: 'other' }, MARK_COL = { cafe: 'fill-caffeine', cigarro: 'm-cig', alcohol: 'fill-alcohol', animo: 'ink' };
-  const PAST = { cache: { staleTime: 86400000, gcTime: 7 * 86400000 } };   // a past date's heart rate does not change: no periodic refetch
+  const PAST = { cache: { staleTime: 86400000, gcTime: 7 * 86400000 } };   // a date before yesterday no longer changes: no periodic refetch (yesterday still syncs late)
 
   /* ---- computations (R2.13; pinned in check_salud.py) ---- */
   /* Intraday payloads → [{t, v}] by local minute; a repeated DST hour keeps its first reading (documented limitation, R2.5). */
@@ -190,10 +190,10 @@
     const full = ctx.root.clientWidth || 340, desk = typeof matchMedia === 'function' && matchMedia('(min-width: 1200px)').matches;
     const W = (cols) => Math.max(280, Math.round((desk ? (full + 16) * cols / 12 - 16 : full) - 40));
     const card = (cls, title, sub, body, foot) => ctx.ins.card({ cls, title, sub, body, foot, footCls: 'hx-note sx-foot' });
-    const fv = (m, x) => m === 'spo2_avg' ? L.fmt.vital(m, x, lang).replace(/^[\d.,]+/, num(x, 0)) : L.fmt.vital(m, x, lang);   // the board shows SpO₂ whole ("97 %")
+    const fv = (m, x) => L.fmt.vital(m, x, lang);
     const vn = (m, x) => fv(m, x).replace(/( .*|%)$/, '');
     const rng = (m, r) => m === 'skin_temp_dev' ? t('sa.to', { a: vn(m, r.low), b: vn(m, r.high) }) : vn(m, r.low) + '–' + vn(m, r.high);
-    const hrSrc = (d, half) => ({ ...ctx.source('saHr:' + d + ':' + half, { tool: 'health_intraday', through: d, watch: d < ctx.today ? PAST : null,
+    const hrSrc = (d, half) => ({ ...ctx.source('saHr:' + d + ':' + half, { tool: 'health_intraday', through: d, watch: d < L.shiftDate(ctx.today, -1) ? PAST : null,
       input: () => ({ metric: 'hr', date: d, resolution: '5m', from: half ? '12:00' : '00:00', to: half ? '24:00' : '12:00' }) }), date: d, half });
     const until = today ? T0(D) + ctx.min : Infinity;   // today is read only up to now
     const partialOf = (srcs) => srcs.some((s) => s.error || s.data?.truncated);
@@ -237,7 +237,7 @@
     const vitRow = (m) => {
       const v = L.dayValue(vit, m, night), r = L.typicalRange(vit, m, night), w = L.typicalRange(vit, m, night, true), flag = L.rangeFlag(v, w), ref = L.HREF[m];
       const sub = [r.learning != null ? t('sa.usualLearn', { n: r.n }) : t('sa.usual', { r: rng(m, r) })];
-      const clinic = m === 'rhr' || m === 'spo2_avg' ? t('sa.clinic', { r: ref[1] == null ? '≥' + vn(m, ref[0]) : vn(m, ref[0]) + '–' + vn(m, ref[1]) }) : null;
+      const clinic = m === 'rhr' || m === 'spo2_avg' ? t('sa.clinic', { r: ref[1] == null ? '≥' + num(ref[0], 0) : num(ref[0], 0) + '–' + num(ref[1], 0) }) : null;
       return h('div', { class: 'hx-row' }, h('span', { class: 'hx-n', text: t('sa.v.' + m) }), strip(v, r, w), h('span', { class: 'hx-v', text: v == null ? '—' : m === 'resp_rate' ? vn(m, v) + ' ' + t('sa.rpm') : fv(m, v) }),   // the board's short unit keeps the row in 375 px
         h('span', { class: 'hx-s' }, sub[0], flag ? [' · ', h('b', { class: 'hx-up', text: t('sa.' + flag) })] : null, clinic ? ' · ' + clinic : null));
     };
