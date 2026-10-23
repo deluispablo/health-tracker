@@ -708,16 +708,16 @@ try {
     const m = typeof s === 'string' ? /(\d{2}):(\d{2})$/.exec(s) : null;
     return m ? Number(m[1]) * 60 + Number(m[2]) : null;
   }
-  const USER_TZ = 'Europe/Madrid';   // the worker's USER_TZ; health_status sends no zone, so the dashboard falls back to it
+  const USER_TZ = 'Europe/Madrid';   // fallback until health_status reports the owner's zone; the main script replaces HTLogic.tz with the status reader
   /* UTC offset in minutes of a zone at an instant, from Intl's longOffset ("GMT+02:00", "GMT" for zero). */
   function tzOffset(tz, ms) {
     const n = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'longOffset' }).formatToParts(ms).find((p) => p.type === 'timeZoneName')?.value ?? '';
     const m = /([+-])(\d{2}):(\d{2})/.exec(n);
     return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
   }
-  /* Sunrise and sunset in USER_TZ local minutes (the owner's day, whatever the device zone); the offset is the date's at 12:00 UTC. */
+  /* Sunrise and sunset in the owner's local minutes (the zone read at call time, whatever the device zone); the offset is the date's at 12:00 UTC. */
   function sunTimes(dateISO, lat, lon) {
-    const off = tzOffset(USER_TZ, Date.parse(dateISO + 'T12:00:00Z')), jd =Date.parse(dateISO + 'T00:00:00Z') / 86400000 + 2440587.5, rad = Math.PI / 180;
+    const off = tzOffset(HTLogic.tz(), Date.parse(dateISO + 'T12:00:00Z')), jd =Date.parse(dateISO + 'T00:00:00Z') / 86400000 + 2440587.5, rad = Math.PI / 180;
     if (!Number.isFinite(jd) || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
     const solar = (minutes) => {
       const c = (jd + minutes / 1440 - 2451545) / 36525, l = (280.46646 + c * (36000.76983 + c * .0003032)) % 360;
@@ -836,7 +836,7 @@ try {
 
   window.HTLogic = {
     COPY, t, tn, pickLang, fmt: { num, signed, dur, ago, day, vital, range }, VITALS, shiftDate, dayValue, typicalRange, rangeStatus, rangeFlag, outliers,
-    recovery, stepGoal, waterGoal, USER_TZ, sunTimes, localMinutes, mainSession, CHIPS, SUPPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
+    recovery, stepGoal, waterGoal, USER_TZ, tz: () => USER_TZ, sunTimes, localMinutes, mainSession, CHIPS, SUPPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
     available, summary, writeQueue, doubleTap, NIGHT_END, dayFor,
     applyLog, applyUndo, acceptSnapshot, syncLabel, errorKind
   };
@@ -1109,7 +1109,7 @@ try {
      ctx = { root, date, lang, t(key, vars), L, ins, source(name), navigate(date), rerender(), tab, today, min, now(), tz }
        today     the dashboard's current day (before 05:00 the day that just ended); date is the shown day
        min       the minute of the day date renders as of: now for today, 1440 for a past day (and the day that just ended)
-       now()     epoch ms of the real instant (also on past days); tz the owner's time zone (USER_TZ, Europe/Madrid)
+       now()     epoch ms of the real instant (also on past days); tz the owner's time zone (status.tz, Europe/Madrid before it loads)
        root      the tab's empty grid (div.hx-g); fill it with ins.layout(root, [[card, row, colStart, colEnd], …])
        source    source(name) → { data, error, state(cardKey, lines), stale(cardKey) }: a page source by name (daily, sleep,
                  trackers, workouts, vitals, …, and the shared periods, findings, scan), started on first use. state() is the
@@ -1519,7 +1519,7 @@ try {
       undoneTimer = setTimeout(() => { undone = null; renderUndo(); }, 3000);
     }
     refreshTrackers('trackers'); refreshTrackers('trackersNow');
-    /* R2.3: tab sources read the logs too, but only those that reach the written event's own date (USER_TZ) refetch; older ones stay cached. */
+    /* R2.3: tab sources read the logs too, but only those that reach the written event's own local_date refetch; older ones stay cached. */
     const day = p.event?.local_date ?? viewDate;
     const through = (s) => typeof s.through === 'function' ? s.through(dayDate) : s.through;   // tab inputs read dayDate (inputOf)
     TAB_SRC.forEach((n) => { if ((S[n].unsubscribe || S[n].data) && !(through(S[n]) < day)) refreshTrackers(n); });
@@ -1801,8 +1801,9 @@ try {
     clearInterval(tabTimer); tabTimer = null; tabTimerKey = key;
     if (key) tabTimer = setInterval(() => { if (!stopped) renderTab(on); }, 60000);
   }
-  /* ctx.tz: the owner's time zone; health_status does not send one today, so the dashboard's USER_TZ applies. */
+  /* The owner's time zone from health_status (status.tz), USER_TZ before it loads; ctx.tz and the logic's sunTimes read it at call time. */
   const tzOf = () => typeof S.status.data?.tz === 'string' && S.status.data.tz ? S.status.data.tz : L.USER_TZ;
+  L.tz = tzOf;
   function renderTab(name) {
     const id = Object.keys(window.HT.TABS).find((k) => window.HT.TABS[k] === name), root = $('g-' + name);
     tabClock();
