@@ -9,14 +9,14 @@
 
 **Your Pixel Watch data in your own Cloudflare D1 database, queryable from any MCP client, with a live dashboard and one-tap logging from the watch.**
 
+<a href="https://deluispablo.com/healthtracker/"><img src="https://img.shields.io/badge/See_the_product_page-deluispablo.com%2Fhealthtracker-5b6cff?style=for-the-badge" alt="See the product page at deluispablo.com/healthtracker"></a>
+
 [![CI](https://github.com/deluispablo/health-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/deluispablo/health-tracker/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Wear OS](https://img.shields.io/badge/Wear%20OS-6%2B-4285F4?logo=wearos&logoColor=white)](docs/watch.md)
-
-**[Product page](https://deluispablo.com/healthtracker/)**
 
 </div>
 
