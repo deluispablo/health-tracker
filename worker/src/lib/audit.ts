@@ -8,6 +8,7 @@ interface AuditEntry {
 
 export function audit(ctx: ExecutionContext, db: D1Database, entry: AuditEntry): void {
   const ms = Math.max(0, Date.now() - entry.started);
+  console.log({ kind: entry.kind, name: entry.name, ok: entry.error === undefined, ms }); // Workers Logs pairs this with the invocation's CPU time.
   ctx.waitUntil(Promise.resolve().then(async () => {
     await db.prepare("INSERT INTO audit_log (ts, kind, name, args_json, ok, ms, error) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .bind(Math.floor(Date.now() / 1000), entry.kind, entry.name,
