@@ -20,6 +20,15 @@ private const val TAG = "LogWorker"
  */
 internal fun settled(code: Int, undo: Boolean) = code == 200 || code == 201 || code == 400 || code == 409 || (code == 404 && undo)
 
+/** One request to /watch/log: the watch headers plus the JSON content type. */
+internal class LogRequest(val method: String, val headers: Map<String, String>, val body: String)
+
+internal fun logRequest(tap: Tap): LogRequest {
+    val body = JSONObject().put("idempotency_key", tap.id)
+    if (!tap.undo) body.put("tracker_id", tap.tracker).put("at", Instant.ofEpochSecond(tap.at).toString())
+    return LogRequest(if (tap.undo) "DELETE" else "POST", todayHeaders() + ("Content-Type" to "application/json"), body.toString())
+}
+
 /** Sends every queued tap, then refreshes the dial; retries keep the same idempotency keys. */
 class LogWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -44,13 +53,11 @@ class LogWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, p
         return try {
             conn.connectTimeout = 20_000
             conn.readTimeout = 20_000
-            conn.requestMethod = if (tap.undo) "DELETE" else "POST"
+            val req = logRequest(tap)
+            conn.requestMethod = req.method
             conn.doOutput = true
-            conn.setRequestProperty("Authorization", "Bearer ${BuildConfig.WATCH_TOKEN}")
-            conn.setRequestProperty("Content-Type", "application/json")
-            val body = JSONObject().put("idempotency_key", tap.id)
-            if (!tap.undo) body.put("tracker_id", tap.tracker).put("at", Instant.ofEpochSecond(tap.at).toString())
-            conn.outputStream.use { it.write(body.toString().toByteArray()) }
+            req.headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+            conn.outputStream.use { it.write(req.body.toByteArray()) }
             conn.responseCode
         } catch (e: IOException) {
             Log.w(TAG, "send failed", e)

@@ -57,13 +57,32 @@ fun pulseOuterRadius(bpm: Int): Float = 52f + (bpm - 45) * 0.33f
 
 fun isStale(generatedAt: Long, nowSec: Long): Boolean = nowSec - generatedAt > 3 * 3600
 
-/** Local sunrise and sunset in minutes since midnight (NOAA approximation). */
-fun sunTimes(
-    date: LocalDate,
-    lat: Double = 40.4168,
-    lon: Double = -3.7038,
-    zone: ZoneId = USER_ZONE,
-): Pair<Int, Int> {
+/** Coordinates of the zones the wearer can be in; the same table as the dashboard. */
+private val ZONE_COORDS = mapOf(
+    "Europe/Madrid" to (40.4168 to -3.7038),
+    "Australia/Sydney" to (-33.8688 to 151.2093),
+    "Australia/Melbourne" to (-37.8136 to 144.9631),
+    "Australia/Brisbane" to (-27.4698 to 153.0251),
+    "Australia/Perth" to (-31.9523 to 115.8613),
+    "Australia/Adelaide" to (-34.9285 to 138.6007),
+    "Australia/Hobart" to (-42.8821 to 147.3272),
+    "Australia/Darwin" to (-12.4634 to 130.8456),
+)
+
+/** Local sunrise and sunset in minutes since midnight (NOAA approximation); null for a zone outside the table. */
+fun sunTimes(date: LocalDate, zone: ZoneId = USER_ZONE): Pair<Int, Int>? =
+    ZONE_COORDS[zone.id]?.let { (lat, lon) -> sunAt(date, lat, lon, zone) }
+
+/** Night band as start angle and sweep in dial degrees, or null when the zone has no sun times. */
+internal fun nightBand(date: LocalDate, zone: ZoneId = USER_ZONE): Pair<Float, Float>? =
+    sunTimes(date, zone)?.let { (rise, set) -> (set - 1440) / 4f - 90f to (rise - set + 1440) / 4f }
+
+/** The layers drawn for [data]; an unknown zone drops only the night band. */
+internal fun dialLayers(data: DialData, ambient: Boolean, zone: ZoneId = USER_ZONE): List<String> =
+    if (ambient) listOf("sleep")
+    else listOfNotNull("night".takeIf { nightBand(LocalDate.parse(data.date), zone) != null }, "sleep", "workouts", "logs", "pulse")
+
+private fun sunAt(date: LocalDate, lat: Double, lon: Double, zone: ZoneId): Pair<Int, Int> {
     val g = 2 * Math.PI / 365 * (date.dayOfYear - 1)
     val eqTime = 229.18 * (0.000075 + 0.001868 * cos(g) - 0.032077 * sin(g) -
         0.014615 * cos(2 * g) - 0.040849 * sin(2 * g))

@@ -54,39 +54,43 @@ fun renderDial(data: DialData, nowMin: Int, ambient: Boolean, size: Int = 450): 
 
 private fun drawLayers(c: Canvas, data: DialData, nowMin: Int, ambient: Boolean) {
     val main = data.sleep.filter { !it.nap }
-    if (ambient) {
-        main.forEach { arc(c, it, nowMin, R_TRACK, stroke(AMBIENT_SLEEP, TRACK_W)) }
-        return
-    }
-
-    // Night band: sunset to sunrise through midnight, filling the gap between the log ring and the bezel.
-    val (rise, set) = sunTimes(LocalDate.parse(data.date))
-    c.drawArc(box(R_TRACK), (set - 1440) / 4f - 90f, (rise - set + 1440) / 4f, false, stroke(BAND, R_BEZEL - R_LOG, Paint.Cap.BUTT))
-
-    // States track: sleep, naps (lighter core) and workouts share one width.
-    main.forEach { arc(c, it, nowMin, R_TRACK, stroke(M_DEEP, TRACK_W)) }
-    data.sleep.filter { it.nap }.forEach {
-        arc(c, it, nowMin, R_TRACK, stroke(M_DEEP, TRACK_W))
-        arc(c, it, nowMin, R_TRACK, stroke(M_LIGHT, TRACK_W * 0.7f))
-    }
-    data.workouts.forEach { arc(c, it, nowMin, R_TRACK, stroke(M_STEPS, TRACK_W), minDeg = 4f) }
-
-    // Log ring with marks; clusters get a bracket inside it with feet at the true times.
-    c.drawCircle(0f, 0f, R_LOG, stroke(LINE, 2.25f))
-    val groups = fanGroups(data.events.filter { it.t in 0..nowMin && it.k != "other" }, stepDeg = 6.5f * MARK * 102f / R_LOG)
-    val placed = groups.flatten()
-    groups.filter { it.size > 1 }.forEach { cl ->
-        val p = stroke(LINE_STRONG, 1.85f)
-        c.drawArc(box(R_LOG - 13f * MARK), cl.first().second - 90f, cl.last().second - cl.first().second, false, p)
-        cl.forEach { (m, _) -> radial(c, angleOf(m.t), R_LOG - 13f * MARK - 4f, R_LOG - 13f * MARK, p) }
-    }
-    placed.forEach { (m, a) -> mark(c, m.k, a, m.m) }
-
-    // Pulse ticks from R_PULSE out to the bpm radius, kept inside the log ring; finished buckets only.
-    val hr = stroke(M_HR, 1.86f).apply { alpha = (255 * 0.7f).toInt() }
-    data.hr.forEachIndexed { i, bpm ->
-        if (bpm != null && 15 * i + 15 <= nowMin) {
-            radial(c, angleOf(15 * i) + 1.875f, R_PULSE, pulseOuterRadius(bpm).coerceIn(R_PULSE, R_LOG - 16f), hr)
+    // The pure plan decides which layers exist; each is drawn in plan order.
+    for (layer in dialLayers(data, ambient)) when (layer) {
+        // Night band: sunset to sunrise through midnight, filling the gap between the log ring and the bezel.
+        "night" -> nightBand(LocalDate.parse(data.date))?.let { (start, sweep) ->
+            c.drawArc(box(R_TRACK), start, sweep, false, stroke(BAND, R_BEZEL - R_LOG, Paint.Cap.BUTT))
+        }
+        // States track: sleep and naps (lighter core) share one width with workouts.
+        "sleep" -> if (ambient) {
+            main.forEach { arc(c, it, nowMin, R_TRACK, stroke(AMBIENT_SLEEP, TRACK_W)) }
+        } else {
+            main.forEach { arc(c, it, nowMin, R_TRACK, stroke(M_DEEP, TRACK_W)) }
+            data.sleep.filter { it.nap }.forEach {
+                arc(c, it, nowMin, R_TRACK, stroke(M_DEEP, TRACK_W))
+                arc(c, it, nowMin, R_TRACK, stroke(M_LIGHT, TRACK_W * 0.7f))
+            }
+        }
+        "workouts" -> data.workouts.forEach { arc(c, it, nowMin, R_TRACK, stroke(M_STEPS, TRACK_W), minDeg = 4f) }
+        // Log ring with marks; clusters get a bracket inside it with feet at the true times.
+        "logs" -> {
+            c.drawCircle(0f, 0f, R_LOG, stroke(LINE, 2.25f))
+            val groups = fanGroups(data.events.filter { it.t in 0..nowMin && it.k != "other" }, stepDeg = 6.5f * MARK * 102f / R_LOG)
+            val placed = groups.flatten()
+            groups.filter { it.size > 1 }.forEach { cl ->
+                val p = stroke(LINE_STRONG, 1.85f)
+                c.drawArc(box(R_LOG - 13f * MARK), cl.first().second - 90f, cl.last().second - cl.first().second, false, p)
+                cl.forEach { (m, _) -> radial(c, angleOf(m.t), R_LOG - 13f * MARK - 4f, R_LOG - 13f * MARK, p) }
+            }
+            placed.forEach { (m, a) -> mark(c, m.k, a, m.m) }
+        }
+        // Pulse ticks from R_PULSE out to the bpm radius, kept inside the log ring; finished buckets only.
+        "pulse" -> {
+            val hr = stroke(M_HR, 1.86f).apply { alpha = (255 * 0.7f).toInt() }
+            data.hr.forEachIndexed { i, bpm ->
+                if (bpm != null && 15 * i + 15 <= nowMin) {
+                    radial(c, angleOf(15 * i) + 1.875f, R_PULSE, pulseOuterRadius(bpm).coerceIn(R_PULSE, R_LOG - 16f), hr)
+                }
+            }
         }
     }
 }

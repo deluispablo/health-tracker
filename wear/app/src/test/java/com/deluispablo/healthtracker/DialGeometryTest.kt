@@ -84,7 +84,7 @@ class DialGeometryTest {
         val date = LocalDate.of(2026, 10, 22)
         val zone = USER_ZONE
         val offset = date.atTime(12, 0).atZone(zone).offset.totalSeconds / 60
-        val (rise, set) = sunTimes(date)
+        val (rise, set) = sunTimes(date)!!
         assertTrue("sunrise $rise", abs(rise - (393 + offset)) <= 3)
         assertTrue("sunset $set", abs(set - (1045 + offset)) <= 3)
     }
