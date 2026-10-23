@@ -97,8 +97,9 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
   }
   const hr = metrics.find((row) => row.metric === "hr");
   if (hr && watch?.synced_until != null && watch.synced_until - hr.ts > DATA_LAG_ALERT_S) {
-    alerts.push({ code: "data_lag", message: `El reloj se sincronizó con Google a las ${localTime(watch.synced_until).slice(11)}`
-      + ` pero el último pulso guardado es de las ${localTime(hr.ts).slice(11)}.` });
+    alerts.push({ code: "data_lag", message: `Sin pulso guardado desde las ${localTime(hr.ts).slice(11)},`
+      + ` aunque el reloj se sincronizó con Google a las ${localTime(watch.synced_until).slice(11)}.`
+      + " Si lo llevabas puesto, pulsa Actualizar." });
   }
   const minutesByDate = new Map(coverage.map((row) => [row.date, row.hr_minutes]));
   let gap: string[] = [];

@@ -421,7 +421,7 @@ describe("SY1 data_lag alert and foreign sync_state rows", () => {
     const out = await readStatus(env.DB, options);
     // Both times use USER_TZ (Madrid, UTC+2), not the stored offset 0.
     expect(lag(out)).toEqual(alert
-      ? [{ code: "data_lag", message: "El reloj se sincronizó con Google a las 10:01 pero el último pulso guardado es de las 07:00." }]
+      ? [{ code: "data_lag", message: "Sin pulso guardado desde las 07:00, aunque el reloj se sincronizó con Google a las 10:01. Si lo llevabas puesto, pulsa Actualizar." }]
       : []);
   });
 
