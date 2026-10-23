@@ -538,8 +538,7 @@ try {
     'u.brpm': ['breaths/min', 'resp/min'],
     'sum.ago': ['{d} ago', 'hace {d}'],
     'sum.now': ['just now', 'ahora mismo'],
-    'sync.done': ['Synced {t}', 'Sincronizado {t}'],
-    'sync.stale': ['Not synced since {t}', 'Sin sincronizar desde {t}'],
+    'sync.upto': ['Data up to {t}', 'Datos hasta {t}'],
     'st.retry': ['Retry', 'Reintentar'],
     'st.retryX': ['Retry loading {x}', 'Volver a cargar {x}'],
     'st.allowX': ['Allow access to {x}', 'Permitir el acceso a {x}'],
@@ -800,13 +799,17 @@ try {
   const acceptSnapshot = (gen, issued, result) => issued.gen === gen && (result?.cache?.storedAt ?? Infinity) >= (issued.after ?? 0);
 
   /* ---- sync chip ---- */
+  /* Text: the newest heart-rate minute. Stale only when the pipeline lags (data_lag alert, phone not uploading for 3 h,
+     or no HR for a day); an old HR minute alone just means the watch was off the wrist. */
   function syncLabel(status, lang) {
     if (!status) return { kind: 'hidden', text: '' };
-    const w = (status.streams ?? []).find((s) => s.stream === 'watch');
-    if (!w || typeof w.latest_local !== 'string') return { kind: 'never', text: t('sync.never', lang) };
-    const time = w.latest_local.slice(11, 16);
-    if (finite(w.age_hours) && w.age_hours > 24) return { kind: 'stale', text: t('sync.stale', lang, { t: day(w.latest_local.slice(0, 10), lang) + ' ' + time }) };
-    return { kind: 'done', text: t('sync.done', lang, { t: time }) };
+    const find = (name) => (status.streams ?? []).find((s) => s.stream === name);
+    const hr = find('metric:hr'), w = find('watch');
+    if (!hr || typeof hr.latest_local !== 'string') return { kind: 'never', text: t('sync.never', lang) };
+    const date = hr.latest_local.slice(0, 10), time = hr.latest_local.slice(11, 16);
+    const text = t('sync.upto', lang, { t: (date === String(status.now_local ?? '').slice(0, 10) ? '' : day(date, lang) + ' ') + time });
+    const stale = (status.alerts ?? []).some((a) => a?.code === 'data_lag') || (finite(w?.age_hours) && w.age_hours > 3) || (finite(hr.age_hours) && hr.age_hours > 24);
+    return { kind: stale ? 'stale' : 'done', text };
   }
 
   /* ---- connector error codes (ref/mcp.d.ts) ---- */
