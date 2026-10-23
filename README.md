@@ -16,6 +16,8 @@
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Wear OS](https://img.shields.io/badge/Wear%20OS-6%2B-4285F4?logo=wearos&logoColor=white)](docs/watch.md)
 
+**[Product page](https://deluispablo.com/healthtracker/)**
+
 </div>
 
 Health Tracker is a single-owner health pipeline. One Cloudflare Worker receives Google Health API v4 change notifications, syncs your Pixel Watch metrics into D1 (SQLite), precomputes daily summaries and serves everything as a remote MCP server behind OAuth 2.1. From an MCP client you ask about sleep, heart rate, HRV and activity, log coffee, cigarettes, alcohol, water, supplements and mood, and run n-of-1 analyses over your own history. A Pixel Watch face shows today's dial and logs with one tap, and a five-tab dashboard hosted as a claude.ai artifact shows the day, the night and what tends to go with what.
@@ -136,6 +138,7 @@ The deep reference for ingest, rollups, the Google client and each tool is [docs
 | `py/` | Weekly backup export with restore check (uv, Python 3.12+) |
 | `wear/` | Wear OS companion app (`app`) and Watch Face Format face (`watchface`) |
 | `dashboards/` | Dashboard shell `health-tracker.html` and tab modules `tabs/*.js` |
+| `landing/` | Product landing page, a single static `index.html` published at [deluispablo.com/healthtracker](https://deluispablo.com/healthtracker/) |
 | `docs/` | [Architecture](docs/architecture.md), [watch](docs/watch.md), [operations](docs/operations.md) and brand assets |
 
 ## Getting started
