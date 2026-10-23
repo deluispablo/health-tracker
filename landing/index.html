@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Health Tracker</title>
 <meta name="description" content="Ask your watch what it knows. A Pixel Watch app, a dashboard and Claude, working on your own data.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14.7' fill='%2324306a'/%3E%3Ccircle cx='32' cy='32' r='26' fill='none' stroke='%23fff' stroke-width='3.2'/%3E%3Cpath d='M22.25 15.11A19.5 19.5 0 0 1 50.84 37.05' fill='none' stroke='%23b6c2ff' stroke-width='6.5' stroke-linecap='round'/%3E%3Cpath d='M17 37h8.7l1.8-2.2 1.8 2.2h1.2l.9 2.42 1.5-13.42 1.65 16.28L35.9 37h3.3l2.4-2.64L44 37h3' fill='none' stroke='%23fff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Red+Hat+Mono:wght@400;500;600&display=swap">
@@ -749,9 +750,11 @@ footer.author img { width: 96px; height: 96px; border-radius: 50%; object-fit: c
     const uid = Math.random().toString(36).slice(2, 7);
     const slot = (mid, color, iconSvg, id, bar = true) => {
       const bottom = mid > 90 && mid < 270, s = mid - HALF, e = mid + HALF;
-      const [x0, y0] = pt(RG, bottom ? e : s), [x1, y1] = pt(RG, bottom ? s : e);
-      el('path', { id, d: `M${f(x0)} ${f(y0)}A${RG} ${RG} 0 0 ${bottom ? 0 : 1} ${f(x1)} ${f(y1)}`, fill: 'none' }, comp);
-      const txt = el('text', { fill: C.ink, 'font-size': FS, 'font-family': 'Outfit, system-ui, sans-serif', 'font-weight': 500, 'dominant-baseline': 'central' }, comp);
+      // Línea base desplazada media altura de mayúscula para centrar el texto en r 208 sin dominant-baseline (Safari lo ignora en textPath).
+      const rt = bottom ? RG + FS * .35 : RG - FS * .35, pxT = Math.PI * rt / 180;
+      const [x0, y0] = pt(rt, bottom ? e : s), [x1, y1] = pt(rt, bottom ? s : e);
+      el('path', { id, d: `M${f(x0)} ${f(y0)}A${rt} ${rt} 0 0 ${bottom ? 0 : 1} ${f(x1)} ${f(y1)}`, fill: 'none' }, comp);
+      const txt = el('text', { fill: C.ink, 'font-size': FS, 'font-family': 'Outfit, system-ui, sans-serif', 'font-weight': 500 }, comp);
       const tp = el('textPath', { href: '#' + id }, txt);
       const ic = el('g', {}, comp);
       ic.innerHTML = `<g transform="translate(${-ICO / 2} ${-ICO / 2}) scale(${ICO / 24})" fill="${color}" stroke="${color}" stroke-width="0">${iconSvg}</g>`;
@@ -760,10 +763,11 @@ footer.author img { width: 96px; height: 96px; border-radius: 50%; object-fit: c
       return {
         set(frac, label) {
           tp.textContent = label.toUpperCase();
-          const lead = ICO_DEG + label.length * DPC;
+          const measured = txt.getComputedTextLength();  // 0 mientras no se pinta: estimación por caracteres
+          const lead = ICO_DEG + (measured > 0 ? measured / pxT : label.length * DPC);
           // Inicio del icono, medido desde el principio de la curva (s arriba, e abajo).
           const from = bar ? 0 : (2 * HALF - lead) / 2;
-          tp.setAttribute('startOffset', f((from + ICO_DEG) * PXDEG));
+          tp.setAttribute('startOffset', f((from + ICO_DEG) * pxT));
           const ia = bottom ? e - from - ICO / 2 / PXDEG : s + from + ICO / 2 / PXDEG, [ix, iy] = pt(RG, ia);
           ic.setAttribute('transform', `translate(${f(ix)} ${f(iy)}) rotate(${f(bottom ? ia + 180 : ia)})`);
           if (!bar) return;
@@ -865,9 +869,9 @@ footer.author img { width: 96px; height: 96px; border-radius: 50%; object-fit: c
 
       const s = stepsAt(t), b = Math.round(lerp(96, 64, win(t, 400, 1320))), k = Math.round(lerp(380, 2240, win(t, 400, 1320)));
       batt.set(b / 100, b + '%');
-      steps.set(s / 10000, s.toLocaleString(lang === 'es' ? 'es-ES' : 'en-GB'));
-      kcal.set(k / 2600, k.toLocaleString(lang === 'es' ? 'es-ES' : 'en-GB'));
-      const hh = Math.floor(((t % 1440) + 1440) % 1440 / 60), mm = Math.floor(((t % 60) + 60) % 60);
+      steps.set(s / 10000, String(s));
+      kcal.set(k / 2600, String(k));
+      const tm = (Math.round(t) % 1440 + 1440) % 1440, hh = Math.floor(tm / 60), mm = tm % 60;
       clock12.set(0, `${hh % 12 || 12}:${String(mm).padStart(2, '0')} ${hh < 12 ? 'AM' : 'PM'}`);
 
       // Toques: café a las 08:30 y ánimo «cansado» a las 15:30.
@@ -1100,8 +1104,10 @@ footer.author img { width: 96px; height: 96px; border-radius: 50%; object-fit: c
     lang = lang === 'es' ? 'en' : 'es';
     try { localStorage.setItem('ht.landing.lang', lang); } catch (e) { /* sin almacenamiento: vale para esta visita */ }
     apply();
+  document.fonts?.ready.then(apply);  // remide las diagonales con Outfit ya cargada
   });
   apply();
+  document.fonts?.ready.then(apply);  // remide las diagonales con Outfit ya cargada
 
   // Las respuestas de Claude aparecen palabra a palabra al llegar a ellas; el texto completo ya está en la página.
   if (!reduce && 'IntersectionObserver' in window) {
