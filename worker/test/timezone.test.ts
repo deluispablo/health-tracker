@@ -95,6 +95,35 @@ describe("zone reported by the watch", () => {
   });
 });
 
+const logTap = (at: string, headers: Record<string, string> = {}, now = NOW) => route(
+  new Request("https://example.com/watch/log", { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, ...headers },
+    body: JSON.stringify({ tracker_id: "caffeine", at, idempotency_key: "tap-tz-0001" }) }),
+  appEnv(), { ...deps, now: () => now });
+const eventRow = () => env.DB.prepare("SELECT local_date, tz_offset_min FROM event").first();
+
+describe("zone reported with a watch log", () => {
+  it("stores the reported zone before computing the log's local date", async () => {
+    await store('"Europe/Madrid"');
+    const at = "2026-11-23T19:20:00Z";
+    expect((await logTap(at, { "x-time-zone": "Australia/Sydney" }, Date.parse(at) / 1000 + 60)).status).toBe(201);
+    expect(await eventRow()).toEqual({ local_date: "2026-11-24", tz_offset_min: 660 });
+    expect(await stored()).toBe('"Australia/Sydney"');
+  });
+
+  it("uses the stored zone without a header", async () => {
+    await store('"Australia/Sydney"');
+    expect((await logTap("2026-11-01T14:30:00Z")).status).toBe(201);
+    expect(await eventRow()).toEqual({ local_date: "2026-11-02", tz_offset_min: 660 });
+  });
+
+  it.each([["Mars/Base"], [""]])("succeeds with the stored zone and leaves the row for the header %j", async (header) => {
+    await store('"Australia/Sydney"');
+    expect((await logTap("2026-11-01T14:30:00Z", { "x-time-zone": header })).status).toBe(201);
+    expect(await eventRow()).toEqual({ local_date: "2026-11-02", tz_offset_min: 660 });
+    expect(await stored()).toBe('"Australia/Sydney"');
+  });
+});
+
 describe("findings keep the zone they were saved in", () => {
   const iso = (i: number) => new Date(Date.parse("2026-10-10T00:00:00Z") + i * 86400000).toISOString().slice(0, 10);
   const saveAt = Date.parse("2026-11-01T19:00:00Z"); // 20:00 Madrid (11-01 open), 06:00 Sydney on 11-02 (11-01 complete)

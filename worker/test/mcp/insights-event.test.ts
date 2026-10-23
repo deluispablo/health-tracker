@@ -261,6 +261,17 @@ describe("acute D1 loading", () => {
     expect(i.windows.get(at("2026-10-25T00:30:00Z"))?.tz_offset_min).toBe(120);
     expect(i.windows.get(at("2026-10-25T01:30:00Z"))?.tz_offset_min).toBe(60);
   });
+  it("keeps lived offsets for control windows whatever zone is configured", async () => {
+    // Madrid lived +120 until the clocks changed at 01:00Z on 2026-10-25, +60 after.
+    const ts = at("2026-10-25T09:00:00Z");
+    await seedTap(ts, 60);
+    await seedMinutes(at("2026-10-24T22:00:00Z"), 1500, ts, true);
+    const p = { start: "2026-10-25", end: "2026-10-25", nowSec: at("2026-10-27T00:00:00Z") };
+    const madrid = acuteDays(await loadAcuteInput(env.DB, { ...p, tz: "Europe/Madrid" }), p)[0];
+    const sydney = acuteDays(await loadAcuteInput(env.DB, { ...p, tz: "Australia/Sydney" }), p)[0];
+    expect(sydney.d).toEqual(madrid.d);
+    expect(sydney.excluded).toEqual(madrid.excluded);
+  });
   it("executes one SELECT-only statement with at most 100 bindings", async () => {
     const sql: string[] = []; const bindings: unknown[][] = [];
     const db = { prepare(q: string) { sql.push(q); return { bind(...args: unknown[]) {

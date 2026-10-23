@@ -73,7 +73,9 @@ export async function loadAcuteInput(db: D1Database, p: {
         avg(CASE WHEN m.ts >= c.ts + 1800 AND m.ts < c.ts + 7200 THEN value END) AS caffeine_mean,
         count(CASE WHEN m.ts >= c.ts + 1800 AND m.ts < c.ts + 7200 THEN 1 END) AS caffeine_n,
         avg(CASE WHEN m.ts >= c.ts AND m.ts < c.ts + 3600 THEN value END) AS alcohol_mean,
-        count(CASE WHEN m.ts >= c.ts AND m.ts < c.ts + 3600 THEN 1 END) AS alcohol_n
+        count(CASE WHEN m.ts >= c.ts AND m.ts < c.ts + 3600 THEN 1 END) AS alcohol_n,
+        (SELECT tz_offset_min FROM metric_minute WHERE metric = 'hr' AND source = 'gh'
+          AND ts >= c.ts - 900 AND ts < c.ts ORDER BY ts DESC LIMIT 1) AS hr_offset
       FROM candidates c LEFT JOIN metric_minute m
         ON m.metric = 'hr' AND m.source = 'gh' AND m.ts >= c.ts - 900 AND m.ts < c.ts + 7200
       GROUP BY c.ts
@@ -81,7 +83,7 @@ export async function loadAcuteInput(db: D1Database, p: {
     SELECT 'tap' AS kind, json_object('tracker', tracker, 'ts', ts, 'tz_offset_min', tz_offset_min) AS data FROM taps
     UNION ALL SELECT 'sleep', json_array(start_ts, end_ts) FROM sleep_session WHERE start_ts < ?2 + 86400 AND end_ts > ?1 - 86400
     UNION ALL SELECT 'workout', json_array(start_ts, end_ts) FROM workout WHERE start_ts < ?2 + 86400 AND end_ts > ?1 - 86400
-    UNION ALL SELECT 'window', json_object('ts', ts, 'base_mean', base_mean, 'base_n', base_n,
+    UNION ALL SELECT 'window', json_object('ts', ts, 'base_mean', base_mean, 'base_n', base_n, 'hr_offset', hr_offset,
       'resp', json_object('cigarettes', json_object('mean', cigarette_mean, 'n', cigarette_n),
         'caffeine', json_object('mean', caffeine_mean, 'n', caffeine_n),
         'alcohol', json_object('mean', alcohol_mean, 'n', alcohol_n))) FROM windows
@@ -94,11 +96,11 @@ export async function loadAcuteInput(db: D1Database, p: {
     else if (row.kind === "sleep") input.sleeps.push(JSON.parse(row.data) as Interval);
     else if (row.kind === "workout") input.workouts.push(JSON.parse(row.data) as Interval);
     else {
-      const { ts, ...window } = JSON.parse(row.data) as Omit<WindowAgg, "tz_offset_min"> & { ts: number };
-      input.windows.set(ts, { ...window, tz_offset_min: null });
+      const { ts, hr_offset, ...window } = JSON.parse(row.data) as Omit<WindowAgg, "tz_offset_min"> & { ts: number; hr_offset: number | null };
+      input.windows.set(ts, { ...window, tz_offset_min: hr_offset });
     }
   }
-  // Tap offsets are recorded observations; grid offsets use the zone at the candidate itself.
+  // Recorded offsets win (the tap's, else the latest heart-rate minute before the window); only a window with none uses the current zone.
   for (const tap of input.taps) {
     const window = input.windows.get(tap.ts);
     if (window) window.tz_offset_min = tap.tz_offset_min;
