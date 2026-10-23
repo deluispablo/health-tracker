@@ -96,10 +96,8 @@ fun withTaps(data: DialData, taps: List<Tap>): DialData {
     if (today.isEmpty()) return data
     val shown = data.events.mapNotNull { it.i }.toSet()
     val events = (data.events + today.filter { !it.first.undo && it.first.id !in shown }.map { it.second }).toMutableList()
-    // Dials cached before marks carried keys fall back to removing an equal mark.
-    for ((tap, mark) in today.filter { it.first.undo }) {
-        if (!events.removeAll { it.i == tap.id }) events.remove(mark.copy(i = null))
-    }
+    // An undo removes only its own keyed mark; an unkeyed mark may be a phone log.
+    for ((tap, _) in today.filter { it.first.undo }) events.removeAll { it.i == tap.id }
     return data.copy(events = events.sortedBy { it.t })
 }
 

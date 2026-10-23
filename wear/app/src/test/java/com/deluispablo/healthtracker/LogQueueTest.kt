@@ -111,8 +111,8 @@ class UndoTest {
     }
 
     @Test
-    fun anUndoHidesTheSentMarkUntilTheNextRefresh() {
-        assertEquals(emptyList<Mark>(), withTaps(day, listOf(Tap("x-1", "cigarettes", at, undo = true))).events)
+    fun anUndoWithoutItsKeyedMarkLeavesUnkeyedMarks() {
+        assertEquals(day, withTaps(day, listOf(Tap("x-1", "cigarettes", at, undo = true))))
     }
 }
 
