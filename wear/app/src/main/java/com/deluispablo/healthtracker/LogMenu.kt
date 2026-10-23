@@ -27,10 +27,9 @@ fun logMenu(data: DialData?, taps: List<Tap>): LogMenu {
     val date = data?.date ?: java.time.LocalDate.now(USER_ZONE).toString()
     val day = taps.filter { tapDate(it) == date }
     val items = catalog.map { t ->
-        // Unsent logs count at once; an unsent undo takes back a log the dial already shows (on a dial
-        // cached before marks carried keys, any undo does, as withTaps removes an equal mark).
+        // Unsent logs count at once; an unsent undo takes back only a log the dial shows under its key.
         val delta = day.count { it.tracker == t.id && !it.undo && it.id !in shown } -
-            day.count { it.tracker == t.id && it.undo && (it.id in shown || shown.isEmpty()) }
+            day.count { it.tracker == t.id && it.undo && it.id in shown }
         val text = when {
             t.unit == "ml" -> litres((t.today + delta * t.value).coerceAtLeast(0.0))
             // The face counts drinks and coffees, whatever their dose; cigarettes count their units.

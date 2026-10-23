@@ -60,8 +60,13 @@ class LogMenuTest {
     }
 
     @Test
-    fun anUndoOnADialWithoutKeysStillTakesBackTheCount() {
-        assertEquals("0", logMenu(parseDialData(sampleJson().replace(",\"i\":\"tap-1\"", "")), listOf(Tap("x-9", "caffeine", at, undo = true))).face.first().today)
+    fun undoingAnUnsentTapLeavesThePhoneLogsAlone() {
+        // Two phone coffees, one at the undone tap's minute (570), and no watch keys on the dial.
+        val d = parseDialData(sampleJson().replace(",\"i\":\"tap-1\"", "")
+            .replace("{\"t\":460,\"k\":\"cafe\"}", "{\"t\":460,\"k\":\"cafe\"},{\"t\":570,\"k\":\"cafe\"}"))
+        val taps = listOf(Tap("x-9", "caffeine", at, undo = true))
+        assertEquals("2", logMenu(d, taps).face.first().today)
+        assertEquals(listOf(Mark(460, "cafe"), Mark(570, "cafe")), withTaps(d, taps).events.filter { it.k == "cafe" })
     }
 
     @Test
