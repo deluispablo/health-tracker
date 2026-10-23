@@ -3,6 +3,7 @@ declare namespace Cloudflare {
     PUBLIC_ORIGIN: string;
     DB: D1Database;
     OAUTH_KV: KVNamespace;
+    CI: string;
     TEST_MIGRATIONS: import("cloudflare:test").D1Migration[];
   }
 }
