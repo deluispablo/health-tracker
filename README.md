@@ -291,7 +291,7 @@ uv run --directory py python src/health_tracker/export.py              # writes 
 uv run --directory py python src/health_tracker/export.py --out <dir>  # or to another directory
 ```
 
-The export dumps D1 with `wrangler d1 export`, restores the dump into an in-memory SQLite database, checks the required tables, writes a `health-tracker-YYYY-MM-DD.sql` and `.json` manifest pair (SHA-256, size and row count per table) and keeps the last eight pairs. An export that lost rows against the newest previous manifest (`event` has fewer rows, `metric_minute` dropped by more than 1 %, or either table is empty) is kept as `health-tracker-YYYY-MM-DD.rejected.sql` and `.json`, nothing is pruned and the export exits `1`. It exits `1` on any other failure too. Nothing in the repository schedules it; see [Operations](#operations).
+The export dumps D1 with `wrangler d1 export`, restores the dump into an in-memory SQLite database, checks the required tables, writes a `health-tracker-YYYY-MM-DD.sql` and `.json` manifest pair (SHA-256, size and row count per table) and keeps the last eight pairs. An export that lost rows against the newest previous manifest (`event` has fewer rows, `metric_minute` dropped by more than 1 %, or `metric_minute` is empty) is kept as `health-tracker-YYYY-MM-DD.rejected.sql` and `.json`, nothing is pruned and the export exits `1`. It exits `1` on any other failure too. Nothing in the repository schedules it; see [Operations](#operations).
 
 ## MCP tools reference
 
