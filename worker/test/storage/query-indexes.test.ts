@@ -15,7 +15,7 @@ it("uses range searches for workout end times, audit retention and bounded event
   await loadDayTable({ prepare: (sql: string) => {
     query = sql;
     return env.DB.prepare(sql);
-  } } as D1Database, range, now);
+  } } as D1Database, range, now, "Europe/Madrid");
   const bindings = [range.fetchStart, range.fetchEnd, now];
   const plan = async (sql: string, args: (string | number)[]) =>
     (await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`).bind(...args).all<{ detail: string }>()).results.map(r => r.detail).join("\n");

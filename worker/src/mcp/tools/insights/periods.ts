@@ -134,7 +134,7 @@ function moodWeeks(t: DayTable) {
 
 export async function evaluatePeriods(db: D1Database, origin: Extract<Origin, { tool: "health_periods" }>, opts: EvalOptions): Promise<FamilyResult> {
   const range = opts.range ? resolveRange(opts.range, opts.nowSec, opts.tz) : rangeFromOrigin(origin.args, opts.nowSec, opts.tz);
-  const t = await loadDayTable(db, range, opts.nowSec);
+  const t = await loadDayTable(db, range, opts.nowSec, opts.tz);
   const baselines = computeBaselines(t), flags = anomalyFlags(baselines, t.dates.length);
   const selectedMetrics = origin.args.metrics?.filter((m): m is MetricId => !isChangeBehavior(m));
   const allStreaks = (origin.args.behaviors ?? LOGGED).flatMap(b => streaks(t, b));

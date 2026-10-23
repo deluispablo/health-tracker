@@ -109,12 +109,12 @@ function numberAt(row: Row, key: string): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 interface Row { local_date: string; [key: string]: string | number | null }
-export async function loadDayTable(db: D1Database, range: ResolvedRange, nowSec: number): Promise<DayTable> {
+export async function loadDayTable(db: D1Database, range: ResolvedRange, nowSec: number, tz: string): Promise<DayTable> {
   const {results:rows}=await db.prepare(SQL).bind(range.fetchStart,range.fetchEnd,nowSec).all<Row>();
-  return shapeDayTable(rows, range);
+  return shapeDayTable(rows, range, lastCompletedBday(nowSec, tz));
 }
 
-export function shapeDayTable(rows: Row[], range: ResolvedRange): DayTable {
+export function shapeDayTable(rows: Row[], range: ResolvedRange, lastCompleted: string): DayTable {
   const dates=rows.map(r=>r.local_date);
   const indices=new Map(dates.map((d,i)=>[d,i]));
   const t:DayTable = {
@@ -145,13 +145,16 @@ export function shapeDayTable(rows: Row[], range: ResolvedRange): DayTable {
     const deep = t.metric.deep_min[i], rem = t.metric.rem_min[i];
     t.metric.deep_pct[i] = asleep && deep !== null ? 100 * deep / asleep : null;
     t.metric.rem_pct[i] = asleep && rem !== null ? 100 * rem / asleep : null;
+    // The current behaviour day is unfinished, so its day-anchored values are partial.
+    const open=day>lastCompleted;
+    if (open) t.metric.rhr[i] = null;
     const wear=numberAt(row, "hr_wear_min");
-    const worn=wear===null ? null : wear>=600;
+    const worn=open || wear===null ? null : wear>=600;
     t.metric.steps[i] = worn ? t.metric.steps[i] : null;
     t.metric.workout_min[i] = worn ? t.metric.workout_min[i] ?? 0 : null;
     for (const id of AMOUNT_IDS) t.behavior[id].push(known(id) ? numberAt(row, id) ?? 0 : null);
     const moodCount=MOOD_IDS.reduce((sum,id)=>sum+(numberAt(row, id) ?? 0),0);
-    const moodKnown=known("mood") && moodCount>0;
+    const moodKnown=!open && known("mood") && moodCount>0;
     for (const id of MOOD_IDS) { t.moodTaps[id].push(numberAt(row, id) ?? 0); t.metric[id][i] = moodKnown ? Number((numberAt(row, id) ?? 0)>0) : null; }
     for (const [group,ids] of MOOD_GROUPS) {
       const value=moodKnown ? Number(ids.some(id=>(numberAt(row, id) ?? 0)>0)) : null;

@@ -41,7 +41,7 @@ it("scan JS path takes at most 20 ms cold and 8 ms warm in a fresh module", asyn
   const times: number[] = [], phases: number[][] = [];
   for (let i = 0; i < 6; i++) {
     const a = performance.now();
-    const t = shapeDayTable(rows, range);
+    const t = shapeDayTable(rows, range, range.end);
     const b = performance.now();
     const acute = acuteDays(input, range);
     const c = performance.now();

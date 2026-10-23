@@ -144,7 +144,7 @@ beforeAll(async () => {
 it.each(["main", "common_cause"] as const)("fixture %s preserves adjusted estimates and alcohol eligibility", async variant => {
   await env.DB.batch(["sleep_stage", "sleep_session", "event", "daily_summary", "workout", "metric_minute"].map(table => env.DB.prepare(`DELETE FROM ${table}`)));
   await seedInsightsFixture(env.DB, { variant });
-  const t = await loadDayTable(env.DB, resolveRange({ start: FIXTURE.start, end: FIXTURE.end }, FIXTURE.now, FIXTURE.tz), FIXTURE.now);
+  const t = await loadDayTable(env.DB, resolveRange({ start: FIXTURE.start, end: FIXTURE.end }, FIXTURE.now, FIXTURE.tz), FIXTURE.now, FIXTURE.tz);
   const bl = computeBaselines(t);
   const s = evaluateMetricPair(t, bl, anomalyFlags(bl, t.dates.length), { exposure: "bedtime", side: "high", timing: "that_night", outcome: "rhr" }, { includeAnomalies: false });
   if (variant === "main") {

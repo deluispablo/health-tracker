@@ -150,7 +150,7 @@ it("analysisLogStatement inserts one row in ms",async()=>{
 });
 it("finds the planted before-bed deep sleep difference with anomaly exclusion",async()=>{
   await seedInsightsFixture(env.DB);
-  const t=await loadDayTable(env.DB,resolveRange({start:FIXTURE.start,end:FIXTURE.end},FIXTURE.now,FIXTURE.tz),FIXTURE.now);
+  const t=await loadDayTable(env.DB,resolveRange({start:FIXTURE.start,end:FIXTURE.end},FIXTURE.now,FIXTURE.tz),FIXTURE.now,FIXTURE.tz);
   const flags=anomalyFlags(computeBaselines(t),t.dates.length);
   const {draft:d}=behaviorDraft(t,flags,{behavior:"cigarettes",timing:"before_bed",metric:"deep_min"},{includeAnomalies:false});
   expect(d.stats.diff).toBeCloseTo(-9,0); expect(finalizeFamily([d],t,origin).rows[0].label).toBe("probable");

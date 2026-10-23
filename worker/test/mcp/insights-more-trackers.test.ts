@@ -27,7 +27,7 @@ it("preserves old raw scan statistics when the expanded family has observations"
   await seedInsightsFixture(env.DB);
   const opts={nowSec:FIXTURE.now,tz:FIXTURE.tz};
   const args={start:FIXTURE.start,end:FIXTURE.end};
-  const t=await loadDayTable(env.DB,resolveRange(args,opts.nowSec,opts.tz),opts.nowSec);
+  const t=await loadDayTable(env.DB,resolveRange(args,opts.nowSec,opts.tz),opts.nowSec,opts.tz);
   for (const [j,id] of (["water","melatonin","protein","creatine"] as const).entries())
     t.behavior[id]=t.dates.map((_,i)=>(i*13+j*7)%17<8 ? 2.5 : 0);
   t.beforeBed.melatonin=t.dates.map((_,i)=>i%3===0 ? 1 : 0);

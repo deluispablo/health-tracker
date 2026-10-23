@@ -73,7 +73,7 @@ it("a current streak keeps its fetched start and comparison groups on a short di
 });
 it("a null day ends a streak", async () => {
   await seedSmall();
-  const t = await loadDayTable(env.DB, resolveRange({ start: dates[1], end: dates[6] }, FIXTURE.now, FIXTURE.tz), FIXTURE.now);
+  const t = await loadDayTable(env.DB, resolveRange({ start: dates[1], end: dates[6] }, FIXTURE.now, FIXTURE.tz), FIXTURE.now, FIXTURE.tz);
   t.behavior.cigarettes[t.idx(dates[5])] = null;
   expect(streaks(t, "cigarettes")).toEqual([
     { behavior: "cigarettes", state: "present", start: dates[1], end: dates[3], days: 3, current: false },

@@ -92,7 +92,7 @@ function matches(value: number | null | undefined, c: Condition): boolean {
 export async function evaluateContrast(db: D1Database, origin: ContrastOrigin, opts: EvalOptions): Promise<FamilyResult> {
   const { args } = origin;
   const range = opts.range ? resolveRange(opts.range, opts.nowSec, opts.tz) : rangeFromOrigin(args, opts.nowSec, opts.tz);
-  const t = await loadDayTable(db, range, opts.nowSec);
+  const t = await loadDayTable(db, range, opts.nowSec, opts.tz);
   const clauses = conditions(args), e = clauses.find(c => c.metric)?.metric;
   const includeAnomalies = args.a.include_anomalies === true && args.b.include_anomalies === true;
   const bl: Partial<Record<MetricId, Baseline>> = {};

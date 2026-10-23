@@ -105,7 +105,7 @@ describe("main fixture", () => {
     let t: DayTable, family: FamilyResult;
     beforeAll(async () => {
         await seedInsightsFixture(env.DB);
-        t = await loadDayTable(env.DB, range, opts.nowSec);
+        t = await loadDayTable(env.DB, range, opts.nowSec, opts.tz);
         family = await evaluateScan(env.DB, origin, opts);
     });
     it.each([

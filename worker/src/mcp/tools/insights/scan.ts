@@ -166,7 +166,7 @@ export function computeScan(t: DayTable, acute: AcuteDays[] | null, origin: Scan
 
 export async function evaluateScan(db: D1Database, origin: ScanOrigin, opts: EvalOptions): Promise<FamilyResult> {
   const range = opts.range ? resolveRange(opts.range, opts.nowSec, opts.tz) : rangeFromOrigin(origin.args, opts.nowSec, opts.tz);
-  const t = await loadDayTable(db, range, opts.nowSec);
+  const t = await loadDayTable(db, range, opts.nowSec, opts.tz);
   const acute = !opts.only || opts.only.kind === "acute"
     ? acuteDays(await loadAcuteInput(db, { ...range, nowSec: opts.nowSec, tz: opts.tz }), range) : null;
   return computeScan(t, acute, origin, opts);
