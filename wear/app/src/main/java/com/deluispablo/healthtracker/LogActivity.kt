@@ -100,21 +100,29 @@ class LogActivity : Activity() {
             val (x, y) = spot(menu.face.size + j)
             place(iconButton(style, 30 * size / 68, label) { open() }, size, x, y)
         }
-        if (undo) place(centreButton(R.drawable.ic_undo, R.string.log_undo) {
-            screen.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        if (undo) place(centreButton(R.drawable.ic_undo, R.string.log_undo) { button ->
+            // Re-checked at tap time: the window may have closed while the menu was open.
+            button.isEnabled = false
             val ctx = applicationContext
-            thread { undoLast(ctx) }
-            finish()
+            thread {
+                val queued = undoLast(ctx)
+                runOnUiThread {
+                    if (queued) {
+                        screen.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        finish()
+                    } else screen.removeView(button)
+                }
+            }
         }, 48, 0f, 0f)
     }
 
     private fun showRing() {
         screen.removeAllViews()
         MOODS.forEachIndexed { i, (mood, icon, fill) ->
-            val a = i * Math.PI / 4
+            val (x, y) = ringSpots(MOODS.size, 72.0)[i]
             place(iconButton(TrackerStyle(icon, fill, FACE_INK), 32, "Ánimo: $mood") {
                 pick("mood_$mood", mood.replaceFirstChar { it.uppercase() }, fill)
-            }, 44, (76 * sin(a)).toFloat(), (-76 * cos(a)).toFloat())
+            }, 48, x, y)
         }
         place(centreButton(R.drawable.ic_back, R.string.log_back) { showGrid() }, 48, 0f, 0f)
     }
@@ -122,13 +130,11 @@ class LogActivity : Activity() {
     /** Like the mood ring: every supplement in the catalog with today's dose, around a back button. */
     private fun showSupplements(items: List<LogItem>) {
         screen.removeAllViews()
-        val size = if (items.size <= 4) 60 else 44
-        val r = if (items.size <= 4) 66.0 else 76.0
+        val (size, r) = supplementRing(items.size)
+        val spots = ringSpots(items.size, r)
         items.forEachIndexed { i, item ->
-            val a = i * 2 * Math.PI / items.size
             val style = styleOf(item.id)
-            place(itemButton(item, style, size) { pick(item.id, item.name, style.fill) }, size,
-                (r * sin(a)).toFloat(), (-r * cos(a)).toFloat())
+            place(itemButton(item, style, size) { pick(item.id, item.name, style.fill) }, size, spots[i].first, spots[i].second)
         }
         place(centreButton(R.drawable.ic_back, R.string.log_back) { showGrid() }, 48, 0f, 0f)
     }
@@ -214,11 +220,11 @@ class LogActivity : Activity() {
             setOnClickListener { onClick() }
         }
 
-    private fun centreButton(icon: Int, label: Int, onClick: () -> Unit): View = FrameLayout(this).apply {
+    private fun centreButton(icon: Int, label: Int, onClick: (View) -> Unit): View = FrameLayout(this).apply {
         background = oval(0xff14171e.toInt(), 0xff3a3f4c.toInt())
         contentDescription = getString(label)
         addView(image(icon, 0xffc4c9d4.toInt()), FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
-        setOnClickListener { onClick() }
+        setOnClickListener(onClick)
     }
 
     /** Centres [view] of [sizeDp] at ([dx], [dy]) dp from the middle of the screen. */

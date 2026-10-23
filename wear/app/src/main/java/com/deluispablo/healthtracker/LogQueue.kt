@@ -11,6 +11,7 @@ import java.io.File
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.thread
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -135,14 +136,24 @@ fun logTap(ctx: Context, tracker: String, nowSec: Long = System.currentTimeMilli
     send(ctx)
 }
 
-/** Takes back the last watch log, whether or not it was sent yet. */
-fun undoLast(ctx: Context) {
-    synchronized(cacheLock) {
-        val last = lastTap(ctx) ?: return
-        writeTaps(ctx, undoTaps(readTaps(ctx), last))
-        lastFile(ctx).delete()
+/** The queue after undoing [saved], or null when it is gone, past the undo window or already undone. */
+fun undoStep(taps: List<Tap>, saved: Tap?, nowSec: Long): List<Tap>? {
+    if (saved == null || nowSec - saved.at > UNDO_WINDOW_SEC || taps.any { it.id == saved.id && it.undo }) return null
+    return undoTaps(taps, saved)
+}
+
+/** Runs [block] under [cacheLock] with the time read once the lock is held: a redraw may hold it past the undo window. */
+internal fun <T> lockedAt(clock: () -> Long, block: (Long) -> T): T = synchronized(cacheLock) { block(clock()) }
+
+/** Takes back the last watch log, whether or not it was sent yet; true when an undo was queued. */
+fun undoLast(ctx: Context, clock: () -> Long = { System.currentTimeMillis() / 1000 }): Boolean {
+    val queued = lockedAt(clock) { now ->
+        undoStep(readTaps(ctx), lastTap(ctx, now), now)?.let { writeTaps(ctx, it); lastFile(ctx).delete() } != null
     }
-    send(ctx)
+    if (!queued) return false
+    // Sent apart so the caller's feedback does not wait for the redraw.
+    thread { send(ctx) }
+    return true
 }
 
 /** Whether any tap still waits for the Worker to take it. */

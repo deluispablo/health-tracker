@@ -61,7 +61,7 @@ private fun drawLayers(c: Canvas, data: DialData, nowMin: Int, ambient: Boolean)
 
     // Night band: sunset to sunrise through midnight, filling the gap between the log ring and the bezel.
     val (rise, set) = sunTimes(LocalDate.parse(data.date))
-    arc(c, Span(set - 1440, rise), Int.MAX_VALUE, R_TRACK, stroke(BAND, R_BEZEL - R_LOG, Paint.Cap.BUTT))
+    c.drawArc(box(R_TRACK), (set - 1440) / 4f - 90f, (rise - set + 1440) / 4f, false, stroke(BAND, R_BEZEL - R_LOG, Paint.Cap.BUTT))
 
     // States track: sleep, naps (lighter core) and workouts share one width.
     main.forEach { arc(c, it, nowMin, R_TRACK, stroke(M_DEEP, TRACK_W)) }
@@ -73,8 +73,9 @@ private fun drawLayers(c: Canvas, data: DialData, nowMin: Int, ambient: Boolean)
 
     // Log ring with marks; clusters get a bracket inside it with feet at the true times.
     c.drawCircle(0f, 0f, R_LOG, stroke(LINE, 2.25f))
-    val placed = fanOut(data.events.filter { it.t in 0..nowMin && it.k != "other" }, stepDeg = 6.5f * MARK * 102f / R_LOG)
-    clusters(placed).filter { it.size > 1 }.forEach { cl ->
+    val groups = fanGroups(data.events.filter { it.t in 0..nowMin && it.k != "other" }, stepDeg = 6.5f * MARK * 102f / R_LOG)
+    val placed = groups.flatten()
+    groups.filter { it.size > 1 }.forEach { cl ->
         val p = stroke(LINE_STRONG, 1.85f)
         c.drawArc(box(R_LOG - 13f * MARK), cl.first().second - 90f, cl.last().second - cl.first().second, false, p)
         cl.forEach { (m, _) -> radial(c, angleOf(m.t), R_LOG - 13f * MARK - 4f, R_LOG - 13f * MARK, p) }
@@ -90,15 +91,6 @@ private fun drawLayers(c: Canvas, data: DialData, nowMin: Int, ambient: Boolean)
     }
 }
 
-private fun clusters(placed: List<Pair<Mark, Float>>): List<List<Pair<Mark, Float>>> {
-    val out = mutableListOf<MutableList<Pair<Mark, Float>>>()
-    for (p in placed) {
-        val last = out.lastOrNull()
-        if (last != null && p.first.t - last.last().first.t <= 20) last.add(p) else out.add(mutableListOf(p))
-    }
-    return out
-}
-
 private fun stroke(color: Int, width: Float, cap: Paint.Cap = Paint.Cap.ROUND) =
     Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -111,11 +103,10 @@ private fun fill(color: Int) = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color =
 
 private fun box(r: Float) = RectF(-r, -r, r, r)
 
-/** Arc on radius [r] for [span], cut at [nowMin]; dial angle 0 is up, Android's 0 is right. */
+/** Arc on radius [r] for [span] within the last 24 h up to [nowMin]; dial angle 0 is up, Android's 0 is right. */
 private fun arc(c: Canvas, span: Span, nowMin: Int, r: Float, p: Paint, minDeg: Float = 0f) {
-    val end = minOf(span.end, nowMin)
-    if (end <= span.start) return
-    c.drawArc(box(r), span.start / 4f - 90f, maxOf((end - span.start) / 4f, minDeg), false, p)
+    val (start, sweep) = clipSpan(span, nowMin, minDeg) ?: return
+    c.drawArc(box(r), start - 90f, sweep, false, p)
 }
 
 private fun radial(c: Canvas, deg: Float, r0: Float, r1: Float, p: Paint) {

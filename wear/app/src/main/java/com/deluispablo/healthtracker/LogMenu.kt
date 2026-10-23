@@ -1,7 +1,9 @@
 package com.deluispablo.healthtracker
 
 import java.util.Locale
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /** One loggable tracker as the menus show it: [today] is ready to print, [progress] only for goals. */
 data class LogItem(val id: String, val name: String, val today: String, val progress: Float? = null)
@@ -52,3 +54,10 @@ private fun tapDate(tap: Tap) = java.time.Instant.ofEpochSecond(tap.at).atZone(U
 private fun litres(ml: Double) = if (ml >= 1000) String.format(Locale("es"), "%.1f L", ml / 1000) else "${ml.roundToInt()} ml"
 
 private fun dose(total: Double, unit: String) = "${String.format(Locale("es"), "%.1f", total).removeSuffix(",0")} $unit"
+
+/** Button size in dp and ring radius for [n] supplements: 48 dp targets while they fit a 72 dp ring. */
+fun supplementRing(n: Int): Pair<Int, Double> = when { n <= 4 -> 60 to 66.0; n <= 9 -> 48 to 72.0; else -> 44 to 76.0 }
+
+/** [n] centres evenly round a circle of [r] dp, clockwise from the top, as (dx, dy). */
+fun ringSpots(n: Int, r: Double): List<Pair<Float, Float>> =
+    List(n) { i -> (i * 2 * Math.PI / n).let { a -> (r * sin(a)).toFloat() to (-r * cos(a)).toFloat() } }

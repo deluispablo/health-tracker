@@ -13,20 +13,43 @@ import kotlin.math.tan
 /** Dial angle in degrees for local minutes since midnight: 00:00 at the top, clockwise. */
 fun angleOf(minute: Int): Float = ((minute / 4f) % 360f + 360f) % 360f
 
+/** Each mark with its drawn angle, in time order; see [fanGroups]. */
+fun fanOut(marks: List<Mark>, gapMin: Int = 20, stepDeg: Float = 6.5f): List<Pair<Mark, Float>> =
+    fanGroups(marks, gapMin, stepDeg).flatten()
+
 /**
- * Pairs each mark with its drawn angle. Marks at most [gapMin] minutes after the previous one
- * join its cluster; a cluster is spread [stepDeg] apart around its mean angle.
+ * Groups marks with their drawn angles. Marks at most [gapMin] minutes after the previous one join
+ * its group; a group is spread [stepDeg] apart around its mean angle, and neighbouring groups that
+ * end up closer than [stepDeg] merge and spread again. Linear within the day: no midnight wrap.
  */
-fun fanOut(marks: List<Mark>, gapMin: Int = 20, stepDeg: Float = 6.5f): List<Pair<Mark, Float>> {
-    val clusters = mutableListOf<MutableList<Mark>>()
+fun fanGroups(marks: List<Mark>, gapMin: Int = 20, stepDeg: Float = 6.5f): List<List<Pair<Mark, Float>>> {
+    val groups = mutableListOf<MutableList<Mark>>()
     for (m in marks.sortedBy { it.t }) {
-        val last = clusters.lastOrNull()
-        if (last != null && m.t - last.last().t <= gapMin) last.add(m) else clusters.add(mutableListOf(m))
+        val last = groups.lastOrNull()
+        if (last != null && m.t - last.last().t <= gapMin) last.add(m) else groups.add(mutableListOf(m))
     }
-    return clusters.flatMap { c ->
-        val centre = c.map { it.t / 4f }.average().toFloat()
-        c.mapIndexed { i, m -> m to centre + (i - (c.size - 1) / 2f) * stepDeg }
+    fun spread(g: List<Mark>): List<Pair<Mark, Float>> {
+        val centre = g.map { it.t / 4f }.average().toFloat()
+        return g.mapIndexed { i, m -> m to centre + (i - (g.size - 1) / 2f) * stepDeg }
     }
+    var placed = groups.map(::spread)
+    while (true) {
+        // Tolerance so a group spread exactly one step from its neighbour is not merged by rounding.
+        val i = placed.zipWithNext().indexOfFirst { (a, b) -> b.first().second - a.last().second < stepDeg - 1e-3f }
+        if (i < 0) return placed
+        placed = placed.take(i) + listOf(spread((placed[i] + placed[i + 1]).map { it.first })) + placed.drop(i + 2)
+    }
+}
+
+/**
+ * Start angle and sweep in dial degrees for [span] within the last 24 h up to [nowMin], or null when
+ * nothing is left; a short span keeps [minDeg] but never reaches past now.
+ */
+fun clipSpan(span: Span, nowMin: Int, minDeg: Float = 0f): Pair<Float, Float>? {
+    val start = maxOf(span.start, nowMin - 1440)
+    val end = minOf(span.end, nowMin)
+    if (end <= start) return null
+    return start / 4f to minOf(maxOf((end - start) / 4f, minDeg), (nowMin - start) / 4f)
 }
 
 /** Outer radius of a pulse tick in the 360 design box. */

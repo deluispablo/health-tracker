@@ -46,6 +46,34 @@ class UndoTest {
         assertEquals(listOf(log.copy(undo = true)), parseTaps(tapsJson(listOf(log.copy(undo = true)))))
     }
 
+    @Test
+    fun undoQueuesOnlyWhileSomethingCanBeUndone() {
+        val log = Tap("x-1", "cigarettes", at)
+        val undone = undoStep(listOf(log), log, at + 60)
+        assertEquals(listOf(log.copy(undo = true)), undone)
+        // A repeated tap finds the undo already queued.
+        assertEquals(null, undoStep(undone!!, log, at + 61))
+        assertEquals(null, undoStep(listOf(log), null, at + 60))
+        // The window closed between the menu's check and the tap.
+        assertEquals(null, undoStep(listOf(log), log, at + UNDO_WINDOW_SEC + 1))
+    }
+
+    @Test
+    fun undoReadsTheClockOnceItHoldsTheLock() {
+        val log = Tap("x-1", "cigarettes", at)
+        var now = at + 60
+        var result: List<Tap>? = emptyList()
+        val waiter: Thread
+        // A redraw holds the lock while the undo window closes.
+        synchronized(cacheLock) {
+            waiter = Thread { result = lockedAt({ now }) { t -> undoStep(listOf(log), log, t) } }.apply { start() }
+            while (waiter.state != Thread.State.BLOCKED) Thread.sleep(1)
+            now = at + UNDO_WINDOW_SEC + 1
+        }
+        waiter.join()
+        assertEquals(null, result)
+    }
+
     private fun dial(vararg keys: String) = day.copy(events = keys.map { Mark(570, "cigarro", i = it) })
 
     @Test
