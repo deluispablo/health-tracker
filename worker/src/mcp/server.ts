@@ -72,7 +72,7 @@ function buildServer(env: ConnectorEnv, ctx: ExecutionContext): McpServer {
     now: Math.floor(Date.now() / 1000), tz: env.USER_TZ,
   })));
   server.registerTool("health_status", {
-    description: "Read stream freshness, pending/stuck queue counts, Google connection, 14-day HR coverage and alerts using now in USER_TZ; no arguments. Local times use YYYY-MM-DDTHH:MM (metric/sleep times use stored offsets). Alerts include missing HR/main sleep over 48 hours, watch sync older than 24 hours, data_lag (watch synced to Google over 1 hour after the newest stored HR) and stuck queue items with at least 5 attempts. Use for missing/stale data before health_daily or analysis. Infer current time and connection/coverage here; do not ask the owner for them.",
+    description: "Read stream freshness, pending/stuck queue counts, Google connection, 14-day HR coverage and alerts using now in USER_TZ; no arguments. Local times use YYYY-MM-DDTHH:MM (metric/sleep times use stored offsets). Alerts include missing HR/main sleep over 48 hours, watch sync older than 24 hours, data_lag (watch synced to Google over 3 hours after the newest stored HR) and stuck queue items with at least 5 attempts. Use for missing/stale data before health_daily or analysis. Infer current time and connection/coverage here; do not ask the owner for them.",
     inputSchema: z.object({}), annotations,
   }, (args) => call("health_status", args, () => healthStatus(env.DB, {
     now: Math.floor(Date.now() / 1000), tz: env.USER_TZ,

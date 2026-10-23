@@ -339,6 +339,21 @@ describe("AC2 one 24-hour window per invocation", () => {
     expect((await pending()).map((r) => r.start_ts)).toEqual([at("2026-10-20T10:00:00Z")]);
   });
 
+  it("with a window drains only that window's eligible rows, ranking within them", async () => {
+    const early = at("2026-09-01T00:00:00Z");
+    const late = at("2026-09-10T00:00:00Z");
+    await queue("heart-rate", early, early + 3600, "UPSERT", NOW - 600);
+    await queue("heart-rate", late, late + 3600, "UPSERT", NOW - 300);
+    await queue("steps", late, late + 3600, "UPSERT", NOW - 300, 5);
+    await queue("weight", late, late + 3600, "UPSERT", NOW - 300);
+    const before = await pending();
+    const { client, calls } = fakeClient();
+    expect(await drainSyncPending(drainEnv(), client, { now: () => NOW, window: { start: late, end: late + 3600 } }))
+      .toEqual({ processed: 1, failed: 0 });
+    expect(calls.map((c) => c.start)).toEqual([new Date(late * 1000).toISOString()]);
+    expect(await pending()).toEqual(before.filter((row) => !(row.data_type === "heart-rate" && row.start_ts === late)));
+  });
+
   it("returns zeros and calls nothing when the queue is empty", async () => {
     const { client, calls } = fakeClient();
     expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 0, failed: 0 });

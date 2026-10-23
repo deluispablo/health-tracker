@@ -412,7 +412,7 @@ describe("T27 AC3 sleep gap and AC4 sleep stream", () => {
 describe("SY1 data_lag alert and foreign sync_state rows", () => {
   const lag = (out: Status) => out.alerts.filter((alert) => alert.code === "data_lag");
 
-  it.each([[3601, true], [3600, false]] as const)("alerts when the watch sync is %i s newer than the newest gh HR minute", async (gap, alert) => {
+  it.each([[10860, true], [10800, false], [7200, false]] as const)("alerts only when the watch sync is over 3 h newer than the newest gh HR minute (%i s)", async (gap, alert) => {
     const hr = at("2026-10-21T05:00:00Z");
     await minute(hr, 0);
     // A newer non-gh HR row must not count as stored Google data.
@@ -421,7 +421,7 @@ describe("SY1 data_lag alert and foreign sync_state rows", () => {
     const out = await readStatus(env.DB, options);
     // Both times use USER_TZ (Madrid, UTC+2), not the stored offset 0.
     expect(lag(out)).toEqual(alert
-      ? [{ code: "data_lag", message: "El reloj se sincronizó con Google a las 08:00 pero el último pulso guardado es de las 07:00." }]
+      ? [{ code: "data_lag", message: "El reloj se sincronizó con Google a las 10:01 pero el último pulso guardado es de las 07:00." }]
       : []);
   });
 

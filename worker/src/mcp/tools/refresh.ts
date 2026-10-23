@@ -33,7 +33,7 @@ export async function healthRefresh(env: AppEnv, deps: AppDeps) {
     clientSecret: env.GOOGLE_CLIENT_SECRET, refreshToken, sleep: deps.sleep,
   });
   // Soft budget: checked between rows, so a slow Google retry can overrun it.
-  const { processed, failed } = await drainSyncPending(env, client, { now: () => now, deadlineMs: 20_000 });
+  const { processed, failed } = await drainSyncPending(env, client, { now: () => now, deadlineMs: 20_000, window: { start, end } });
   await rollupDirty(env, now);
 
   const [queue, hr] = await db.batch([

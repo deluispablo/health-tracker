@@ -122,6 +122,24 @@ describe("RF1 health_refresh", () => {
     ]);
   });
 
+  it("drains only its own window, leaving an older pending heart-rate row received earlier", async () => {
+    await storeRefreshToken();
+    const old = [NOW - 3 * 86400, NOW - 2 * 86400];
+    await env.DB.prepare(`INSERT INTO sync_pending (data_type, start_ts, end_ts, operation, received_at, attempts)
+      VALUES ('heart-rate', ?, ?, 'UPSERT', ?, 0)`).bind(old[0], old[1], NOW - 600).run();
+    const spy = vi.spyOn(drain, "drainSyncPending");
+    try {
+      expect(await healthRefresh(appEnv(), deps(google([old[0], MINUTE_BEFORE_NOW]).fetch)))
+        .toMatchObject({ processed: 10, failed: 0, pending: 1, latest_hr_local: "2026-10-23T11:59" });
+      expect(spy.mock.calls[0][2]).toMatchObject({ window: { start: START, end: END } });
+    } finally { spy.mockRestore(); }
+    expect(await queue()).toEqual([
+      { data_type: "heart-rate", start_ts: old[0], end_ts: old[1], operation: "UPSERT", received_at: NOW - 600, attempts: 0 },
+    ]);
+    expect(await env.DB.prepare("SELECT ts FROM metric_minute WHERE metric = 'hr' AND source = 'gh'").all())
+      .toMatchObject({ results: [{ ts: MINUTE_BEFORE_NOW }] });
+  });
+
   it.each(["sync_pending", "sync_state"])("rolls back the queue and the marker together when the %s write fails", async (table) => {
     await storeRefreshToken();
     await env.DB.prepare(`CREATE TRIGGER fail_refresh BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT, 'write failed'); END`).run();

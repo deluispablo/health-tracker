@@ -1,5 +1,8 @@
 import { dateTimeFormat } from "../../lib/time";
 
+// Above the 1 h automatic lag pull (ingest/poll.ts), so a pull gets a chance before the alert.
+const DATA_LAG_ALERT_S = 3 * 3600;
+
 interface StreamRow {
   ts: number;
   tz_offset_min: number;
@@ -93,7 +96,7 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
     alerts.push({ code: "watch_not_syncing", message: "El reloj no se ha sincronizado en las últimas 24 h." });
   }
   const hr = metrics.find((row) => row.metric === "hr");
-  if (hr && watch?.synced_until != null && watch.synced_until - hr.ts > 3600) {
+  if (hr && watch?.synced_until != null && watch.synced_until - hr.ts > DATA_LAG_ALERT_S) {
     alerts.push({ code: "data_lag", message: `El reloj se sincronizó con Google a las ${localTime(watch.synced_until).slice(11)}`
       + ` pero el último pulso guardado es de las ${localTime(hr.ts).slice(11)}.` });
   }

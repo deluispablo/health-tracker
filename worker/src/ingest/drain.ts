@@ -98,7 +98,7 @@ function dirtyStatements(db: D1Database, first: string, last: string, sessions?:
 
 export async function drainSyncPending(
   env: DrainEnv, client: Pick<ReturnType<typeof createGoogleClient>, "rollUpHeartRate" | "rollUpSteps" | "dailyRollUp" | "listDaily" | "reconcile">,
-  opts: { now?: () => number; deadlineMs?: number } = {},
+  opts: { now?: () => number; deadlineMs?: number; window?: { start: number; end: number } } = {},
 ): Promise<{ processed: number; failed: number }> {
   const deadline = Date.now() + (opts.deadlineMs ?? 60_000);
   const db = env.DB;
@@ -110,13 +110,16 @@ export async function drainSyncPending(
   const cutoff = (opts.now?.() ?? Math.floor(Date.now() / 1000)) - 86400;
   let remaining = 799; // Include the queue read in the 800-statement budget.
   // Admit at most one historical heart-rate row; drain all types oldest-first.
+  // A window narrows eligibility before ranking, so other backlog rows cannot take its budget.
+  const window = opts.window ? [opts.window.start, opts.window.end] : [];
   const { results: pending } = await db.prepare(`SELECT * FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY data_type, (end_ts < ?1)
       ORDER BY received_at, start_ts, operation, end_ts) AS rank
     FROM sync_pending WHERE attempts < 5 AND data_type IN (${RECONCILE_TYPES.map(() => "?").join(", ")})
+      ${window.length ? "AND start_ts = ? AND end_ts = ?" : ""}
   ) WHERE data_type != 'heart-rate' OR end_ts >= ?1 OR rank = 1
     ORDER BY received_at, start_ts, operation, end_ts,
-      CASE data_type ${RECONCILE_TYPES.map((type, i) => `WHEN '${type}' THEN ${String(i)}`).join(" ")} END`).bind(cutoff, ...RECONCILE_TYPES).all<PendingRow>();
+      CASE data_type ${RECONCILE_TYPES.map((type, i) => `WHEN '${type}' THEN ${String(i)}`).join(" ")} END`).bind(cutoff, ...RECONCILE_TYPES, ...window).all<PendingRow>();
   for (const row of pending) {
     if (Date.now() >= deadline || remaining < 4) break;
     const type = row.data_type;
