@@ -6,3 +6,4 @@ py/.env
 .dev.vars
 .dev.vars.*
 worker/wrangler.production.jsonc
+worker/setup.local.json

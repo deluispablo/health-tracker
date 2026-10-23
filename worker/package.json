@@ -6,7 +6,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --exclude \"**/*-cpu.test.ts\" && vitest run --maxWorkers=1 test/mcp/insights-scan-cpu.test.ts test/mcp/insights-contrast-cpu.test.ts"
+    "setup": "node scripts/setup.mjs",
+    "backup:schedule": "node scripts/backup-schedule.mjs",
+    "test": "vitest run --exclude \"**/*-cpu.test.ts\" && vitest run --maxWorkers=1 test/mcp/insights-scan-cpu.test.ts test/mcp/insights-contrast-cpu.test.ts && node scripts/tests/run.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "~1.4.6",
