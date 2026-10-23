@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { validZone } from "../../../app";
+import { validZone } from "../../../lib/time";
 import type { FamilyRow, FindingsEvaluator, RowKey, RowRef, StoredRef } from "./types";
 
 export function canonicalJson(value: unknown): string {

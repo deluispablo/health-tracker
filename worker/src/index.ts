@@ -1,5 +1,6 @@
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
-import { handleScheduled, route, withStoredTz } from "./app";
+import { handleScheduled, route } from "./app";
+import { withStoredTz } from "./lib/time";
 import type { AppDeps, ConnectorEnv } from "./app";
 import { login } from "./auth/login";
 

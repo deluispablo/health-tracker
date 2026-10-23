@@ -50,7 +50,7 @@ watchToken=<the WATCH_TOKEN value>
 watchBaseUrl=https://<your-domain>
 ```
 
-`watchToken` and `watchBaseUrl` are compiled into the `app` build. The watch uses its system time zone and reports it to the Worker in the `X-Time-Zone` header of every `GET /watch/today`, so the zone follows the wearer's travel within an hour (the next sync). Never commit this file.
+`watchToken` and `watchBaseUrl` are compiled into the `app` build. The watch uses its system time zone and reports it to the Worker in the `X-Time-Zone` header of every `GET /watch/today` and every `POST`/`DELETE /watch/log`, so the zone follows the wearer's travel within an hour (the next sync). The face draws the night band only for Europe/Madrid and the Australian zones Sydney, Melbourne, Brisbane, Perth, Adelaide, Hobart and Darwin; in any other zone there is no night band. A tap queued offline before a zone change is dated in the zone current when it is finally sent. Acute insights use the stored heart-rate offsets. Re-pulling heart-rate or steps data from before a zone switch uses the current zone and can move minutes between dates. Never commit this file.
 
 ## 4. Pair the watch
 

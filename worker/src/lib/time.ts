@@ -1,3 +1,5 @@
+import type { AppEnv } from "../app";
+
 const dateOf = (epochSeconds: number): string => new Date(epochSeconds * 1000).toISOString().slice(0, 10);
 
 export function isCalendarDate(date: unknown): date is string {
@@ -28,6 +30,20 @@ export function dateTimeFormat(locale: string, options: Intl.DateTimeFormatOptio
     formatters.set(key, formatter);
   }
   return formatter;
+}
+
+export function validZone(tz: unknown): tz is string {
+  if (typeof tz !== "string" || tz === "") return false;
+  try { dateTimeFormat("en-US", { timeZone: tz }); return true; } catch { return false; }
+}
+
+/** The zone the watch reported (profile `tz`) replaces the wrangler default; a missing, invalid or unreadable row keeps it. */
+export async function withStoredTz<E extends Pick<AppEnv, "DB" | "USER_TZ">>(env: E): Promise<E> {
+  try {
+    const row = await env.DB.prepare("SELECT value FROM profile WHERE key = 'tz'").first<{ value: string }>();
+    const tz: unknown = row ? JSON.parse(row.value) : null;
+    return validZone(tz) ? { ...env, USER_TZ: tz } : env;
+  } catch { return env; }
 }
 
 /** A sleep session belongs to the local date it ends on (R5). */

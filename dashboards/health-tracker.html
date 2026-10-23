@@ -708,15 +708,14 @@ try {
     const m = typeof s === 'string' ? /(\d{2}):(\d{2})$/.exec(s) : null;
     return m ? Number(m[1]) * 60 + Number(m[2]) : null;
   }
-  const USER_TZ = 'Europe/Madrid';   // fallback until health_status reports the owner's zone; the main script replaces HTLogic.tz with the status reader
-  /* UTC offset in minutes of a zone at an instant, from Intl's longOffset ("GMT+02:00", "GMT" for zero). */
+  const USER_TZ = 'Europe/Madrid';   // fallback until health_status reports the owner's zone  /* UTC offset in minutes of a zone at an instant, from Intl's longOffset ("GMT+02:00", "GMT" for zero). */
   function tzOffset(tz, ms) {
     const n = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'longOffset' }).formatToParts(ms).find((p) => p.type === 'timeZoneName')?.value ?? '';
     const m = /([+-])(\d{2}):(\d{2})/.exec(n);
     return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
   }
   /* Sunrise and sunset in the owner's local minutes (the zone read at call time, whatever the device zone); the offset is the date's at 12:00 UTC. */
-  function sunTimes(dateISO, lat, lon, tz = HTLogic.tz()) {
+  function sunTimes(dateISO, lat, lon, tz = USER_TZ) {
     const off = tzOffset(tz,Date.parse(dateISO + 'T12:00:00Z')), jd =Date.parse(dateISO + 'T00:00:00Z') / 86400000 + 2440587.5, rad = Math.PI / 180;
     if (!Number.isFinite(jd) || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
     const solar = (minutes) => {
@@ -836,7 +835,7 @@ try {
 
   window.HTLogic = {
     COPY, t, tn, pickLang, fmt: { num, signed, dur, ago, day, vital, range }, VITALS, shiftDate, dayValue, typicalRange, rangeStatus, rangeFlag, outliers,
-    recovery, stepGoal, waterGoal, USER_TZ, tz: () => USER_TZ, sunTimes, localMinutes, mainSession, CHIPS, SUPPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
+    recovery, stepGoal, waterGoal, USER_TZ, sunTimes, localMinutes, mainSession, CHIPS, SUPPS, MOODS, trackerKey, newKey, logArgs, undoArgs,
     available, summary, writeQueue, doubleTap, NIGHT_END, dayFor,
     applyLog, applyUndo, acceptSnapshot, syncLabel, errorKind
   };
@@ -1801,9 +1800,8 @@ try {
     clearInterval(tabTimer); tabTimer = null; tabTimerKey = key;
     if (key) tabTimer = setInterval(() => { if (!stopped) renderTab(on); }, 60000);
   }
-  /* The owner's time zone from health_status (status.tz), USER_TZ before it loads; ctx.tz and the logic's sunTimes read it at call time. */
+  /* The owner's time zone from health_status (status.tz), USER_TZ before it loads; ctx.tz reads it at call time. */
   const tzOf = () => typeof S.status.data?.tz === 'string' && S.status.data.tz ? S.status.data.tz : L.USER_TZ;
-  L.tz = tzOf;
   function renderTab(name) {
     const id = Object.keys(window.HT.TABS).find((k) => window.HT.TABS[k] === name), root = $('g-' + name);
     tabClock();

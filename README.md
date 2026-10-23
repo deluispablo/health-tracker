@@ -550,7 +550,7 @@ cd wear
 
 **Does it work with other watches?** Data comes from the Pixel Watch through the Google Health API. The watch face needs Wear OS 6 on a round watch.
 
-**Can I use another time zone?** It is automatic: the watch reports its zone on every sync and the Worker, the dashboard and the watch follow it, within about an hour of a change. Days already stored keep the zone they were lived in. `USER_TZ` (`Europe/Madrid` by default) is only the fallback.
+**Can I use another time zone?** It is automatic: the watch reports its zone on every sync and the Worker, the dashboard and the watch follow it, within about an hour of a change (the watch sends it in the `X-Time-Zone` header of `GET /watch/today` and of `POST`/`DELETE /watch/log`, including undo). Days already stored keep the zone they were lived in, and acute insights use the stored heart-rate offsets. The night band is drawn only for Europe/Madrid and the Australian zones Sydney, Melbourne, Brisbane, Perth, Adelaide, Hobart and Darwin. Travel-day limits: a tap queued offline before a zone change is dated in the zone current when it is sent, and a re-pull of data from before the change (the 48-hour reconcile, a manual backfill) can move those minutes' dates. `USER_TZ` (`Europe/Madrid` by default) is only the fallback.
 
 ## License
 

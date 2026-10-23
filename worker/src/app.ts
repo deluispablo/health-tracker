@@ -4,7 +4,7 @@ import { createGoogleClient } from "./google/client";
 import { drainSyncPending } from "./ingest/drain";
 import { enqueueLagPull, enqueueReconcile } from "./ingest/poll";
 import { handleGoogleWebhook } from "./ingest/webhook";
-import { dateTimeFormat } from "./lib/time";
+import { dateTimeFormat, withStoredTz } from "./lib/time";
 import { FAVICON_PNG } from "./favicon";
 import { homepage, pageResponse, privacy, terms } from "./pages";
 import { recomputeDailySummary } from "./rollup/daily";
@@ -42,20 +42,6 @@ function localToday(tz: string, now: number): string {
     timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(now * 1000);
   return ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
-}
-
-export function validZone(tz: unknown): tz is string {
-  if (typeof tz !== "string" || tz === "") return false;
-  try { dateTimeFormat("en-US", { timeZone: tz }); return true; } catch { return false; }
-}
-
-/** The zone the watch reported (profile `tz`) replaces the wrangler default; a missing, invalid or unreadable row keeps it. */
-export async function withStoredTz<E extends Pick<AppEnv, "DB" | "USER_TZ">>(env: E): Promise<E> {
-  try {
-    const row = await env.DB.prepare("SELECT value FROM profile WHERE key = 'tz'").first<{ value: string }>();
-    const tz: unknown = row ? JSON.parse(row.value) : null;
-    return validZone(tz) ? { ...env, USER_TZ: tz } : env;
-  } catch { return env; }
 }
 
 export async function handleScheduled(cron: string, rawEnv: AppEnv, deps: AppDeps): Promise<void> {
