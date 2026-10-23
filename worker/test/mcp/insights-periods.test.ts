@@ -2,6 +2,7 @@ import { applyD1Migrations, createExecutionContext, waitOnExecutionContext } fro
 import { env } from "cloudflare:workers";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { cusum, evaluatePeriods, healthPeriods, streaks, validatePeriodsArgs } from "../../src/mcp/tools/insights/periods";
+import { benjaminiHochberg } from "../../src/mcp/tools/stats";
 import { BANNED, METRICS, PHRASES } from "../../src/mcp/tools/insights/catalog";
 import { loadDayTable, resolveRange } from "../../src/mcp/tools/insights/units";
 import type { FamilyRow, Origin } from "../../src/mcp/tools/insights/types";
@@ -15,8 +16,10 @@ const origin: Extract<Origin, { tool: "health_periods" }> = { tool: "health_peri
 const dates = Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(2026, 8, i + 1)).toISOString().slice(0, 10));
 const detect = (z: (number | null)[], days = dates.slice(0, z.length)) => cusum(days, z, z.map(x => x === null ? null : 60 + x), z.map(() => 60));
 
-it("cusum start is the last zero of the alarming accumulator", () => {
-  expect(detect([-1, -1, 2, 2, 2])).toEqual([{ start: dates[1], alarm: dates[4], direction: "up", shift: 1.25, observed_days: 4, calendar_days: 4 }]);
+it("cusum start is the first observed day after the alarming accumulator's last zero", () => {
+  expect(detect([-1, -1, 2, 2, 2])).toEqual([{ start: dates[2], alarm: dates[4], direction: "up", shift: 2, observed_days: 3, calendar_days: 3 }]);
+  expect(detect([-1, null, 2, 2, 2])[0]).toMatchObject({ start: dates[2], shift: 2 });
+  expect(detect([1, 1, -2, -2, -2])[0]).toMatchObject({ start: dates[2], direction: "down", shift: -2 });
 });
 it("cusum resets after an alarm", () => {
   const changes = detect([3, 3, 3, 3]);
@@ -160,11 +163,15 @@ it("compares the current ISO week with up to four earlier weeks having at least 
     expect.objectContaining({ week: "2026-W01", start: "2025-12-29" }),
   ]));
 });
-it("applies BH separately per streak and supports a single saved key on an overridden range", async () => {
+it("applies one BH family across every streak and supports a single saved key on an overridden range", async () => {
   await seedInsightsFixture(env.DB);
   const singleBehavior = await evaluatePeriods(env.DB, origin, deps);
   const all = await evaluatePeriods(env.DB, { tool: "health_periods", args: { start: FIXTURE.start, end: FIXTURE.end } }, deps);
-  expect(all.rows.filter(r => r.behavior === "cigarettes").map(r => ({ ...r, ref: null }))).toEqual(singleBehavior.rows.map(r => ({ ...r, ref: null })));
+  expect(new Set(all.rows.map(r => r.behavior)).size).toBeGreaterThan(1);
+  // Rows carry p rounded to 4 decimals, so the joint q is recomputed to 2.
+  const joint = benjaminiHochberg(all.rows.map(r => r.p));
+  all.rows.forEach((r, i) => { const q = joint[i]; if (q === null) expect(r.q).toBeNull(); else expect(r.q).toBeCloseTo(q, 2); });
+  for (const r of singleBehavior.rows) expect(r.q === null || (r.q >= 0 && r.q <= 1)).toBe(true);
   const row = singleBehavior.rows.find(r => r.metric === "rhr");
   expect(row?.ref).not.toBeNull();
   const only = await evaluatePeriods(env.DB, origin, { ...deps, range: singleBehavior.resolved, only: row?.ref?.key });
@@ -216,9 +223,9 @@ it("behavior_changes reports sustained behaviour shifts with direction and start
     ({ metric, start: behaviorDays[start], alarm: behaviorDays[alarm], direction, shift, observed_days: days, calendar_days: days, label: "cambio", phrase: PHRASES.cambio });
   expect(result.behavior_changes).toEqual([
     change("caffeine", 42, 42, "up", 200, 1),
-    change("alcohol", 39, 41, "down", -20, 3),
+    change("alcohol", 40, 41, "down", -30, 2),
     change("caffeine", 41, 41, "up", 200, 1),
-    change("caffeine", 39, 40, "up", 100, 2),
+    change("caffeine", 40, 40, "up", 200, 1),
   ]);
 });
 it("behavior_changes never changes the legacy size-cap decisions near 20,000 characters", async () => {

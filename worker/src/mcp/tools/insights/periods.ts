@@ -35,8 +35,9 @@ export function cusum(dates: string[], z: (number | null)[], values: (number | n
     if (minusStart < 0) minusStart = i;
     plus = Math.max(0, plus + score - 0.5);
     minus = Math.max(0, minus - score - 0.5);
-    if (plus === 0) plusStart = i;
-    if (minus === 0) minusStart = i;
+    // A zero day is not part of the change: the next observed day starts it.
+    if (plus === 0) plusStart = -1;
+    if (minus === 0) minusStart = -1;
     previous = i;
     if (plus <= 4 && minus <= 4) continue;
     const start = plus > 4 ? plusStart : minusStart;
@@ -137,10 +138,9 @@ export async function evaluatePeriods(db: D1Database, origin: Extract<Origin, { 
   const baselines = computeBaselines(t), flags = anomalyFlags(baselines, t.dates.length);
   const selectedMetrics = origin.args.metrics?.filter((m): m is MetricId => !isChangeBehavior(m));
   const allStreaks = (origin.args.behaviors ?? LOGGED).flatMap(b => streaks(t, b));
-  const rows: FamilyResult["rows"] = [];
   const excluded = { exposure_unknown: 0, outcome_missing: 0, anomaly: 0 };
+  const drafts: RowDraft[] = [];
   for (const streak of allStreaks.filter(s => s.current && s.days >= 3)) {
-    const drafts: RowDraft[] = [];
     const start = t.idx(streak.start);
     for (const metric of selectedMetrics ?? Object.keys(t.metric) as (keyof DayTable["metric"])[]) {
       if (metric === "hr_delta" || behaviorExcluded(streak.behavior, metric)) continue;
@@ -170,14 +170,14 @@ export async function evaluatePeriods(db: D1Database, origin: Extract<Origin, { 
       const stats = meta.binary ? dependentRiskDiff(a as (0 | 1 | null)[], b as (0 | 1 | null)[]) : dependentWelch(a, b);
       drafts.push({ key, stats, rope: meta.rope, binary: meta.binary, low_confidence: meta.lowConfidence, outcome, groupIdx });
     }
-    const family = finalizeFamily(drafts, t, origin).rows;
-    for (const row of family) {
-      if (row.label === "sin_datos" || row.reason === "few_days") {
-        const missing = (row.label === "sin_datos" ? 3 : 8) - Math.min(row.n_a, row.n_b);
-        row.needed = `faltan ${String(missing)} días ${row.n_a <= row.n_b ? "durante la racha" : "con el comportamiento opuesto antes de la racha"}`;
-      }
+  }
+  // One Benjamini-Hochberg family over every streak's rows.
+  const rows = finalizeFamily(drafts, t, origin).rows;
+  for (const row of rows) {
+    if (row.label === "sin_datos" || row.reason === "few_days") {
+      const missing = (row.label === "sin_datos" ? 3 : 8) - Math.min(row.n_a, row.n_b);
+      row.needed = `faltan ${String(missing)} días ${row.n_a <= row.n_b ? "durante la racha" : "con el comportamiento opuesto antes de la racha"}`;
     }
-    rows.push(...family);
   }
   const changes: CusumChange[] = [];
   for (const metric of selectedMetrics ?? Object.keys(t.metric) as (keyof DayTable["metric"])[]) {

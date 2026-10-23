@@ -1,7 +1,8 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, expect, it, vi } from "vitest";
-import { acuteDraft, analysisLogStatement, behaviorDraft, consistentBlocks, finalizeFamily, publicRow, rankRows, shapeResponse, tertiles } from "../../src/mcp/tools/insights/compare";
+import { behaviorDraft } from "./behavior-draft";
+import { acuteDraft, analysisLogStatement, consistentBlocks, finalizeFamily, publicRow, rankRows, shapeResponse, tertiles } from "../../src/mcp/tools/insights/compare";
 import type { RowDraft } from "../../src/mcp/tools/insights/compare";
 import { BEFORE_BED_HOURS, CALIBRATION_CAPS, METRICS, PHRASES } from "../../src/mcp/tools/insights/catalog";
 import type { BehaviorId, MetricId, Origin } from "../../src/mcp/tools/insights/types";
@@ -178,6 +179,20 @@ it("emits the HRV exponential percentage and null percentages for zero reference
   expect(finalizeFamily([d],table(),origin).rows[0].pct).toBeNull();
   d.stats.mean_b=null;
   expect(finalizeFamily([d],table(),origin).rows[0].pct).toBeNull();
+});
+it("percentages are null for skin temperature and for any non-positive reference, HRV included",()=>{
+  const pct=(metric:MetricId,mean_b:number,diff:number)=>{ const d=draft(); d.key.metric=metric; d.stats.mean_b=mean_b; d.stats.diff=diff; return finalizeFamily([d],table(),origin).rows[0].pct; };
+  expect(pct("skin_temp_dev",-0.1,0.2)).toBeNull();
+  expect(pct("skin_temp_dev",0.5,0.2)).toBeNull();
+  expect(pct("rhr",-5,1)).toBeNull();
+  expect(pct("hrv",0,Math.log(0.88))).toBeNull();
+  expect(pct("hrv",-1,Math.log(0.88))).toBeNull();
+  expect(pct("hrv",4,Math.log(0.88))).toBe(-12);
+  expect(pct("rhr",60,3)).toBe(5);
+});
+it("one family over two streaks [.09] and [.04,.9] adjusts p jointly",()=>{
+  const rows=finalizeFamily([draft(0.09),draft(0.04),draft(0.9)],table(),origin).rows;
+  expect(rows.map(r=>r.q)).toEqual([0.135,0.12,0.9]);
 });
 it("rounds output after label decisions",()=>{
   const d=draft(0.10001); d.stats.diff=5.00049; d.stats.ci95=[0.00001,10.12345]; d.stats.mean_a=25.12345;

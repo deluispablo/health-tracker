@@ -5,7 +5,8 @@ import { computeScan, evaluateScan, healthScan, validateScanArgs } from "../../s
 import { BANNED, BEFORE_BED_HOURS, METRICS, METRIC_TIMINGS, NIGHT_METRICS, PLANNED, SCAN_PAIRS, behaviorExcluded, refusedMetricPair } from "../../src/mcp/tools/insights/catalog";
 import { acuteDays, loadAcuteInput, type AcuteDays } from "../../src/mcp/tools/insights/event";
 import { anomalyFlags, baseline, computeBaselines } from "../../src/mcp/tools/insights/baseline";
-import { acuteDraft, behaviorDraft, finalizeFamily, tertiles, type RowDraft } from "../../src/mcp/tools/insights/compare";
+import { behaviorDraft } from "./behavior-draft";
+import { acuteDraft, finalizeFamily, tertiles, type RowDraft } from "../../src/mcp/tools/insights/compare";
 import { evaluateMetricPair, finalizeMetricLabel } from "../../src/mcp/tools/insights/metric";
 import { loadDayTable, resolveRange, type DayTable } from "../../src/mcp/tools/insights/units";
 import type { EvalOptions, FamilyResult, InsightRow, Origin } from "../../src/mcp/tools/insights/types";
