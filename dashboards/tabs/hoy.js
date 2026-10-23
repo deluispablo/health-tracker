@@ -317,6 +317,9 @@ function stripSvg(W, A, B, o) {
 const VIEW = { z: 0, start: null, date: null };
 const SPANS = [null, 720, 360];
 
+/* Zone -> [lat, lon], the same table as the watch. */
+const SUN_AT = { 'Europe/Madrid': [40.4168, -3.7038], 'Australia/Sydney': [-33.8688, 151.2093], 'Australia/Melbourne': [-37.8136, 144.9631], 'Australia/Brisbane': [-27.4698, 153.0251],
+  'Australia/Perth': [-31.9523, 115.8613], 'Australia/Adelaide': [-34.9285, 138.6007], 'Australia/Hobart': [-42.8821, 147.3272], 'Australia/Darwin': [-12.4634, 130.8456] };
 function render(ctx) {
   const L = ctx.L, t = ctx.t, lang = ctx.lang, date = ctx.date, y = L.shiftDate(date, -1), fmt = L.fmt, n0 = (v, d) => fmt.num(v, lang, d ?? (v % 1 ? 1 : 0));
   /* through: the last date each source covers; a write dated after it leaves it cached (R2.3). The profile does not follow logs. */
@@ -406,7 +409,7 @@ function render(ctx) {
       return { ...e, k, mood, label: t('hoy.st.mark', { x: k === 'animo' ? moodLabel(e.k, lang) ?? e.k : k === 'other' || k === 'supl' ? String(names.get(e.k) ?? e.k) : t('hoy.l.' + k), t: e.t }) };
     });
     const pulse = [S.hrA, S.hrB, S.hrC].flatMap((s) => s.data?.points ?? []).map((p) => [(L.localMinutes(p[0]) ?? NaN) - (String(p[0]).slice(0, 10) < date ? 1440 : 0), p[1]]).filter(([m, v]) => fin(m) && fin(v) && v > 0 && m >= a && m <= end);
-    const sun = (d) => L.sunTimes(d, 40.4168, -3.7038);   // Madrid, the dial's fallback location
+    const spot = SUN_AT[ctx.tz], sun = (d) => spot ? L.sunTimes(d, spot[0], spot[1], ctx.tz) : null;   // a zone outside the table draws no band
     const sy = sun(y), sd = sun(date), bands = [sy && sd ? [sy.sunset - 1440, sd.sunrise] : null, sd ? [sd.sunset, end] : null].filter(Boolean);
     const tip = h('p', { class: 'hx-tip', id: 'hoy-tip', role: 'tooltip', hidden: true, 'aria-live': 'polite' });
     /* Every mark in time order (logs at their minute, spans [s, e]); the strip is one tab stop over them. */
@@ -649,5 +652,5 @@ const CSS = `
 }`;
 
 HT.registerTab('hoy', { copy: COPY, css: CSS, render,
-  logic: { hoyStack, hoyWin, hoyBed, hoyEvents, hoyHab, hoyMood, hoyCoffee, hoyStepStreak, hoyWeek, hoyAlikeDays, hoyEarly, hoyNearest, hoyStripMarks: stripMarks } });
+  logic: { hoyStack, hoyWin, hoyBed, hoyEvents, hoyHab, hoyMood, hoyCoffee, hoyStepStreak, hoyWeek, hoyAlikeDays, hoyEarly, hoyNearest, hoyStripMarks: stripMarks, hoySunAt: SUN_AT } });
 }

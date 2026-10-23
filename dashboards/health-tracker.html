@@ -716,8 +716,8 @@ try {
     return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
   }
   /* Sunrise and sunset in the owner's local minutes (the zone read at call time, whatever the device zone); the offset is the date's at 12:00 UTC. */
-  function sunTimes(dateISO, lat, lon) {
-    const off = tzOffset(HTLogic.tz(), Date.parse(dateISO + 'T12:00:00Z')), jd =Date.parse(dateISO + 'T00:00:00Z') / 86400000 + 2440587.5, rad = Math.PI / 180;
+  function sunTimes(dateISO, lat, lon, tz = HTLogic.tz()) {
+    const off = tzOffset(tz,Date.parse(dateISO + 'T12:00:00Z')), jd =Date.parse(dateISO + 'T00:00:00Z') / 86400000 + 2440587.5, rad = Math.PI / 180;
     if (!Number.isFinite(jd) || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
     const solar = (minutes) => {
       const c = (jd + minutes / 1440 - 2451545) / 36525, l = (280.46646 + c * (36000.76983 + c * .0003032)) % 360;
