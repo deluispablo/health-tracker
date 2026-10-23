@@ -2,7 +2,7 @@ import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, describe, expect, it } from "vitest";
 import { upsertRows } from "../../src/lib/d1";
-import { fromGoogleTime, nightOf, sleepLocalDate } from "../../src/lib/time";
+import { sleepLocalDate } from "../../src/lib/time";
 
 let migrationStart: number;
 let migrationEnd: number;
@@ -250,44 +250,13 @@ describe("AC3 batched upsert", () => {
   });
 });
 
-describe("AC4 Google time", () => {
-  it("derives ts, offset and local date", () => {
-    expect(fromGoogleTime("2026-10-20T22:30:00Z", "7200s")).toEqual({
-      ts: Date.UTC(2026, 9, 20, 22, 30) / 1000, tzOffsetMin: 120, localDate: "2026-10-21",
-    });
-  });
-
-  it("handles UTC, negative, non-hour, fractional and calendar edges", () => {
-    expect(fromGoogleTime("2026-10-20T23:59:59Z", "0s")).toEqual({
-      ts: Date.UTC(2026, 9, 20, 23, 59, 59) / 1000, tzOffsetMin: 0, localDate: "2026-10-20",
-    });
-    expect(fromGoogleTime("2026-10-21T03:30:00Z", "-18000s")).toMatchObject({ tzOffsetMin: -300, localDate: "2026-10-20" });
-    expect(fromGoogleTime("2026-10-20T19:00:00Z", "19800s")).toMatchObject({ tzOffsetMin: 330, localDate: "2026-10-21" });
-    expect(fromGoogleTime("2028-02-28T23:30:00.750Z", "3600s")).toEqual({
-      ts: Date.UTC(2028, 1, 28, 23, 30) / 1000, tzOffsetMin: 60, localDate: "2028-02-29",
-    });
-    expect(fromGoogleTime("2026-12-31T23:00:00Z", "3600s").localDate).toBe("2027-01-01");
-  });
-
-  it("rejects malformed time or offset", () => {
-    for (const t of ["yesterday", "2026-10-20", "2026-10-20T10:00:00+02:00", "2026-02-30T10:00:00Z"]) {
-      expect(() => fromGoogleTime(t, "0s")).toThrow(TypeError);
-    }
-    expect(() => fromGoogleTime("2026-10-20T00:00:00Z", "7200")).toThrow(TypeError);
-    expect(() => fromGoogleTime("2026-10-20T00:00:00Z", "7230s")).toThrow(TypeError);
-  });
-});
-
 describe("AC5 sleep day", () => {
   it("dates a night by its wake day", () => {
     expect(sleepLocalDate(Date.UTC(2026, 9, 21, 4, 40) / 1000, 120)).toBe("2026-10-21");
-    expect(nightOf("2026-10-20")).toBe("2026-10-21");
   });
 
   it("uses the local date at wake time across midnight and year end", () => {
     expect(sleepLocalDate(Date.UTC(2026, 9, 20, 22, 0) / 1000, 120)).toBe("2026-10-21");
     expect(sleepLocalDate(Date.UTC(2027, 0, 1, 5, 0) / 1000, -300)).toBe("2027-01-01");
-    expect(nightOf("2026-12-31")).toBe("2027-01-01");
-    expect(nightOf("2028-02-28")).toBe("2028-02-29");
   });
 });

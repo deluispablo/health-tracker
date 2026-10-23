@@ -1,17 +1,7 @@
-import { isCalendarDate } from "../lib/time";
-
-const DAY_MS = 86_400_000;
-
-function calendarTime(date: string): number {
-  if (!isCalendarDate(date)) {
-    throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
-  }
-  return Date.parse(`${date}T00:00:00Z`);
-}
+import { dateRangeDays } from "../lib/time";
 
 export function trackerDailyStatements(db: D1Database, from: string, to: string, eventId?: string): D1PreparedStatement[] {
-  const count = (calendarTime(to) - calendarTime(from)) / DAY_MS + 1;
-  if (count < 1 || count > 366) throw new RangeError("range must contain 1 to 366 dates");
+  dateRangeDays(from, to, 366);
   // A losing insert must not refresh its proposed date instead of the stored event's date.
   const guard = eventId === undefined ? "" : `AND EXISTS (
     SELECT 1 FROM event WHERE id = ?3 AND local_date BETWEEN ?1 AND ?2
@@ -35,5 +25,5 @@ export function trackerDailyStatements(db: D1Database, from: string, to: string,
 /** Replace tracker totals atomically using stored dates and each event's local time. */
 export async function recomputeTrackerDaily(db: D1Database, from: string, to: string): Promise<number> {
   await db.batch(trackerDailyStatements(db, from, to));
-  return (calendarTime(to) - calendarTime(from)) / DAY_MS + 1;
+  return dateRangeDays(from, to, 366);
 }

@@ -1,4 +1,4 @@
-import { isCalendarDate } from "../../lib/time";
+import { dateRangeDays } from "../../lib/time";
 import { mean, sampleSd, welch } from "./stats";
 
 export const BEHAVIORS: readonly string[] = ["cigarettes", "alcohol_g", "caffeine_mg"];
@@ -20,18 +20,10 @@ export function caveats(n: number): string {
   return `Asociacional, no causal. n=${String(n)}. Posibles confusores: alcohol, entrenamiento, hora de acostarse, enfermedad.`;
 }
 
-function calendarTime(date: string): number {
-  if (!isCalendarDate(date) || date < "2000-01-01" || date > "2099-12-31") {
-    throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
-  }
-  return Date.parse(`${date}T00:00:00Z`);
-}
-
 // Callers validate column names before interpolation; dates always use bound parameters.
 function analysisSeriesQuery(db: D1Database, start: string, end: string, lag: number, columns: string[]) {
-  const first = calendarTime(start);
-  const days = (calendarTime(end) - first) / DAY + 1;
-  if (days < 1 || days > 365) throw new RangeError("range must contain 1 to 365 dates");
+  const days = dateRangeDays(start, end, 365, true);
+  const first = Date.parse(`${start}T00:00:00Z`);
   const dates = Array.from({ length: days + lag }, (_, i) => new Date(first + i * DAY).toISOString().slice(0, 10));
   const trackers: Record<string, string> = { cigarettes: "cigarettes", alcohol_g: "alcohol", caffeine_mg: "caffeine" };
   const behaviors = [...new Set(columns.filter((column) => BEHAVIORS.includes(column)))];

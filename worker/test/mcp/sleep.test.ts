@@ -91,6 +91,13 @@ describe("AC1 health_sleep", () => {
     await expect(healthSleep(env.DB, { start: "2026-10-01", end: "2026-10-31" })).resolves.toEqual({ sessions: [], coverage: { days_requested: 31, days_with_sleep: 0 } });
   });
 
+  it("rejects a start before 2000 like health_compare, before reading", async () => {
+    const [db, seen] = guarded();
+    await expect(healthSleep(db, { start: "1999-12-31", end: "2000-01-01" })).rejects.toThrow("date must be a real calendar date in YYYY-MM-DD format");
+    expect(seen.sql).toEqual([]);
+    expect(seen.calls).toBe(0);
+  });
+
   it("reads with bound dates only, never writes, and rejects on D1 failure", async () => {
     const [db, seen] = guarded();
     await healthSleep(db, { start: "2026-10-01", end: "2026-10-02" });

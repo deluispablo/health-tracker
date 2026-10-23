@@ -43,14 +43,6 @@ function gridStarts(taps: AcuteInput["taps"]): Map<string, number> {
   return starts;
 }
 
-export function candidateTimes(taps: AcuteInput["taps"]): number[] {
-  const candidates = new Set(taps.map((tap) => tap.ts));
-  for (const start of gridStarts(taps).values()) {
-    for (let i = 0; i < 1440; i += ACUTE.gridMin) candidates.add(start + i * 60);
-  }
-  return [...candidates].sort((a, b) => a - b);
-}
-
 export async function loadAcuteInput(db: D1Database, p: {
   start: string; end: string; nowSec: number; tz: string;
 }): Promise<AcuteInput> {

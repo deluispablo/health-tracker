@@ -1,4 +1,4 @@
-import { isCalendarDate } from "../../lib/time";
+import { dateRangeDays } from "../../lib/time";
 import { roundOneDecimal as round } from "./stats";
 
 interface WorkoutRow {
@@ -16,18 +16,10 @@ interface WorkoutRow {
   distance_m: number | null;
 }
 
-function calendarTime(date: string): number {
-  if (!isCalendarDate(date)) {
-    throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
-  }
-  return Date.parse(`${date}T00:00:00Z`);
-}
-
 const localTime = (ts: number, offset: number): string => new Date((ts + offset * 60) * 1000).toISOString().slice(0, 16);
 
 export async function healthWorkouts(db: D1Database, { start, end }: { start: string; end: string }) {
-  const days = (calendarTime(end) - calendarTime(start)) / 86400000 + 1;
-  if (days < 1 || days > 31) throw new RangeError("range must contain 1 to 31 dates");
+  dateRangeDays(start, end, 31, true);
 
   const { results: rows } = await db.prepare(`
     SELECT w.source_id, w.local_date, w.type, w.start_ts, w.end_ts, w.tz_offset_min,

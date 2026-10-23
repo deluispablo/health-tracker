@@ -2,7 +2,8 @@ import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { dateTimeFormat } from "../../src/lib/time";
-import { ACUTE, acuteDays, candidateTimes, loadAcuteInput } from "../../src/mcp/tools/insights/event";
+import { ACUTE, acuteDays, loadAcuteInput } from "../../src/mcp/tools/insights/event";
+import { candidateTimes } from "../fixtures/insights";
 import type { AcuteInput, WindowAgg } from "../../src/mcp/tools/insights/event";
 import type { AcuteTracker } from "../../src/mcp/tools/insights/types";
 

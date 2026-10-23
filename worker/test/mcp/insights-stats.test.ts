@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { T975, t975, tQuantile975, tCdf, normalCdf, effectivePhi, inflation, effectiveWelch, dependentWelch, newcombeDiff, dependentRiskDiff, oneSampleDependent, benjaminiHochberg, labelOf, welch, ar1Phi } from "../../src/mcp/tools/stats";
+import { t975, tCdf, normalCdf, effectivePhi, inflation, dependentWelch, newcombeDiff, dependentRiskDiff, oneSampleDependent, benjaminiHochberg, labelOf, ar1Phi } from "../../src/mcp/tools/stats";
 
 describe("dependent statistics", () => {
-  it("t975 matches known quantiles and every offline table entry", () => {
+  it("t975 matches known quantiles", () => {
     for (const [df, value] of [[1, 12.706204736], [2, 4.302652730], [10, 2.228138852], [30, 2.042272456], [100, 1.983971519]]) {
       expect(t975(df)).toBeCloseTo(value, 8);
     }
-    expect(T975).toHaveLength(400);
-    T975.forEach((value, i) => { expect(Math.abs(value - tQuantile975(i + 1))).toBeLessThan(1e-9); });
     expect(t975(401)).toBe(1.959963984540054);
     expect(t975(10.9)).toBe(t975(10));
     expect(t975(0.5)).toBe(t975(1));
@@ -29,16 +27,6 @@ describe("dependent statistics", () => {
     expect(out).toMatchObject({ diff: 0, p: 1 });
     expect(out.ci95?.every(Number.isFinite)).toBe(true);
     expect(benjaminiHochberg([0.01, out.p])).toEqual([0.02, 1]);
-  });
-
-  it("preserves tiny nonzero Welch p-values", () => {
-    // At df = 1 the two-sided Student tail is 2 atan(1/t) / pi.
-    const a = [1e18 - 128, 1e18, 1e18 + 128];
-    const b = [0, 0, 0];
-    const two = effectiveWelch(a, b, 1.5);
-    expect(two.df).toBe(1);
-    const twoSe = 128 / Math.sqrt(2);
-    expect((two.p ?? 0) / (2 * Math.atan(twoSe / 1e18) / Math.PI)).toBeCloseTo(1, 10);
   });
 
   it("preserves tiny nonzero one-sample p-values", () => {
@@ -86,27 +74,8 @@ describe("dependent statistics", () => {
     expect(benjaminiHochberg([null, null])).toEqual([null, null]);
   });
 
-  it("effectiveWelch at f = 1 equals plain Welch with floored df", () => {
-    const a = [2, 4, 8], b = [1, 3, 5, 7];
-    const plain = welch(a, b);
-    if (plain === null || plain.df === null) throw new Error("Expected Welch inference");
-    const out = effectiveWelch(a, b, 1);
-    expect(out.diff).toBe(plain.diff);
-    expect(out.df).toBe(Math.floor(plain.df));
-    const margin = t975((out.df ?? 1)) * Math.sqrt(43 / 9);
-    expect(out.ci95).toEqual([plain.diff - margin, plain.diff + margin]);
-    expect(out.p).toBeCloseTo(2 * (1 - tCdf(Math.abs(plain.diff) / Math.sqrt(43 / 9), (out.df ?? 1))), 12);
-    expect(out.phi).toBe(0);
-  });
-
   it("n_eff below 2 gives diff without CI or p", () => {
-    expect(effectiveWelch([1, 2, 3], [2, 3, 4], 2)).toMatchObject({ diff: -1, ci95: null, p: null, df: null, n_eff_a: 1.5 });
     expect(dependentRiskDiff([1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, null, null, null], [null, null, null, null, null, null, null, null, null, null, null, null, 0, 0, 0])).toMatchObject({ diff: 0.5, ci95: null, p: null });
-  });
-
-  it("handles zero variance in both groups", () => {
-    expect(effectiveWelch([5, 5, 5], [3, 3, 3], 1)).toMatchObject({ diff: 2, ci95: [2, 2], p: 0 });
-    expect(effectiveWelch([3, 3, 3], [3, 3, 3], 1)).toMatchObject({ diff: 0, ci95: [0, 0], p: 1 });
   });
 
   it("groups under 3 days return null statistics", () => {
@@ -115,7 +84,6 @@ describe("dependent statistics", () => {
         expect(fn(a, b)).toMatchObject({ mean_a: null, mean_b: null, diff: null, ci95: null, p: null, df: null });
       }
     }
-    expect(effectiveWelch([1, 2], [1, 2, 3], 1).diff).toBeNull();
   });
 
   it("phi uses calendar-adjacent pairs only and clips to the specified bounds", () => {

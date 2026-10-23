@@ -9,7 +9,7 @@ const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).rep
 function consentPage(details: ConsentDescription, handle: string): string {
   const name = escape(details.clientName);
   return `<!doctype html><html lang="en"><meta charset="utf-8"><title>Authorize ${name}</title>
-<h1>Allow ${name} to read your health data?</h1>
+<h1>Allow ${name} to read and update your health data?</h1>
 <p>${details.clientDomain ? `Published by <strong>${escape(details.clientDomain)}</strong>.` : "This app registered itself; its name is not verified."}
 Access will be sent to <strong>${escape(details.redirectHost)}</strong>.</p>
 <form method="post" action="/authorize"><input type="hidden" name="handle" value="${escape(handle)}">

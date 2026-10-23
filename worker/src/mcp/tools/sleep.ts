@@ -1,4 +1,4 @@
-import { isCalendarDate } from "../../lib/time";
+import { dateRangeDays } from "../../lib/time";
 
 type Stage = [number, number, string];
 
@@ -34,13 +34,6 @@ interface StageRow {
   stage: string;
 }
 
-function calendarTime(date: string): number {
-  if (!isCalendarDate(date)) {
-    throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
-  }
-  return Date.parse(`${date}T00:00:00Z`);
-}
-
 function localTime(timestamp: number, offset: number): string {
   return new Date((timestamp + offset * 60) * 1000).toISOString().slice(0, 16);
 }
@@ -48,8 +41,7 @@ function localTime(timestamp: number, offset: number): string {
 export async function healthSleep(db: D1Database, { start, end }: {
   start: string; end: string;
 }): Promise<{ sessions: Session[]; coverage: { days_requested: number; days_with_sleep: number } }> {
-  const daysRequested = (calendarTime(end) - calendarTime(start)) / 86_400_000 + 1;
-  if (daysRequested < 1 || daysRequested > 31) throw new RangeError("range must contain 1 to 31 dates");
+  const daysRequested = dateRangeDays(start, end, 31, true);
 
   const [sessionsResult, stagesResult] = await db.batch<SessionRow | StageRow>([
     db.prepare(`

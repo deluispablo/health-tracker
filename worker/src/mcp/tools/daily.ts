@@ -1,4 +1,4 @@
-import { isCalendarDate } from "../../lib/time";
+import { dateRangeDays } from "../../lib/time";
 import { round } from "./compare";
 import { roundOneDecimal } from "./stats";
 
@@ -19,21 +19,13 @@ const UNITS: Record<string, string> = {
   mood_estresado: "count", mood_ansioso: "count", mood_triste: "count", mood_enfadado: "count",
 };
 
-function calendarTime(date: string): number {
-  if (!isCalendarDate(date)) {
-    throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
-  }
-  return Date.parse(`${date}T00:00:00Z`);
-}
-
 export async function healthDaily(db: D1Database, { start, end, metrics = DAILY_COLUMNS }: {
   start: string; end: string; metrics?: readonly string[];
 }): Promise<{
   columns: string[]; rows: unknown[][]; units: Record<string, string>;
   coverage: { days_requested: number; days_with_data: number };
 }> {
-  const daysRequested = (calendarTime(end) - calendarTime(start)) / 86_400_000 + 1;
-  if (daysRequested < 1 || daysRequested > 90) throw new RangeError("range must contain 1 to 90 dates");
+  const daysRequested = dateRangeDays(start, end, 90, true);
   if (metrics.length === 0) throw new RangeError("metrics must not be empty");
   const unknown = metrics.find((metric) => !DAILY_COLUMNS.includes(metric));
   if (unknown !== undefined) throw new RangeError(`unknown metric "${unknown}"; valid: ${DAILY_COLUMNS.join(", ")}`);

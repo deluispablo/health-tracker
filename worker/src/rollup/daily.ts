@@ -1,6 +1,4 @@
-import { isCalendarDate } from "../lib/time";
-
-const DAY_MS = 86_400_000;
+import { dateRangeDays } from "../lib/time";
 
 const BASE_COLUMNS = [
   "rhr", "hrv_rmssd", "ln_rmssd", "resp_rate", "spo2_avg", "skin_temp_dev",
@@ -89,17 +87,9 @@ SET (z_ln_rmssd, z_rhr, z_sleep, readiness_proxy) = (
 WHERE local_date BETWEEN ?1 AND ?2
 `;
 
-function calendarTime(date: string): number {
-  if (!isCalendarDate(date)) {
-    throw new RangeError("date must be a real calendar date in YYYY-MM-DD format");
-  }
-  return Date.parse(`${date}T00:00:00Z`);
-}
-
 /** Replace daily bases and scores atomically; histories include stored summaries outside the range. */
 export async function recomputeDailySummary(db: D1Database, from: string, to: string, now: number): Promise<number> {
-  const count = (calendarTime(to) - calendarTime(from)) / DAY_MS + 1;
-  if (count < 1 || count > 366) throw new RangeError("range must contain 1 to 366 dates");
+  const count = dateRangeDays(from, to, 366);
   await db.batch([
     db.prepare(BASE_SQL).bind(from, to, now),
     db.prepare(SCORES_SQL).bind(from, to),

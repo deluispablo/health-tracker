@@ -1,4 +1,19 @@
 import type { BehaviorId, BehaviorTiming, MetricId } from "../../src/mcp/tools/insights/types";
+import { ACUTE, type AcuteInput } from "../../src/mcp/tools/insights/event";
+
+/** Tap times plus a 30-minute grid over each tap's local day, anchored at the first tap's offset (as acuteDays does). */
+export function candidateTimes(taps: AcuteInput["taps"]): number[] {
+  const starts = new Map<string, number>();
+  for (const tap of [...taps].sort((a, b) => a.ts - b.ts || a.tz_offset_min - b.tz_offset_min)) {
+    const date = new Date((tap.ts + tap.tz_offset_min * 60) * 1000).toISOString().slice(0, 10);
+    if (!starts.has(date)) starts.set(date, Date.parse(`${date}T00:00:00Z`) / 1000 - tap.tz_offset_min * 60);
+  }
+  const candidates = new Set(taps.map((tap) => tap.ts));
+  for (const start of starts.values()) {
+    for (let i = 0; i < 1440; i += ACUTE.gridMin) candidates.add(start + i * 60);
+  }
+  return [...candidates].sort((a, b) => a - b);
+}
 
 export const FIXTURE: {
   now: number; tz: "Europe/Madrid"; start: string; end: string; seed: 20261022;

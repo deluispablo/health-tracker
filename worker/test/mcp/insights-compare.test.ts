@@ -8,9 +8,9 @@ import type { BehaviorId, MetricId, Origin } from "../../src/mcp/tools/insights/
 import type { DayTable } from "../../src/mcp/tools/insights/units";
 import { anomalyFlags, computeBaselines } from "../../src/mcp/tools/insights/baseline";
 import { loadDayTable, resolveRange } from "../../src/mcp/tools/insights/units";
-import { acuteDays, candidateTimes } from "../../src/mcp/tools/insights/event";
+import { acuteDays } from "../../src/mcp/tools/insights/event";
 import type { AcuteInput } from "../../src/mcp/tools/insights/event";
-import { FIXTURE, seedInsightsFixture } from "../fixtures/insights";
+import { FIXTURE, candidateTimes, seedInsightsFixture } from "../fixtures/insights";
 
 const acuteExcluded = {overlap:0,workout:0,sleep:0,coverage:0,dst:0,no_control:0,future:0};
 const origin: Origin = { tool: "health_scan", args: { window_days: 120 } };

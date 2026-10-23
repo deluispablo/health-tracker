@@ -115,6 +115,13 @@ describe("AC1 health_daily", () => {
     await expect(healthDaily(env.DB, { start: "2026-01-01", end: "2026-03-31" })).resolves.toEqual(expect.objectContaining({ coverage: { days_requested: 90, days_with_data: 0 } }));
   });
 
+  it("rejects a start before 2000 like health_compare, before reading", async () => {
+    const [db, seen] = guarded();
+    await expect(healthDaily(db, { start: "1999-12-31", end: "2000-01-01" })).rejects.toThrow("date must be a real calendar date in YYYY-MM-DD format");
+    expect(seen.sql).toEqual([]);
+    expect(seen.other).toEqual([]);
+  });
+
   it("reads once through v_daily with bound, inclusive endpoints and no writes", async () => {
     for (const d of ["2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03"]) await summary(d, { rhr: 60 });
     const [db, seen] = guarded();
