@@ -1,0 +1,1138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Health Tracker</title>
+<meta name="description" content="Ask your watch what it knows. A Pixel Watch app, a dashboard and Claude, working on your own data.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Red+Hat+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: la pregunta primero (portada con la conversación), después el día en la esfera fija con el scroll,
+   lo que descubre, el dashboard, la privacidad y la firma. Tokens del dashboard; esfera fiel al reloj. */
+:root {
+  color-scheme: dark;
+  --bg: #0f1116; --surface: #1a1d24; --surface-2: #242833; --ink: #e7e9f0; --muted: #a2a8b8;
+  --line: #2f343f; --line-strong: #7d8496; --primary: #b6c2ff; --on-primary: #141c45; --container: #2a3363; --on-container: #e1e5f5;
+  --band: #232a3e; --drop: rgb(0 0 0 / .55); --glow: rgb(84 112 214 / .2);
+  --m-hr: #ee6a5f; --m-hrv: #f48bc0; --m-deep: #5470d6; --m-rem: #8ea9ff; --m-light: #d0dbff; --m-awake: #f0a650;
+  --m-steps: #5ccf97; --m-caffeine: #f2c46b; --m-cig: #dfe3ea; --m-alcohol: #b48ae8; --m-water: #38b6ff; --m-supp: #f59bb8;
+  --ok: #5ccf97; --ok-container: #163829; --probable: #f2b65e; --probable-container: #3b2a12; --key: #f2c46b;
+  --font-sans: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Red Hat Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius-sm: 6px; --radius-md: 12px; --radius-lg: 20px; --radius-full: 999px;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --wrap: 1180px;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f3f4f6; --surface: #ffffff; --surface-2: #eceef3; --ink: #12172b; --muted: #545b6e;
+    --line: #dadde4; --line-strong: #767d90; --primary: #24306a; --on-primary: #ffffff; --container: #e1e5f5; --on-container: #141c45;
+    --band: #e6e9f4; --drop: rgb(18 23 43 / .22); --glow: transparent;
+    --m-hr: #b3261e; --m-hrv: #c2367e; --m-deep: #1d3b8f; --m-rem: #3e6fe0; --m-light: #6587da; --m-awake: #a15c00;
+    --m-steps: #188a5b; --m-caffeine: #9a6a00; --m-cig: #4a5260; --m-alcohol: #8a3fb0; --m-water: #0a6fae; --m-supp: #a8346a;
+    --ok: #146c47; --ok-container: #dff3e9; --probable: #8a4b00; --probable-container: #fbebd6; --key: #8a4b00;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f4f6; --surface: #ffffff; --surface-2: #eceef3; --ink: #12172b; --muted: #545b6e;
+  --line: #dadde4; --line-strong: #767d90; --primary: #24306a; --on-primary: #ffffff; --container: #e1e5f5; --on-container: #141c45;
+  --band: #e6e9f4; --drop: rgb(18 23 43 / .22); --glow: transparent;
+  --m-hr: #b3261e; --m-hrv: #c2367e; --m-deep: #1d3b8f; --m-rem: #3e6fe0; --m-light: #6587da; --m-awake: #a15c00;
+  --m-steps: #188a5b; --m-caffeine: #9a6a00; --m-cig: #4a5260; --m-alcohol: #8a3fb0; --m-water: #0a6fae; --m-supp: #a8346a;
+  --ok: #146c47; --ok-container: #dff3e9; --probable: #8a4b00; --probable-container: #fbebd6; --key: #8a4b00;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 17px; line-height: 1.55; font-weight: 400;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+h1, h2, h3 { font-weight: 600; line-height: 1.08; text-wrap: balance; margin: 0; letter-spacing: -0.02em; }
+p { margin: 0; text-wrap: pretty; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; border-radius: var(--radius-sm); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.wrap { max-width: var(--wrap); margin-inline: auto; }
+.sample {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); justify-self: start; width: fit-content;
+  border: 1px dashed var(--line-strong); border-radius: var(--radius-full); padding: 2px 10px;
+}
+
+/* Cabecera */
+.top { display: flex; align-items: center; gap: 16px; padding-block: 16px; }
+.lang {
+  display: grid; place-items: center; min-width: 40px; min-height: 32px; padding: 0 8px; margin-left: 10px; border: 1px solid var(--line); border-radius: var(--radius-full);
+  background: none; color: var(--muted); cursor: pointer; font: 500 12px/1 var(--font-sans); letter-spacing: .06em;
+}
+.lang:hover { color: var(--ink); border-color: var(--line-strong); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; text-decoration: none; }
+.brand svg { width: 30px; height: 30px; }
+.top nav { display: flex; gap: 22px; font-size: 15px; color: var(--muted); margin-left: auto; }
+.top nav a { text-decoration: none; }
+.top nav a:hover { color: var(--ink); }
+.social { display: flex; gap: 6px; font-size: 15px; }
+.social a, .contact a { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: var(--ink); min-height: 44px; padding-inline: 8px; border-radius: var(--radius-full); }
+.social a:hover, .contact a:hover { color: var(--primary); }
+.social svg, .contact svg { width: 18px; height: 18px; flex: none; }
+
+/* Portada */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 56px; align-items: center; padding-block: 40px 96px; }
+.hero-txt { display: grid; gap: 22px; align-content: center; }
+.hero h1 { font-size: clamp(44px, 6vw, 84px); letter-spacing: -0.035em; }
+.hero .sub { font-size: clamp(19px, 1.6vw, 22px); color: var(--muted); max-width: 26em; }
+.pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pills span { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; padding: 6px 14px 6px 8px; border-radius: var(--radius-full); background: var(--surface-2); }
+.pills svg { width: 20px; height: 20px; }
+.go { display: inline-flex; align-items: center; gap: 10px; justify-self: start; min-height: 48px; padding: 12px 22px; border-radius: var(--radius-full); background: var(--primary); color: var(--on-primary); font-weight: 600; text-decoration: none; }
+.go:hover { filter: brightness(1.08); }
+.go svg { width: 18px; height: 18px; }
+
+/* Conversación */
+.chat { display: grid; gap: 18px; min-width: 0; }
+.msg { display: grid; gap: 6px; max-width: 94%; min-width: 0; }
+.msg.you { justify-self: end; }
+.msg.you .bubble { background: var(--container); color: var(--on-container); border-radius: 18px 18px 4px 18px; padding: 12px 18px; font-size: 18px; }
+.msg.ai { justify-self: start; }
+.msg .who { font-size: 13px; color: var(--muted); }
+.msg.you .who { justify-self: end; }
+.msg.ai .bubble { background: var(--surface); border: 1px solid var(--line); border-radius: 18px 18px 18px 4px; padding: 18px 20px; display: grid; gap: 12px; font-size: 17px; }
+.msg.ai .bubble svg { width: 100%; max-width: 520px; height: auto; display: block; }
+.msg .bubble em { font-style: normal; color: var(--muted); font-size: 14px; }
+.msg mark { background: none; color: var(--key); font-weight: 600; }
+.typing [data-type] .w { opacity: 0; transition: opacity 160ms linear; }
+.typing [data-type] .w.in { opacity: 1; }
+
+/* El día */
+.day { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 0 48px; }
+.stage {
+  grid-column: 2; grid-row: 1; position: sticky; top: env(safe-area-inset-top, 0px);
+  height: 100vh; height: 100svh; display: grid; place-items: center; align-content: center; gap: 20px;
+}
+.scenes { grid-column: 1; grid-row: 1; padding-bottom: 40vh; }
+.watch {
+  --size: min(500px, 40vw, 70svh);
+  width: var(--size); aspect-ratio: 1; max-width: 100%; border-radius: 50%; position: relative; background: #000;
+  box-shadow: 0 0 0 calc(var(--size) * .035) #202329, 0 0 0 calc(var(--size) * .043) #3a3e47,
+              0 28px 60px -24px var(--drop), 0 0 110px 8px var(--glow);
+}
+.watch svg { width: 100%; height: 100%; display: block; border-radius: 50%; overflow: hidden; }
+.readout { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center; min-height: 44px; }
+.clock { display: flex; align-items: baseline; gap: 10px; color: var(--muted); font-size: 14px; white-space: nowrap; }
+.clock b { font-family: var(--font-mono); font-weight: 500; font-size: 28px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.callout { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 14px 4px 6px; border-radius: var(--radius-full); background: var(--surface); border: 1px solid var(--line); font-size: 15px; font-weight: 500; white-space: nowrap; transition: opacity 200ms var(--ease); }
+.callout[data-empty] { opacity: 0; }
+.callout .g { width: 26px; height: 26px; border-radius: 50%; background: #000; display: grid; place-items: center; }
+.callout .g svg { width: 20px; height: 20px; }
+
+.scene { min-height: 90vh; min-height: 90svh; display: flex; flex-direction: column; justify-content: center; gap: 16px; padding-block: 8vh; max-width: 30em; }
+.scene .when { font-family: var(--font-mono); font-size: 15px; color: var(--primary); font-variant-numeric: tabular-nums; }
+.scene h2 { font-size: clamp(30px, 3.6vw, 46px); }
+.scene p { color: var(--muted); font-size: 19px; max-width: 28em; }
+.intro h2 { font-size: clamp(38px, 4.8vw, 62px); }
+.vignette { display: none; }
+
+/* Marcas del reloj */
+.mk { transform-box: fill-box; transform-origin: center; transform: scale(0); transition: transform 320ms var(--ease); }
+.on > .mk { transform: scale(1); }
+.hl { opacity: 0; transition: opacity 200ms linear; }
+.hl.on { opacity: 1; }
+.tick { opacity: 0; transition: opacity 240ms linear; }
+.tick.on { opacity: .7; }
+.ov { opacity: 0; transition: opacity 220ms var(--ease); pointer-events: none; }
+.ov.on { opacity: 1; }
+
+/* Bloques */
+.block { padding-block: 120px 40px; }
+.block > header { display: grid; gap: 16px; max-width: 40em; margin-bottom: 44px; }
+.block h2 { font-size: clamp(34px, 4.4vw, 58px); }
+.block .lead { font-size: 20px; color: var(--muted); max-width: 34em; }
+.sub-h { font-size: clamp(26px, 3vw, 36px); margin: 88px 0 28px; }
+
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 24px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+.card.feature { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 20px 40px; padding: 32px; align-items: center; }
+.card.feature .txt { display: grid; gap: 14px; align-content: start; }
+.card.feature .say { font-size: clamp(24px, 2.6vw, 32px); }
+.card h3 { font-size: 15px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+.card .say { font-size: 20px; line-height: 1.3; font-weight: 500; text-wrap: balance; }
+.card svg.chart { width: 100%; height: auto; display: block; }
+.card .foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--muted); flex-wrap: wrap; margin-top: auto; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; border-radius: var(--radius-full); padding: 3px 10px; }
+.chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chip.probable { color: var(--probable); background: var(--probable-container); }
+.chip.solido { color: var(--ok); background: var(--ok-container); }
+.chain { display: grid; gap: 6px; justify-items: start; }
+.chain .node { display: inline-flex; align-items: center; gap: 8px; background: var(--surface-2); border-radius: var(--radius-full); padding: 5px 14px 5px 5px; font-size: 15px; }
+.chain .dot { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; }
+.chain .dot svg { width: 22px; height: 22px; }
+.chain .arrow { color: var(--line-strong); padding-left: 14px; line-height: 1; }
+.factors { display: grid; gap: 10px; font-size: 16px; }
+.factors div { display: flex; align-items: center; gap: 10px; }
+.factors svg { width: 22px; height: 22px; flex: none; background: #000; border-radius: 50%; padding: 2px; }
+.more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; align-items: start; }
+.honest { margin-top: 32px; font-size: 15px; color: var(--muted); max-width: 42em; border-left: 2px solid var(--line-strong); padding-left: 14px; }
+
+/* Dashboard */
+.dash { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+.tabs { display: flex; gap: 4px; padding: 10px; border-bottom: 1px solid var(--line); }
+.tabs button {
+  font: inherit; font-size: 15px; font-weight: 500; color: var(--muted); background: none; border: 0; cursor: pointer;
+  padding: 10px 16px; border-radius: var(--radius-full); min-height: 44px; white-space: nowrap;
+}
+.tabs button:hover { color: var(--ink); background: var(--surface-2); }
+.tabs button[aria-selected="true"] { background: var(--container); color: var(--on-container); }
+.panel { padding: 28px; display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 28px; align-items: center; min-height: 320px; }
+.panel h3 { font-size: 26px; margin-bottom: 10px; }
+.panel p { color: var(--muted); }
+.panel svg { width: 100%; height: auto; display: block; }
+.dash-note { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 14px; font-size: 14px; color: var(--muted); }
+.vitals { display: grid; gap: 14px; }
+.vrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 38%) 3.6em; gap: 4px 12px; align-items: center; }
+.vn { font-size: 16px; }
+.vv { font-size: 18px; text-align: right; }
+.vs { position: relative; height: 14px; }
+.vs i { position: absolute; display: block; }
+.vl { left: 0; right: 0; top: 6px; height: 2px; background: var(--line); }
+.vb { top: 2px; height: 10px; border-radius: var(--radius-full); background: var(--band); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.vd { top: 1px; width: 12px; height: 12px; margin-left: -6px; border-radius: var(--radius-full); background: var(--ink); box-shadow: 0 0 0 2px var(--surface); }
+.vsub { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+
+/* Tuyo */
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
+.three div { display: grid; gap: 10px; align-content: start; }
+.three svg { width: 36px; height: 36px; }
+.three h3 { font-size: 22px; }
+.three p { color: var(--muted); }
+
+/* Cierre y firma */
+.end { padding-block: 140px 80px; display: grid; justify-items: center; text-align: center; gap: 22px; }
+.end .watch { --size: min(240px, 60vw); }
+.end h2 { font-size: clamp(34px, 4.4vw, 58px); }
+.end p { color: var(--muted); max-width: 32em; font-size: 19px; }
+footer.author { display: flex; gap: 24px; align-items: center; padding-block: 48px; border-top: 1px solid var(--line); }
+footer.author img { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; flex: none; box-shadow: 0 0 0 3px var(--surface), 0 0 0 4px var(--line-strong); }
+.who-txt { display: grid; gap: 10px; min-width: 0; }
+.who-txt h2 { font-size: 26px; }
+.who-txt p { color: var(--muted); font-size: 18px; max-width: 36em; }
+.contact { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; font-size: 15px; margin-left: -8px; }
+.contact .mail { user-select: all; padding-inline: 8px; }
+.fine { padding-block: 22px 40px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .reveal { animation: rise linear both; animation-timeline: view(); animation-range: entry 0% entry 70%; }
+    @keyframes rise { from { opacity: .15; transform: translateY(36px) scale(.98); } to { opacity: 1; transform: none; } }
+  }
+}
+
+/* Móvil */
+@media (max-width: 860px) {
+  body { font-size: 16px; }
+  .top nav, .social span { display: none; }
+  .social { margin-left: auto; }
+  .social a { min-width: 44px; justify-content: center; }
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 36px; padding-block: 12px 64px; }
+  .day { grid-template-columns: minmax(0, 1fr); }
+  .stage {
+    grid-column: 1; grid-row: 1; height: auto; padding-block: 18px 14px; z-index: 2;
+    background: linear-gradient(var(--bg) 88%, transparent); gap: 12px;
+  }
+  .watch { --size: min(64vw, 34svh); }
+  .clock b { font-size: 22px; }
+  .scenes { grid-row: 2; padding-bottom: 20svh; }
+  .scene { min-height: 62svh; justify-content: flex-start; padding-block: 2svh 10svh; }
+  .scene p { font-size: 17px; }
+  .cards, .more { grid-template-columns: minmax(0, 1fr); }
+  .card.feature { grid-template-columns: minmax(0, 1fr); padding: 24px; }
+  .panel { grid-template-columns: minmax(0, 1fr); padding: 20px; align-content: start; min-height: 400px; }
+  .tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; padding: 6px; }
+  .tabs button { padding: 10px 2px; font-size: 13.5px; }
+  .three { grid-template-columns: minmax(0, 1fr); }
+  .block { padding-block: 90px 24px; }
+  .msg { max-width: 100%; }
+  footer.author { flex-direction: column; align-items: flex-start; }
+}
+
+/* Reducción de movimiento: sin reloj fijo; cada escena lleva su esfera ya pintada */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .day { grid-template-columns: minmax(0, 1fr); }
+  .stage { display: none; }
+  .vignette { display: block; margin: 8px 0 0; }
+  .vignette .watch { --size: min(300px, 70vw); }
+  .scene { min-height: 0; padding-block: 40px; max-width: 46em; }
+  .scenes { padding-bottom: 0; }
+  .mk, .tick, .ov, .hl { transition: none; }
+}
+@media (prefers-reduced-motion: reduce) and (min-width: 861px) {
+  .scene:has(.vignette) { display: grid; grid-template-columns: minmax(0, 1fr) 300px; column-gap: 48px; align-content: center; max-width: 64em; }
+  .scene:has(.vignette) > :not(.vignette) { grid-column: 1; }
+  .scene > .vignette { grid-column: 2; grid-row: 1 / span 4; align-self: center; }
+}
+</style>
+</head>
+<body>
+
+<header class="top wrap">
+  <a class="brand" href="#top" aria-label="Health Tracker">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M22.25 15.11A19.5 19.5 0 0 1 50.84 37.05" fill="none" stroke="var(--m-deep)" stroke-width="5" stroke-linecap="round"/><path d="M17.0 37L25.7 37L27.5 34.8L29.3 37L30.5 37L31.4 39.42L32.9 26L34.55 42.28L35.9 37L39.2 37L41.6 34.36L44.0 37L47.0 37" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Health Tracker
+  </a>
+  <button type="button" class="lang" id="lang-btn"></button>
+  <nav data-t-aria="nav.aria">
+    <a href="#dia" data-t="nav.day"></a>
+    <a href="#descubre" data-t="nav.discover"></a>
+    <a href="#tuyo" data-t="nav.privacy"></a>
+  </nav>
+  <div class="social">
+    <a href="https://github.com/deluispablo" aria-label="GitHub"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.29-1.69-1.29-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg><span>GitHub</span></a>
+    <a href="https://www.linkedin.com/in/pablo-de-luis-duarte-897805140" aria-label="LinkedIn"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg><span>LinkedIn</span></a>
+  </div>
+</header>
+
+<main id="top">
+<section class="hero wrap" aria-labelledby="hero-h">
+  <div class="hero-txt">
+    <h1 id="hero-h" data-t="hero.h1"></h1>
+    <p class="sub" data-t="hero.sub"></p>
+    <div class="pills">
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M9 3h6M9 21h6M12 9v3l2 1"/></svg><span data-t="pill.watch"></span></span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 15l3-3 3 2 4-5"/></svg><span data-t="pill.dash"></span></span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg><span data-t="pill.claude"></span></span>
+    </div>
+    <a class="go" href="#dia"><span data-t="hero.cta"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></a>
+  </div>
+  <div class="chat" id="hero-chat">
+    <span class="sample" data-t="sample.chat"></span>
+    <div class="msg you"><div class="who" data-t="who.you"></div><div class="bubble" data-t="q1"></div></div>
+    <div class="msg ai">
+      <div class="who">Claude</div>
+      <div class="bubble">
+        <p data-type data-th="a1.1"></p>
+        <p data-type data-th="a1.2"></p>
+        <svg id="ch-coffee" viewBox="0 0 520 132" role="img"></svg>
+        <p data-type data-th="a1.3"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="day wrap" id="dia" aria-labelledby="day-h">
+  <div class="stage" aria-hidden="true">
+    <div class="watch"><svg id="face" viewBox="-225 -225 450 450"></svg></div>
+    <div class="readout">
+      <div class="clock"><b id="clock">06:40</b><span data-t="clock.sample"></span></div>
+      <span class="callout" id="callout" data-empty></span>
+    </div>
+  </div>
+
+  <div class="scenes">
+    <article class="scene intro" data-k="400:0,400:1">
+      <h2 id="day-h" data-t="day.h"></h2>
+      <p data-t="day.p"></p>
+    </article>
+    <article class="scene" data-k="400:0,452:1" data-still="452" data-alt="alt.1">
+      <span class="when">07:25</span>
+      <h2 data-t="s1.h"></h2>
+      <p data-t="s1.p"></p>
+    </article>
+    <article class="scene" data-k="452:0,496:.15,512:.7,540:1" data-still="506" data-alt="alt.2">
+      <span class="when">08:30</span>
+      <h2 data-t="s2.h"></h2>
+      <p data-t="s2.p"></p>
+    </article>
+    <article class="scene" data-k="540:0,904:.3,932:.62,1000:1" data-still="922" data-alt="alt.3">
+      <span class="when">15:30</span>
+      <h2 data-t="s3.h"></h2>
+      <p data-t="s3.p"></p>
+    </article>
+    <article class="scene" data-k="1000:0,1100:.35,1180:1" data-still="1180" data-alt="alt.4">
+      <span class="when">18:30</span>
+      <h2 data-t="s4.h"></h2>
+      <p data-t="s4.p"></p>
+    </article>
+    <article class="scene" data-k="1180:0,1320:1" data-still="1320" data-alt="alt.5">
+      <span class="when">22:00</span>
+      <h2 data-t="s5.h"></h2>
+      <p data-t="s5.p"></p>
+    </article>
+  </div>
+</section>
+
+<section class="block wrap" id="descubre" aria-labelledby="disc-h">
+  <header>
+    <span class="sample" data-t="sample.data"></span>
+    <h2 id="disc-h" data-t="disc.h"></h2>
+    <p class="lead" data-th="disc.lead"></p>
+  </header>
+
+  <div class="cards">
+    <article class="card feature reveal">
+      <div class="txt">
+        <h3 data-t="c1.h"></h3>
+        <p class="say" data-t="c1.say"></p>
+        <div class="factors">
+          <div><svg viewBox="-8 -8 16 16" aria-hidden="true"><ellipse rx="4.2" ry="5.6" fill="#f2c46b"/><path d="M0 -4.6Q-2 -2.3 0 0Q2 2.3 0 4.6" fill="none" stroke="#2a1a00" stroke-width="1.2"/></svg><span data-t="c1.f1"></span></div>
+          <div><svg viewBox="-8 -8 16 16" aria-hidden="true"><path d="M-4.6 -6.4H4.6V-3.2A4.6 4.6 0 0 1-4.6 -3.2Z" fill="#b48ae8"/><path d="M0 1.4V5.6M-2.8 5.6H2.8" fill="none" stroke="#b48ae8" stroke-width="1.6" stroke-linecap="round"/></svg><span data-t="c1.f2"></span></div>
+        </div>
+        <div class="foot"><span data-t="tab.sueno"></span><span class="chip probable" data-t="chip.likely"></span></div>
+      </div>
+      <svg class="chart" id="ch-deep" viewBox="0 0 440 150" role="img"></svg>
+    </article>
+
+    <article class="card reveal">
+      <h3 data-t="c2.h"></h3>
+      <p class="say" data-t="c2.say"></p>
+      <div class="chain" role="img" data-t-aria="c2.aria">
+        <span class="node"><span class="dot" style="background:#7fa7e0;color:#14161c"><svg viewBox="0 0 24 24"><path d="M7.4 10.8h3.2M13.4 10.8h3.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10.4,15.6a1.6,1.9 0 1,1 3.2,0a1.6,1.9 0 1,1 -3.2,0z" fill="currentColor"/><path d="M17.2 3.6h2.6l-2.6 2.8h2.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span data-t="c2.n1"></span></span>
+        <span class="arrow" aria-hidden="true">↓</span>
+        <span class="node"><span class="dot" style="background:#f2c46b;color:#2a1a00"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h11v4.5A5.5 5.5 0 0 1 10.5 19h0A5.5 5.5 0 0 1 5 13.5zM16 10.5h1.2a2.6 2.6 0 0 1 0 5.2H16"/></svg></span><span data-t="c2.n2"></span></span>
+        <span class="arrow" aria-hidden="true">↓</span>
+        <span class="node"><span class="dot" style="background:#5470d6;color:#fff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span><span data-t="c2.n3"></span></span>
+      </div>
+      <div class="foot"><span data-t="tab.rutina"></span><span class="chip probable" data-t="chip.likely"></span></div>
+    </article>
+
+    <article class="card reveal">
+      <h3 data-t="c3.h"></h3>
+      <p class="say" data-t="c3.say"></p>
+      <svg class="chart" id="ch-rhr" viewBox="0 0 440 130" role="img"></svg>
+      <div class="foot"><span data-t="tab.salud"></span><span class="chip solido" data-t="chip.solid"></span></div>
+    </article>
+
+    <article class="card reveal">
+      <h3 data-t="c4.h"></h3>
+      <p class="say" data-t="c4.say"></p>
+      <svg class="chart" id="ch-week" viewBox="0 0 440 130" role="img"></svg>
+      <div class="foot"><span data-t="tab.sueno"></span><span class="chip probable" data-t="chip.likely"></span></div>
+    </article>
+  </div>
+
+  <h3 class="sub-h" id="preguntas" data-t="more.h"></h3>
+  <div class="more">
+    <div class="chat">
+      <div class="msg you"><div class="who" data-t="who.you"></div><div class="bubble" data-t="q2"></div></div>
+      <div class="msg ai"><div class="who">Claude</div><div class="bubble">
+        <p data-type data-th="a2.1"></p>
+        <svg id="ch-strip" viewBox="0 0 520 96" role="img"></svg>
+        <p><em id="strip-legend"></em></p>
+      </div></div>
+    </div>
+    <div class="chat">
+      <div class="msg you"><div class="who" data-t="who.you"></div><div class="bubble" data-t="q3"></div></div>
+      <div class="msg ai"><div class="who">Claude</div><div class="bubble">
+        <p data-type data-th="a3.1"></p>
+        <svg id="ch-hrv" viewBox="0 0 520 120" role="img"></svg>
+        <p data-type data-t="a3.2"></p>
+      </div></div>
+    </div>
+  </div>
+  <p class="honest" data-t="honest"></p>
+</section>
+
+<section class="block wrap" id="dashboard" aria-labelledby="dash-h">
+  <header>
+    <h2 id="dash-h" data-t="dash.h"></h2>
+    <p class="lead" data-t="dash.lead"></p>
+  </header>
+  <div class="dash reveal">
+    <div class="tabs" role="tablist" data-t-aria="dash.tabs">
+      <button role="tab" id="tab-hoy" aria-controls="panel" aria-selected="true" data-t="tab.hoy"></button>
+      <button role="tab" id="tab-sueno" aria-controls="panel" aria-selected="false" tabindex="-1" data-t="tab.sueno"></button>
+      <button role="tab" id="tab-salud" aria-controls="panel" aria-selected="false" tabindex="-1" data-t="tab.salud"></button>
+      <button role="tab" id="tab-actividad" aria-controls="panel" aria-selected="false" tabindex="-1" data-t="tab.actividad"></button>
+      <button role="tab" id="tab-rutina" aria-controls="panel" aria-selected="false" tabindex="-1" data-t="tab.rutina"></button>
+    </div>
+    <div class="panel" id="panel" role="tabpanel" aria-labelledby="tab-hoy" tabindex="0"></div>
+  </div>
+  <div class="dash-note"><span class="sample" data-t="sample.data"></span><span data-t="dash.note"></span></div>
+</section>
+
+<section class="block wrap" id="tuyo" aria-labelledby="tuyo-h">
+  <header>
+    <h2 id="tuyo-h" data-t="own.h"></h2>
+    <p class="lead" data-t="own.lead"></p>
+  </header>
+  <div class="three">
+    <div class="reveal">
+      <svg viewBox="0 0 36 36" aria-hidden="true" fill="none" stroke="var(--primary)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="13" r="6"/><path d="M6 31c1.6-6 6.4-9 12-9s10.4 3 12 9"/></svg>
+      <h3 data-t="own.1h"></h3><p data-t="own.1p"></p>
+    </div>
+    <div class="reveal">
+      <svg viewBox="0 0 36 36" aria-hidden="true" fill="none" stroke="var(--primary)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 26h19a6 6 0 0 0 0-12 9 9 0 0 0-17.4 2.4A5 5 0 0 0 9 26z"/><path d="M15 21l3 3 5-6"/></svg>
+      <h3 data-t="own.2h"></h3><p data-t="own.2p"></p>
+    </div>
+    <div class="reveal">
+      <svg viewBox="0 0 36 36" aria-hidden="true" fill="none" stroke="var(--primary)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="8" width="22" height="22" rx="4"/><path d="M7 14h22M13 5v5M23 5v5M13 22l3 3 6-6"/></svg>
+      <h3 data-t="own.3h"></h3><p data-t="own.3p"></p>
+    </div>
+  </div>
+</section>
+
+<section class="end wrap" aria-labelledby="end-h">
+  <div class="watch" aria-hidden="true"><svg id="face-end" viewBox="-225 -225 450 450"></svg></div>
+  <h2 id="end-h" data-t="end.h"></h2>
+  <p data-t="end.p"></p>
+  <a class="go" href="https://github.com/deluispablo/health-tracker"><span data-t="end.cta"></span></a>
+</section>
+</main>
+
+<footer class="author wrap" aria-labelledby="author-h">
+  <img src="data:image/jpeg;base64,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" data-t-alt="me.alt" width="96" height="96">
+  <div class="who-txt">
+    <h2 id="author-h" data-t="me.h"></h2>
+    <p data-t="me.p"></p>
+    <div class="contact">
+      <span class="mail mono">deluispablo@gmail.com</span>
+      <a href="https://github.com/deluispablo"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.29-1.69-1.29-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg>GitHub</a>
+      <a href="https://www.linkedin.com/in/pablo-de-luis-duarte-897805140"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>LinkedIn</a>
+    </div>
+  </div>
+</footer>
+<div class="fine wrap">
+  <span data-th="fine.mit"></span>
+  <span data-t="fine.sample"></span>
+</div>
+
+<script>
+(() => {
+  // Textos en inglés y español; inglés por defecto, como el dashboard.
+  const STR = {
+    'lang.btn': ['EN', 'ES'], 'lang.title': ['Cambiar a español', 'Switch to English'],
+    'nav.aria': ['Sections', 'Secciones'], 'nav.day': ['A day', 'Un día'], 'nav.discover': ['Discover', 'Descubre'], 'nav.privacy': ['Privacy', 'Privacidad'],
+    'hero.h1': ['Ask your watch what it knows.', 'Pregúntale a tu reloj lo que sabe.'],
+    'hero.sub': ['A Pixel Watch app, a dashboard and Claude, all working on your own data.', 'Una app para Pixel Watch, un dashboard y Claude, trabajando con tus propios datos.'],
+    'pill.watch': ['Pixel Watch', 'Pixel Watch'], 'pill.dash': ['Dashboard', 'Dashboard'], 'pill.claude': ['Chat with Claude', 'Chat con Claude'],
+    'hero.cta': ['How does it know?', '¿Cómo lo sabe?'],
+    'sample.chat': ['Sample conversation', 'Conversación de ejemplo'], 'sample.data': ['Sample data', 'Datos de ejemplo'],
+    'who.you': ['You', 'Tú'],
+    'q1': ['What could I do to sleep better?', '¿Qué podría hacer para dormir mejor?'],
+    'a1.1': ['I looked at your last 60 nights. Two things stand out.', 'He mirado tus últimas 60 noches. Hay dos cosas que destacan.'],
+    'a1.2': ['On nights after coffee past 4 pm you get <mark>about 20 minutes less deep sleep</mark>. And when you smoke in the two hours before bed, <mark>your heart beats about 4 times a minute faster overnight</mark>.',
+      'Las noches que tomas café después de las 16:00 duermes <mark>unos 20 minutos menos de sueño profundo</mark>. Y cuando fumas en las dos horas antes de acostarte, <mark>tu pulso por la noche va unas 4 pulsaciones más alto</mark>.'],
+    'a1.3': ['It looks likely, not proven. <mark>Shall we try two weeks without coffee after 4 pm?</mark> Then I’ll compare and tell you if it shows.',
+      'Por ahora lo veo probable, no demostrado. <mark>¿Probamos dos semanas sin café después de las 16:00?</mark> Luego lo comparo y te digo si se nota.'],
+    'ch.nocof': ['No afternoon coffee', 'Sin café por la tarde'], 'ch.cof': ['Coffee after 4 pm', 'Café después de las 16:00'],
+    'ch.cap': ['Average deep sleep; the thin line is the margin of error', 'Media de sueño profundo; la línea fina es el margen de error'],
+    'ch.aria': ['Average deep sleep: 1 h 24 min with no afternoon coffee, 1 h 04 min with coffee after 4 pm.', 'Sueño profundo medio: 1 h 24 min sin café por la tarde, 1 h 04 min con café después de las 16:00.'],
+    'clock.sample': ['sample day', 'día de ejemplo'],
+    'day.h': ['How does it know?', '¿Cómo lo sabe?'],
+    'day.p': ['Because you wear it all day. Scroll and watch one day go by on the dial.', 'Porque lo llevas puesto todo el día. Desliza y mira pasar un día en la esfera.'],
+    's1.h': ['You slept. Your watch already knows how.', 'Has dormido. El reloj ya sabe cómo.'],
+    's1.p': ['The dial shows all 24 hours. The dark band is the night, the blue arc is your sleep, and each small red line is your pulse, one every quarter of an hour.',
+      'La esfera muestra las 24 horas del día. La franja oscura es la noche, el arco azul es tu sueño y cada rayita roja es tu pulso, una cada cuarto de hora.'],
+    's2.h': ['One tap and it’s saved.', 'Un toque y apuntado.'],
+    's2.p': ['Tap the centre and six buttons appear: coffee, cigarette, drink, water, mood and supplements. One more tap and the coffee sits at its exact time. No phone needed.',
+      'Tocas el centro y salen seis botones: café, cigarro, copa, agua, ánimo y suplementos. Un toque más y el café queda en su hora exacta. Sin sacar el móvil.'],
+    's3.h': ['Feeling flat? That counts too.', '¿Bajón? También cuenta.'],
+    's3.p': ['Water, creatine and a cigarette land through the morning. At half past three you mark that you feel tired, then take a 40-minute nap. The watch spots the nap by itself.',
+      'Agua, creatina y un cigarro van cayendo por la mañana. A las tres y media marcas que estás cansado y luego te echas una siesta de 40 minutos. La siesta la detecta el reloj solo.'],
+    's4.h': ['Workouts show up on their own.', 'Los entrenos llegan solos.'],
+    's4.p': ['Another coffee at five, then a run at half past six. The green arc and the higher pulse appear without you doing anything, and your steps add up on the edge.',
+      'Otro café a las cinco y a las seis y media sales a correr. El arco verde y el pulso alto aparecen sin que hagas nada, y tus pasos se van sumando en el borde.'],
+    's5.h': ['Your whole day at a glance.', 'El día entero, de un vistazo.'],
+    's5.p': ['A drink with dinner, the last cigarette and melatonin. Before bed the dial tells your whole day. Next: what it finds when it puts many days together.',
+      'Una copa en la cena, el último cigarro y la melatonina. Antes de dormir, la esfera cuenta tu día completo. Ahora, lo que encuentra al juntar muchos días.'],
+    'alt.1': ['The dial at 07:30: the night band and the blue arc of last night’s sleep, from 22:45 to 07:25.', 'La esfera a las 07:30: la franja de la noche y el arco azul del sueño de anoche, de 22:45 a 07:25.'],
+    'alt.2': ['The watch menu open with six coloured buttons and coffee being tapped.', 'El menú del reloj abierto con seis botones de colores y el café pulsado.'],
+    'alt.3': ['The ring of eight moods open with “tired” being tapped.', 'El anillo de ocho ánimos abierto con «cansado» pulsado.'],
+    'alt.4': ['The dial at 19:40 with the green workout arc and a higher pulse.', 'La esfera a las 19:40 con el arco verde del entreno y el pulso más alto.'],
+    'alt.5': ['The full dial at 22:00 with sleep, nap, workout, pulse and every log of the day.', 'La esfera completa a las 22:00 con sueño, siesta, entreno, pulso y todos los registros del día.'],
+    'ev.sleep': ['Sleep, 22:45 to 07:25', 'Sueño, de 22:45 a 07:25'], 'ev.cafe': ['Coffee', 'Café'], 'ev.agua': ['Water', 'Agua'],
+    'ev.creatine': ['Creatine', 'Creatina'], 'ev.protein': ['Protein', 'Proteína'], 'ev.melatonin': ['Melatonin', 'Melatonina'],
+    'ev.cigarro': ['Cigarette', 'Cigarro'], 'ev.alcohol': ['Drink', 'Copa'], 'ev.bien': ['Mood: good', 'Ánimo: bien'], 'ev.cansado': ['Mood: tired', 'Ánimo: cansado'],
+    'ev.nap': ['Nap', 'Siesta'], 'ev.workout': ['Workout', 'Entreno'], 'ev.day': ['Your whole day', 'Tu día completo'], 'mood.tired': ['tired', 'cansado'],
+    'disc.h': ['Things you didn’t know about yourself.', 'Cosas que no sabías de ti.'],
+    'disc.lead': ['Once your days are logged, the dashboard looks for patterns and tells you each one in a sentence, with how sure it is: <strong>likely</strong> when it shows in your data, <strong>solid</strong> once the following weeks confirm it.',
+      'Con los días apuntados, el dashboard busca patrones y te cuenta cada uno en una frase, con cuánto se fía: <strong>probable</strong> si lo ve en tus datos y <strong>sólido</strong> cuando las semanas siguientes lo confirman.'],
+    'chip.likely': ['Likely', 'Probable'], 'chip.solid': ['Solid', 'Sólido'],
+    'c1.h': ['What may have affected last night', 'Qué pudo influir anoche'],
+    'c1.say': ['You got 58 minutes of deep sleep, 22 less than usual.', 'Dormiste 58 min de sueño profundo, 22 menos que tu normal.'],
+    'c1.f1': ['Coffee at 5 pm, five hours before bed', 'Café a las 17:00, cinco horas antes de dormir'], 'c1.f2': ['A drink at 8:30 pm', 'Una copa a las 20:30'],
+    'c1.usual': ['your usual: 70 to 90 min', 'tu normal: 70 a 90 min'], 'c1.last': ['last night', 'anoche'],
+    'c1.aria': ['Deep sleep bar: 58 minutes against a usual band of 70 to 90 minutes.', 'Barra de sueño profundo: 58 minutos frente a una franja normal de 70 a 90 minutos.'],
+    'c2.h': ['What leads to what', 'Lo que lleva a lo que'],
+    'c2.say': ['When you mark “tired”, 7 times out of 10 you have a coffee within the hour.', 'Cuando marcas «cansado», 7 de cada 10 veces tomas café en la hora siguiente.'],
+    'c2.n1': ['Tired', 'Cansado'], 'c2.n2': ['Coffee', 'Café'], 'c2.n3': ['Less deep sleep', 'Menos sueño profundo'],
+    'c2.aria': ['Chain: tired, then coffee, then less deep sleep.', 'Cadena: cansado, luego café, luego menos sueño profundo.'],
+    'c3.h': ['Change spotted', 'Cambio detectado'],
+    'c3.say': ['Your resting pulse dropped from 62 to 58 since the 12th.', 'Tu pulso en reposo bajó de 62 a 58 desde el día 12.'],
+    'c3.mark': ['day 12', 'día 12'],
+    'c3.aria': ['Resting pulse over 30 days: about 62 until day 12 and about 58 after.', 'Pulso en reposo en 30 días: alrededor de 62 hasta el día 12 y alrededor de 58 después.'],
+    'c4.h': ['By weekday', 'Por día de la semana'],
+    'c4.say': ['On Mondays you sleep 40 minutes less.', 'Los lunes duermes 40 min menos.'],
+    'c4.days': ['MTWTFSS', 'LMXJVSD'],
+    'c4.aria': ['Hours of sleep by weekday: Monday 6 h 40, the rest between 7 h 10 and 7 h 40.', 'Horas de sueño por día: el lunes 6 h 40, el resto entre 7 h 10 y 7 h 40.'],
+    'more.h': ['More things you can ask', 'Más cosas que puedes preguntar'],
+    'q2': ['Why am I tired some afternoons?', '¿Por qué algunos días estoy cansado por la tarde?'],
+    'a2.1': ['Of the 11 afternoons you marked “tired”, <mark>8 came after a night under 6 h 30</mark>. And when you take <mark>a short nap, under 40 minutes</mark>, you <mark>log a better mood</mark> for the rest of the afternoon.',
+      'De las 11 tardes que marcaste «cansado», <mark>8 venían de una noche de menos de 6 h 30</mark>. Y las veces que te echas <mark>una siesta corta, de menos de 40 minutos</mark>, el resto de la tarde <mark>marcas mejor ánimo</mark>.'],
+    'a2.tired': ['afternoon marked “tired”', 'tarde con «cansado»'], 'a2.rest': ['other days', 'resto de días'],
+    'a2.aria': ['One dot per night by hours slept: tired afternoons cluster under 6 h 30.', 'Un punto por noche según las horas dormidas: las tardes cansadas se concentran por debajo de 6 h 30.'],
+    'q3': ['Has anything changed this month?', '¿Ha cambiado algo este mes?'],
+    'a3.1': ['Yes. Since 12 October <mark>your heart rate variability is higher than usual, from 38 to 45 ms</mark> on average. <mark>It matches the weeks you train three times.</mark>',
+      'Sí. Desde el 12 de octubre <mark>tu variabilidad del pulso está más alta que tu normal, de 38 a 45 ms</mark> de media. <mark>Coincide con las semanas en que entrenas tres veces.</mark>'],
+    'a3.2': ['I’d call it likely. If it holds over the next weeks, it becomes solid and I’ll let you know.', 'Lo marco como probable. Si se mantiene las próximas semanas, pasará a sólido y te aviso.'],
+    'a3.usual': ['your usual', 'tu normal'], 'a3.mark': ['12 Oct', '12 oct'],
+    'a3.aria': ['Heart rate variability over 40 days: about 38 ms and, since 12 October, about 45 ms.', 'Variabilidad del pulso en 40 días: alrededor de 38 ms y, desde el 12 de octubre, alrededor de 45 ms.'],
+    'honest': ['Claude keeps what your data says apart from what is known in general, never claims a cause without evidence and doesn’t diagnose. That’s your doctor’s job.',
+      'Claude separa lo que dicen tus datos de lo que se sabe en general, nunca habla de causas sin pruebas y no hace diagnósticos. Para eso está tu médico.'],
+    'dash.h': ['And all the detail, in five tabs.', 'Y todo el detalle, en cinco pestañas.'],
+    'dash.lead': ['When you want more than the dial, the dashboard shows it calmly. Tap each tab.', 'Cuando quieras más que la esfera, el dashboard lo enseña con calma. Toca cada pestaña.'],
+    'dash.tabs': ['Dashboard tabs', 'Pestañas del dashboard'],
+    'dash.note': ['Works on your phone and your computer, in light and dark.', 'Funciona en el móvil y en el ordenador, en claro y en oscuro.'],
+    'tab.hoy': ['Today', 'Hoy'], 'tab.sueno': ['Sleep', 'Sueño'], 'tab.salud': ['Health', 'Salud'], 'tab.actividad': ['Activity', 'Actividad'], 'tab.rutina': ['Routine', 'Rutina'],
+    'p.hoy': ['One sentence to start the day: how you slept, how your body is doing and what suits you today.', 'Una frase para empezar el día: cómo has dormido, cómo está tu cuerpo y qué te conviene hoy.'],
+    'p.sueno': ['The night in stages. Deep sleep comes early in the night and dream sleep towards the end.', 'La noche por fases. El sueño profundo llega al principio de la noche y el de los sueños, hacia el final.'],
+    'p.salud': ['Last night against your usual. The band is normal for you; the dot is last night. All within your usual.', 'Anoche frente a tu habitual. La franja es lo normal para ti; el punto, anoche. Todo dentro de lo habitual.'],
+    'p.actividad': ['Steps hour by hour, against your daily goal.', 'Tus pasos hora a hora, frente a tu objetivo del día.'],
+    'p.rutina': ['Your typical day: when you usually log each thing. Each peak is a habit; the higher, the more often.', 'Tu día tipo: a qué horas sueles apuntar cada cosa. Cada pico es una costumbre; cuanto más alto, más se repite.'],
+    'hoy.title': ['Good day to train.', 'Buen día para entrenar.'], 'hoy.sub': ['You slept well and your resting pulse is normal for you.', 'Dormiste bien y tu pulso en reposo está en tu normal.'],
+    'hoy.sleep': ['sleep', 'sueño'], 'hoy.rhr': ['resting pulse', 'pulso en reposo'], 'hoy.cof': ['coffees', 'cafés'], 'hoy.rec': ['Recovery: good', 'Recuperación: buena'],
+    'sl.st': [['Awake', 'Dreams (REM)', 'Light', 'Deep'], ['Despierto', 'Sueños (REM)', 'Ligero', 'Profundo']],
+    'vit': [[['Resting pulse', '57', 'usual 55 to 60 per minute'], ['Heart rate variability', '44 ms', 'usual 38 to 47 ms'], ['Breathing', '14', 'usual 13 to 15 per minute']],
+      [['Pulso en reposo', '57', 'habitual 55 a 60 por minuto'], ['Variabilidad del pulso', '44 ms', 'habitual 38 a 47 ms'], ['Respiración', '14', 'habitual 13 a 15 por minuto']]],
+    'act.steps': ['11,240 steps', '11.240 pasos'], 'act.goal': ['goal', 'objetivo'],
+    'rut.rows': [['Coffee', 'Water', 'Cigarette', 'Drink'], ['Café', 'Agua', 'Cigarro', 'Copa']],
+    'own.h': ['Yours and nobody else’s.', 'Tuyo y de nadie más.'],
+    'own.lead': ['Health Tracker is for one person: you. No company in the middle keeping your data.', 'Health Tracker es para una persona: tú. No hay empresa en medio guardando tus datos.'],
+    'own.1h': ['Only you get in', 'Solo entras tú'], 'own.1p': ['Only your Google account can open it. No other users, no ads, nobody watching.', 'Solo tu cuenta de Google puede abrirlo. No hay más usuarios, ni anuncios, ni nadie mirando.'],
+    'own.2h': ['In your own cloud', 'En tu propia nube'], 'own.2p': ['Your data lives in your own space in the cloud, for free. You decide what is kept and who reads it.', 'Tus datos viven en tu propio espacio en la nube, gratis. Tú decides qué se guarda y quién lo lee.'],
+    'own.3h': ['A copy every week', 'Una copia cada semana'], 'own.3p': ['Every week a full copy is saved on your computer and checked so it can be restored.', 'Cada semana se guarda una copia completa en tu ordenador, comprobada para que se pueda restaurar.'],
+    'end.h': ['Tomorrow, another day on the dial.', 'Mañana, otro día en la esfera.'],
+    'end.p': ['The code is open: anyone with a Pixel Watch can set up their own.', 'El código está abierto: cualquiera con un Pixel Watch puede montarse el suyo.'],
+    'end.cta': ['Build your own on GitHub', 'Móntalo tú mismo en GitHub'],
+    'me.alt': ['Photo of Pablo de Luis', 'Foto de Pablo de Luis'], 'me.h': ['Made by Pablo de Luis', 'Hecho por Pablo de Luis'],
+    'me.p': ['I wanted to understand my habits, sleep better and get more out of my workouts. So I built it myself.', 'Quería entender mis hábitos, dormir mejor y sacar más partido a mis entrenos. Así que me lo hice yo mismo.'],
+    'fine.mit': ['Personal portfolio project. Open source under the <a href="https://github.com/deluispablo/health-tracker/blob/main/LICENSE">MIT licence</a>.', 'Proyecto personal de portfolio. Código abierto con <a href="https://github.com/deluispablo/health-tracker/blob/main/LICENSE">licencia MIT</a>.'],
+    'fine.sample': ['All data on this page is sample data.', 'Todos los datos de esta página son de ejemplo.']
+  };
+  let lang = 'en';
+  try { lang = localStorage.getItem('ht.landing.lang') === 'es' ? 'es' : 'en'; } catch (e) { lang = 'en'; }
+  const tx = k => STR[k][lang === 'es' ? 1 : 0];
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Geometría real de la esfera (DialRenderer.kt): caja de 360 escalada ×1,30 en 450.
+  const SCALE = 1.3, R_BEZEL = 150, R_LOG = 118, R_TRACK = (R_LOG + R_BEZEL) / 2, TRACK_W = (R_BEZEL - R_LOG) * .45, R_PULSE = 50, MARK = 1.1;
+  const C = { ink: '#e7e9f0', muted: '#a2a8b8', line: '#2f343f', lineStrong: '#7d8496', band: '#1a2240', deep: '#5470d6', light: '#d0dbff',
+    steps: '#5ccf97', hr: '#ee6a5f', caf: '#f2c46b', bean: '#2a1a00', alc: '#b48ae8', water: '#38b6ff', supp: '#f59bb8', suppInk: '#3d0b1f', hand: '#b6c2ff' };
+  const MOODS = { estresado: '#f08a5d', genial: '#f2d06b', bien: '#c9dc6a', tranquilo: '#6cc9a0', cansado: '#7fa7e0', triste: '#6f8fe8', ansioso: '#e86f7a', enfadado: '#ee5f5f' };
+
+  // Día de ejemplo (minutos desde medianoche), basado en wear/watchface/preview/sample-day.json.
+  const SLEEP = { start: -75, end: 445 }, NAP = { start: 945, end: 985 }, WORKOUT = { start: 1110, end: 1170 };
+  const SUNRISE = 509, SUNSET = 1137;
+  const EVENTS = [
+    { t: 510, k: 'cafe' }, { t: 560, k: 'agua' }, { t: 600, k: 'suplemento', id: 'creatine' }, { t: 660, k: 'animo', m: 'bien' },
+    { t: 720, k: 'agua' }, { t: 780, k: 'cigarro' }, { t: 840, k: 'agua' }, { t: 930, k: 'animo', m: 'cansado' },
+    { t: 1020, k: 'cafe' }, { t: 1095, k: 'agua' }, { t: 1185, k: 'suplemento', id: 'protein' }, { t: 1230, k: 'alcohol' },
+    { t: 1270, k: 'cigarro' }, { t: 1300, k: 'suplemento', id: 'melatonin' }
+  ];
+  const noise = i => Math.sin(i * 12.9898) * 43758.5453 % 1;
+  const bpmAt = m => {
+    const n = noise(m) * 3;
+    if (m < 445) return 52 + n;
+    if (m >= NAP.start && m < NAP.end) return 57 + n;
+    if (m >= WORKOUT.start && m < WORKOUT.end) return 128 + Math.sin((m - WORKOUT.start) / 9) * 9 + n;
+    if (m >= 780 && m < 810) return 84 + n;
+    if (m < 520) return 62 + n;
+    if (m >= WORKOUT.end && m < WORKOUT.end + 30) return 92 - (m - WORKOUT.end) + n;
+    return 70 + Math.sin(m / 70) * 5 + n;
+  };
+  const HR = Array.from({ length: 96 }, (_, i) => Math.round(bpmAt(i * 15 + 7)));
+  const stepsAt = m => {
+    if (m < 445) return 0;
+    let s = Math.min(m, 1110) - 445;
+    s = s * 7.6;
+    if (m > 1110) s += Math.min(m - 1110, 60) * 62;
+    if (m > 1170) s += (m - 1170) * 5;
+    return Math.round(s);
+  };
+
+  const f = v => Math.round(v * 100) / 100;
+  const pt = (r, deg) => { const a = deg * Math.PI / 180; return [r * Math.sin(a), -r * Math.cos(a)]; };
+  const angle = m => m / 4;
+  const arcD = (r, m0, m1) => {
+    let a0 = angle(m0), a1 = angle(m1);
+    if (a1 - a0 >= 359.9) a1 = a0 + 359.9;
+    const [x0, y0] = pt(r, a0), [x1, y1] = pt(r, a1);
+    return `M${f(x0)} ${f(y0)}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${f(x1)} ${f(y1)}`;
+  };
+  const el = (tag, attrs = {}, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+
+  // Glifos de las marcas (docs/assets/brand/trackers/marks), con halo negro como en el reloj.
+  const markSvg = (k, m) => {
+    switch (k) {
+      case 'cafe': return `<ellipse rx="4.2" ry="5.6" fill="none" stroke="#000" stroke-width="2.2"/><ellipse rx="4.2" ry="5.6" fill="${C.caf}"/><path d="M0 -4.6Q-2 -2.3 0 0Q2 2.3 0 4.6" fill="none" stroke="${C.bean}" stroke-width="1.2"/>`;
+      case 'cigarro': return `<path d="M0 -7V7" stroke="#000" stroke-width="6.6" stroke-linecap="round"/><path d="M0 -7V7" stroke="#fff" stroke-width="3" stroke-linecap="round"/>`;
+      case 'alcohol': return `<path d="M-4.6 -6.4H4.6V-3.2A4.6 4.6 0 0 1-4.6 -3.2Z" fill="none" stroke="#000" stroke-width="2.2" stroke-linejoin="round"/><path d="M0 1.4V5.6M-2.8 5.6H2.8" stroke="#000" stroke-width="3.8" stroke-linecap="round"/><path d="M-4.6 -6.4H4.6V-3.2A4.6 4.6 0 0 1-4.6 -3.2Z" fill="${C.alc}"/><path d="M0 1.4V5.6M-2.8 5.6H2.8" fill="none" stroke="${C.alc}" stroke-width="1.6" stroke-linecap="round"/>`;
+      case 'agua': return `<path d="M0 -6.2C-1.6 -3.6 -4.2 -1.2 -4.2 1.6A4.2 4.2 0 0 0 4.2 1.6C4.2 -1.2 1.6 -3.6 0 -6.2Z" fill="${C.water}" stroke="#000" stroke-width="2.2" paint-order="stroke" stroke-linejoin="round"/>`;
+      case 'suplemento': return `<rect x="-2.7" y="-5.8" width="5.4" height="11.6" rx="2.7" fill="${C.supp}" stroke="#000" stroke-width="2.2" paint-order="stroke"/><path d="M-2.7 0H2.7" stroke="${C.suppInk}" stroke-width="1"/>`;
+      case 'animo': return `<circle r="4.6" fill="${MOODS[m] || C.ink}" stroke="#000" stroke-width="2.2" paint-order="stroke"/>`;
+    }
+  };
+
+  const ICONS = {
+    cafe: '<path d="M5 9h11v4.5A5.5 5.5 0 0 1 10.5 19h0A5.5 5.5 0 0 1 5 13.5zM16 10.5h1.2a2.6 2.6 0 0 1 0 5.2H16"/>',
+    cigarro: '<path d="M3 14h14v3H3zM12.5 14v3M20 17v-3M20 11c0-1.3 1.3-1.7 1.3-3S20 6.3 20 5"/>',
+    alcohol: '<path d="M8 4h8v3.5a4 4 0 0 1-8 0zM12 11.5v8M8.5 19.5h7"/>',
+    agua: '<path d="M12 3.6C9 7.6 6.5 10.6 6.5 14a5.5 5.5 0 0 0 11 0c0-3.4-2.5-6.4-5.5-10.4z"/>',
+    animo: '<circle cx="9" cy="10" r="1.5" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1.5" fill="currentColor" stroke="none"/><path d="M8.2 14q3.8 3.2 7.6 0" stroke-width="2"/>',
+    suplementos: '<path d="M7.8 16.2a3.4 3.4 0 0 1 0-4.8l3.6-3.6a3.4 3.4 0 0 1 4.8 4.8l-3.6 3.6a3.4 3.4 0 0 1-4.8 0zM9.6 9.6l4.8 4.8"/>',
+    undo: '<path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4.5h4.5"/>',
+    back: '<path d="M19 12H5M11 6l-6 6 6 6"/>'
+  };
+  const FACES = {
+    estresado: '<path d="M7.5,10.4a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0z" fill="currentColor"/><path d="M13.5,10.4a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0z" fill="currentColor"/><path d="M7.6 14.6h8.8v2.2H7.6zM10.5 14.6v2.2M13.5 14.6v2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.6 5.2q-1.4 2.2 0 3.1 1.4-.9 0-3.1z" fill="currentColor" stroke="currentColor" stroke-width="0.8"/>',
+    genial: '<path d="M7.1,9.6a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0z" fill="currentColor"/><path d="M13.9,9.6a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0z" fill="currentColor"/><path d="M7.4 7l2.4-.6M16.6 7l-2.4-.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.2 12.8h9.6a4.8 4.8 0 0 1-9.6 0z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+    bien: '<path d="M7.5,10a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0z" fill="currentColor"/><path d="M13.5,10a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0z" fill="currentColor"/><path d="M8.2 14q3.8 3.2 7.6 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    tranquilo: '<path d="M7.4 10.4q1.6 1.4 3.2 0M13.4 10.4q1.6 1.4 3.2 0M9.6 15q2.4 1.3 4.8 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    cansado: '<path d="M7.4 10.8h3.2M13.4 10.8h3.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10.4,15.6a1.6,1.9 0 1,1 3.2,0a1.6,1.9 0 1,1 -3.2,0z" fill="currentColor"/><path d="M17.2 3.6h2.6l-2.6 2.8h2.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>',
+    triste: '<path d="M7.5,10.4a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0z" fill="currentColor"/><path d="M13.5,10.4a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0z" fill="currentColor"/><path d="M7.4 7.8l2.8-1.3M16.6 7.8l-2.8-1.3M8.6 16.6q3.4-3 6.8 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M15.4 12.4q-1.1 1.8 0 2.6 1.1-.8 0-2.6z" fill="currentColor"/>',
+    ansioso: '<path d="M7.1,10.4a1.9,1.9 0 1,1 3.8,0a1.9,1.9 0 1,1 -3.8,0z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M13.1,10.4a1.9,1.9 0 1,1 3.8,0a1.9,1.9 0 1,1 -3.8,0z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7.2 6.6q1.8-1.2 3.4-.4M16.8 6.6q-1.8-1.2-3.4-.4M8.6 15.6q1.1-1.1 2.3 0t2.3 0t2.3 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    enfadado: '<path d="M7.5,11a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0z" fill="currentColor"/><path d="M13.5,11a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0z" fill="currentColor"/><path d="M6.8 7.2l4 2.2M17.2 7.2l-4 2.2M9 16q3-2.2 6 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+  };
+  const icon = (paths, size, color, strokeW = 2.5) =>
+    `<g transform="translate(${-size / 2} ${-size / 2}) scale(${size / 24})" fill="none" stroke="${color}" color="${color}" stroke-width="${strokeW}" stroke-linecap="round" stroke-linejoin="round">${paths}</g>`;
+
+  // Construye la esfera una vez; update(t) solo mueve lo que cambia.
+  function buildFace(svg) {
+    svg.innerHTML = '';
+    el('circle', { r: 225, fill: '#000' }, svg);
+    const comp = el('g', {}, svg);
+    const g = el('g', { transform: `scale(${SCALE})` }, svg);
+    el('path', { d: arcD(R_TRACK, SUNSET - 1440, SUNRISE), stroke: C.band, 'stroke-width': R_BEZEL - R_LOG, fill: 'none' }, g);
+    el('circle', { r: R_BEZEL, fill: 'none', stroke: C.lineStrong, 'stroke-width': 3 }, g);
+    for (let h = 0; h < 24; h++) {
+      const major = h % 6 === 0, len = major ? 12 : h % 3 === 0 ? 7 : 4;
+      const [x0, y0] = pt(R_BEZEL, h * 15), [x1, y1] = pt(R_BEZEL - len, h * 15);
+      el('line', { x1: f(x0), y1: f(y0), x2: f(x1), y2: f(y1), stroke: major ? C.ink : C.lineStrong, 'stroke-width': major ? 5 : 2.5 }, g);
+    }
+    const sleep = el('path', { fill: 'none', stroke: C.deep, 'stroke-width': TRACK_W, 'stroke-linecap': 'round' }, g);
+    const napA = el('path', { fill: 'none', stroke: C.deep, 'stroke-width': TRACK_W, 'stroke-linecap': 'round' }, g);
+    const napB = el('path', { fill: 'none', stroke: C.light, 'stroke-width': TRACK_W * .7, 'stroke-linecap': 'round' }, g);
+    const work = el('path', { fill: 'none', stroke: C.steps, 'stroke-width': TRACK_W, 'stroke-linecap': 'round' }, g);
+    el('circle', { r: R_LOG, fill: 'none', stroke: C.line, 'stroke-width': 2.25 }, g);
+    const brackets = el('g', { fill: 'none', stroke: C.lineStrong, 'stroke-width': 1.85, 'stroke-linecap': 'round' }, g);
+    const ticks = HR.map((bpm, i) => {
+      const a = angle(15 * i) + 1.875, r1 = Math.min(Math.max(52 + (bpm - 45) * .33, R_PULSE), R_LOG - 16);
+      const [x0, y0] = pt(R_PULSE, a), [x1, y1] = pt(r1, a);
+      return el('line', { class: 'tick', x1: f(x0), y1: f(y0), x2: f(x1), y2: f(y1), stroke: C.hr, 'stroke-width': 1.86, 'stroke-linecap': 'round' }, g);
+    });
+    const marks = EVENTS.map(e => {
+      const outer = el('g', {}, g);
+      const inner = el('g', { class: 'mk' }, outer);
+      inner.innerHTML = markSvg(e.k, e.m);
+      el('circle', { class: 'hl', r: 10, fill: 'none', stroke: '#fff', 'stroke-width': 1.6 }, outer);
+      return outer;
+    });
+    // Diagonales como en wear/watchface/generate.py (edge_slot, patrón Concentric): icono, valor y progreso
+    // sobre la misma curva de r 208; las de abajo leen en sentido antihorario; las de solo texto van centradas.
+    const RG = 208, FS = 19, ICO = 25, HALF = 35, PXDEG = Math.PI * RG / 180;
+    const DPC = FS * .6 / PXDEG, ICO_DEG = (ICO + FS * .3) / PXDEG;
+    const degArc = (a, b) => arcD(RG, Math.min(a, b) * 4, Math.max(a, b) * 4);
+    const uid = Math.random().toString(36).slice(2, 7);
+    const slot = (mid, color, iconSvg, id, bar = true) => {
+      const bottom = mid > 90 && mid < 270, s = mid - HALF, e = mid + HALF;
+      const [x0, y0] = pt(RG, bottom ? e : s), [x1, y1] = pt(RG, bottom ? s : e);
+      el('path', { id, d: `M${f(x0)} ${f(y0)}A${RG} ${RG} 0 0 ${bottom ? 0 : 1} ${f(x1)} ${f(y1)}`, fill: 'none' }, comp);
+      const txt = el('text', { fill: C.ink, 'font-size': FS, 'font-family': 'Outfit, system-ui, sans-serif', 'font-weight': 500, 'dominant-baseline': 'central' }, comp);
+      const tp = el('textPath', { href: '#' + id }, txt);
+      const ic = el('g', {}, comp);
+      ic.innerHTML = `<g transform="translate(${-ICO / 2} ${-ICO / 2}) scale(${ICO / 24})" fill="${color}" stroke="${color}" stroke-width="0">${iconSvg}</g>`;
+      const track = bar && el('path', { stroke: 'rgb(255 255 255 / .2)', 'stroke-width': 4, fill: 'none', 'stroke-linecap': 'round' }, comp);
+      const prog = bar && el('path', { stroke: color, 'stroke-width': 5, fill: 'none', 'stroke-linecap': 'round' }, comp);
+      return {
+        set(frac, label) {
+          tp.textContent = label.toUpperCase();
+          const lead = ICO_DEG + label.length * DPC;
+          // Inicio del icono, medido desde el principio de la curva (s arriba, e abajo).
+          const from = bar ? 0 : (2 * HALF - lead) / 2;
+          tp.setAttribute('startOffset', f((from + ICO_DEG) * PXDEG));
+          const ia = bottom ? e - from - ICO / 2 / PXDEG : s + from + ICO / 2 / PXDEG, [ix, iy] = pt(RG, ia);
+          ic.setAttribute('transform', `translate(${f(ix)} ${f(iy)}) rotate(${f(bottom ? ia + 180 : ia)})`);
+          if (!bar) return;
+          const edge = bottom ? e - (lead + 2) : s + lead + 2, end = bottom ? s : e, p = Math.min(Math.max(frac, 0), 1);
+          track.setAttribute('d', degArc(edge, end));
+          prog.setAttribute('d', p > 0 ? degArc(edge, edge + p * (end - edge)) : '');
+        }
+      };
+    };
+    const ICON = {
+      batt: '<path d="M9.5 2h5v2H17a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h2.5z" fill="none" stroke-width="2"/><rect x="8.5" y="9" width="7" height="10.5" rx="1"/>',
+      steps: '<path d="M8.2 2.5c1.7 0 2.7 2.1 2.7 4.6 0 2.1-1.1 3.7-2.7 3.7S5.5 9.2 5.5 7.1c0-2.5 1-4.6 2.7-4.6zM5.8 12.4h4.8v1.7a2.4 2.4 0 0 1-4.8 0zM15.8 7.5c1.7 0 2.7 2.1 2.7 4.6 0 2.1-1.1 3.7-2.7 3.7s-2.7-1.6-2.7-3.7c0-2.5 1-4.6 2.7-4.6zM13.4 17.4h4.8v1.7a2.4 2.4 0 0 1-4.8 0z"/>',
+      kcal: '<path d="M12 12.9l-2.13 2.09C9.31 15.55 9 16.28 9 17.06 9 18.68 10.35 20 12 20s3-1.32 3-2.94c0-.78-.31-1.52-.87-2.07L12 12.9zM16 6l-.44.55C14.38 8.02 12 7.19 12 5.3V2S4 6 4 13c0 2.92 1.56 5.47 3.89 6.86-.56-.79-.89-1.76-.89-2.8 0-1.32.52-2.56 1.47-3.5L12 10.1l3.53 3.47c.95.93 1.47 2.17 1.47 3.5 0 1.02-.31 1.96-.85 2.75 1.89-1.15 3.29-3.06 3.71-5.3.66-3.46-1.08-6.79-3.86-8.52z"/>',
+      clock: '<circle cx="12" cy="12" r="8.5" fill="none" stroke-width="2.2"/><path d="M12 7.5V12l3 2" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
+    };
+    const batt = slot(45, '#5ccf97', ICON.batt, 'b' + uid), steps = slot(135, '#8ea9ff', ICON.steps, 's' + uid),
+      kcal = slot(225, '#f0a650', ICON.kcal, 'k' + uid), clock12 = slot(315, '#6fc3e6', ICON.clock, 'c' + uid, false);
+    // Manecillas como en generate.py: la de 24 h llega al bisel; la de minutos es un 10 % más corta.
+    const HOUR_LEN = R_BEZEL * SCALE - 4, hands = el('g', {}, svg);
+    const hand = (back, len, w, halo, color) => {
+      const h = el('g', {}, hands);
+      el('line', { x1: 0, y1: back, x2: 0, y2: -len, stroke: '#000', 'stroke-width': halo, 'stroke-linecap': 'round' }, h);
+      el('line', { x1: 0, y1: back, x2: 0, y2: -len, stroke: color, 'stroke-width': w, 'stroke-linecap': 'round' }, h);
+      return h;
+    };
+    const minute = hand(13, HOUR_LEN * .9, 6, 11.4, C.muted), hour = hand(15.6, HOUR_LEN, 10, 16, C.hand);
+    el('circle', { r: 10.14, fill: C.hand, stroke: '#000', 'stroke-width': 2.6 }, hands);
+
+    // Menú de seis botones alrededor de «deshacer» y anillo de ánimos.
+    const menu = el('g', { class: 'ov' }, svg);
+    el('circle', { r: 225, fill: 'rgb(0 0 0 / .9)' }, menu);
+    const BTN = [
+      ['cafe', '#f2c46b', '#2a1a00', '1'], ['cigarro', '#dfe3ea', '#16191f', '1'], ['alcohol', '#b48ae8', '#1c0b33', ''],
+      ['agua', '#38b6ff', '#03263d', ''], ['animo', '#b6c2ff', '#141c45', ''], ['suplementos', '#f59bb8', '#3d0b1f', '']
+    ];
+    const btnEls = {};
+    BTN.forEach(([k, fill, ink], i) => {
+      const [x, y] = pt(128, i * 60);
+      const b = el('g', { transform: `translate(${f(x)} ${f(y)})` }, menu);
+      el('circle', { r: 50, fill }, b);
+      b.insertAdjacentHTML('beforeend', icon(ICONS[k], 40, ink));
+      btnEls[k] = b;
+    });
+    const undo = el('g', {}, menu);
+    el('circle', { r: 36, fill: '#1e2128' }, undo);
+    undo.insertAdjacentHTML('beforeend', icon(ICONS.undo, 30, '#c9ced6'));
+
+    const moodRing = el('g', { class: 'ov' }, svg);
+    el('circle', { r: 225, fill: 'rgb(0 0 0 / .92)' }, moodRing);
+    const moodEls = {};
+    Object.keys(MOODS).forEach((k, i) => {
+      const [x, y] = pt(140, i * 45);
+      const b = el('g', { transform: `translate(${f(x)} ${f(y)})` }, moodRing);
+      el('circle', { r: 40, fill: MOODS[k] }, b);
+      b.insertAdjacentHTML('beforeend', `<g transform="translate(-22 -22) scale(${44 / 24})" color="#14161c">${FACES[k]}</g>`);
+      moodEls[k] = b;
+    });
+    const back = el('g', {}, moodRing);
+    el('circle', { r: 36, fill: '#1e2128' }, back);
+    back.insertAdjacentHTML('beforeend', icon(ICONS.back, 30, '#c9ced6'));
+    const moodName = el('text', { y: 7, fill: '#e7e9f0', 'font-size': 22, 'font-family': 'Outfit, sans-serif', 'font-weight': 600, 'text-anchor': 'middle', opacity: 0 }, moodRing);
+    moodName.textContent = 'cansado';
+    const ripple = el('circle', { r: 0, fill: 'none', stroke: '#fff', 'stroke-width': 4, opacity: 0 }, svg);
+
+    const lerp = (a, b, p) => a + (b - a) * p;
+    const win = (t, a, b) => Math.min(Math.max((t - a) / (b - a), 0), 1);
+
+    function update(t, hi = -1) {
+      marks.forEach((m, i) => m.lastChild.classList.toggle('on', i === hi));
+      sleep.setAttribute('d', t > SLEEP.start ? arcD(R_TRACK, SLEEP.start, Math.min(SLEEP.end, t)) : '');
+      const napD = t > NAP.start ? arcD(R_TRACK, NAP.start, Math.min(NAP.end, t)) : '';
+      napA.setAttribute('d', napD); napB.setAttribute('d', napD);
+      work.setAttribute('d', t > WORKOUT.start ? arcD(R_TRACK, WORKOUT.start, Math.max(Math.min(WORKOUT.end, t), WORKOUT.start + 16)) : '');
+      ticks.forEach((tk, i) => tk.classList.toggle('on', 15 * i + 15 <= t));
+
+      // Marcas visibles, agrupadas si están a 20 min o menos y abiertas en abanico (DialGeometry.fanOut).
+      const vis = EVENTS.map((e, i) => ({ e, i })).filter(o => o.e.t <= t);
+      const clusters = [];
+      vis.forEach(o => { const last = clusters[clusters.length - 1]; if (last && o.e.t - last[last.length - 1].e.t <= 20) last.push(o); else clusters.push([o]); });
+      const step = 6.5 * MARK * 102 / R_LOG;
+      brackets.innerHTML = '';
+      EVENTS.forEach((_, i) => marks[i].classList.remove('on'));
+      clusters.forEach(cl => {
+        const mean = cl.reduce((s, o) => s + angle(o.e.t), 0) / cl.length;
+        cl.forEach((o, j) => {
+          const a = mean + (j - (cl.length - 1) / 2) * step;
+          marks[o.i].setAttribute('transform', `rotate(${f(a)}) translate(0 ${-R_LOG}) scale(${MARK})`);
+          marks[o.i].classList.add('on');
+        });
+        if (cl.length > 1) {
+          const rb = R_LOG - 13 * MARK;
+          el('path', { d: arcD(rb, cl[0].e.t, cl[cl.length - 1].e.t) }, brackets);
+          cl.forEach(o => { const [x0, y0] = pt(rb - 4, angle(o.e.t)), [x1, y1] = pt(rb, angle(o.e.t)); el('line', { x1: f(x0), y1: f(y0), x2: f(x1), y2: f(y1) }, brackets); });
+        }
+      });
+
+      hour.setAttribute('transform', `rotate(${f(angle(t))})`);
+      minute.setAttribute('transform', `rotate(${f((t % 60) * 6)})`);
+
+      const s = stepsAt(t), b = Math.round(lerp(96, 64, win(t, 400, 1320))), k = Math.round(lerp(380, 2240, win(t, 400, 1320)));
+      batt.set(b / 100, b + '%');
+      steps.set(s / 10000, s.toLocaleString(lang === 'es' ? 'es-ES' : 'en-GB'));
+      kcal.set(k / 2600, k.toLocaleString(lang === 'es' ? 'es-ES' : 'en-GB'));
+      const hh = Math.floor(((t % 1440) + 1440) % 1440 / 60), mm = Math.floor(((t % 60) + 60) % 60);
+      clock12.set(0, `${hh % 12 || 12}:${String(mm).padStart(2, '0')} ${hh < 12 ? 'AM' : 'PM'}`);
+
+      // Toques: café a las 08:30 y ánimo «cansado» a las 15:30.
+      const menuCafe = t >= 497 && t < 510, menuMood = t >= 906 && t < 914, ring = t >= 914 && t < 930;
+      menu.classList.toggle('on', menuCafe || menuMood);
+      moodRing.classList.toggle('on', ring);
+      let rip = null;
+      if (menuCafe && t >= 503) rip = [btnEls.cafe, win(t, 503, 509.5)];
+      if (menuMood && t >= 910) rip = [btnEls.animo, win(t, 910, 913.5)];
+      if (ring && t >= 920) rip = [moodEls.cansado, win(t, 920, 925)];
+      if (rip) {
+        const tr = rip[0].getAttribute('transform');
+        ripple.setAttribute('transform', tr);
+        ripple.setAttribute('r', f(lerp(20, 62, rip[1])));
+        ripple.setAttribute('opacity', f(.85 * (1 - rip[1])));
+        rip[0].setAttribute('opacity', rip[1] > .2 && rip[1] < .8 ? .8 : 1);
+      } else ripple.setAttribute('opacity', 0);
+      back.setAttribute('opacity', t >= 925 ? 0 : 1);
+      moodName.textContent = tx('mood.tired');
+      moodName.setAttribute('opacity', t >= 925 ? 1 : 0);
+    }
+    return update;
+  }
+
+  const hhmm = t => { const m = Math.round(((t % 1440) + 1440) % 1440); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+  const $ = id => document.getElementById(id);
+
+  // Lo que nombra la etiqueta junto al reloj: el último momento que empezó y sigue «reciente».
+  const glyph = (k, m) => `<svg viewBox="-8 -8 16 16" aria-hidden="true">${markSvg(k, m)}</svg>`;
+  const arcGlyph = color => `<svg viewBox="-8 -8 16 16" aria-hidden="true"><path d="M-5 3A6 6 0 0 1 5 3" fill="none" stroke="${color}" stroke-width="3.2" stroke-linecap="round"/></svg>`;
+  const MOMENTS = [
+    { t: 400, until: 470, key: 'ev.sleep', g: arcGlyph(C.deep), hi: -1 },
+    ...EVENTS.map((e, i) => ({ t: e.t, until: e.t + 45, time: e.t, hi: i, g: glyph(e.k, e.m),
+      key: 'ev.' + (e.k === 'animo' ? e.m : e.k === 'suplemento' ? e.id : e.k) })),
+    { t: NAP.start, until: NAP.end + 15, time: NAP.start, key: 'ev.nap', g: arcGlyph(C.light), hi: -1 },
+    { t: WORKOUT.start, until: WORKOUT.end + 10, time: WORKOUT.start, key: 'ev.workout', g: arcGlyph(C.steps), hi: -1 },
+    { t: 1305, until: Infinity, key: 'ev.day', g: arcGlyph(C.hand), hi: -1 }
+  ];
+  const momentAt = t => MOMENTS.reduce((best, m) => m.t <= t && t < m.until && (!best || m.t >= best.t) ? m : best, null);
+
+  // El día: cada escena reparte su recorrido de scroll entre horas con puntos clave «hora:progreso».
+  const scenes = [...document.querySelectorAll('.scene')];
+  const keys = scenes.map(sc => sc.dataset.k.split(',').map(s => s.split(':').map(Number)));
+  const timeIn = (k, p) => {
+    for (let i = 1; i < k.length; i++) if (p <= k[i][1]) {
+      const [t0, p0] = k[i - 1], [t1, p1] = k[i];
+      return p1 === p0 ? t1 : t0 + (t1 - t0) * (p - p0) / (p1 - p0);
+    }
+    return k[k.length - 1][0];
+  };
+  let frame = () => {};
+  const vignettes = [];
+  if (reduce) {
+    scenes.forEach(sc => {
+      if (!sc.dataset.still) return;
+      const fig = document.createElement('figure');
+      fig.className = 'vignette';
+      fig.innerHTML = '<div class="watch" role="img"><svg viewBox="-225 -225 450 450"></svg></div>';
+      sc.appendChild(fig);
+      vignettes.push({ box: fig.firstChild, alt: sc.dataset.alt, still: +sc.dataset.still, update: buildFace(fig.querySelector('svg')) });
+    });
+  } else {
+    const update = buildFace($('face')), clock = $('clock'), callout = $('callout');
+    let shown = -1, label = null;
+    frame = force => {
+      const line = innerHeight * (innerWidth <= 860 ? .62 : .5);
+      let t = keys[0][0][0];
+      scenes.forEach((sc, i) => {
+        const r = sc.getBoundingClientRect();
+        if (line >= r.top) t = timeIn(keys[i], Math.min(Math.max((line - r.top) / r.height, 0), 1));
+      });
+      if (!force && Math.abs(t - shown) < .05) return;
+      const m = momentAt(t);
+      update(t, m ? m.hi : -1);
+      clock.textContent = hhmm(t);
+      shown = t;
+      const next = m ? m.key + lang : null;
+      if (force || next !== label) {
+        label = next;
+        callout.toggleAttribute('data-empty', !m);
+        if (m) callout.innerHTML = `<span class="g">${m.g}</span>${tx(m.key)}${m.time != null ? ', ' + hhmm(m.time) : ''}`;
+      }
+    };
+    let queued = false;
+    const onScroll = () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; frame(); }); } };
+    addEventListener('scroll', onScroll, { passive: true });
+    addEventListener('resize', onScroll);
+  }
+  const endFace = buildFace($('face-end'));
+
+  // Gráficos pequeños con datos de ejemplo.
+  const path = (n, x0, x1, yOf) => 'M' + Array.from({ length: n }, (_, i) => f(x0 + (x1 - x0) * i / (n - 1)) + ' ' + f(yOf(i))).join('L');
+  const mono = 'font-family="var(--font-mono)"';
+  function charts() {
+    const set = (id, aria, html) => { const s = $(id); s.setAttribute('aria-label', tx(aria)); s.innerHTML = html; };
+    set('ch-coffee', 'ch.aria', `
+      <g font-size="13" fill="var(--muted)"><text x="0" y="36">${tx('ch.nocof')}</text><text x="0" y="96">${tx('ch.cof')}</text></g>
+      <rect x="190" y="20" width="230" height="24" rx="6" fill="var(--m-deep)"/>
+      <rect x="190" y="80" width="176" height="24" rx="6" fill="var(--m-deep)" opacity=".55"/>
+      <path d="M404 32H436M404 26V38M436 26V38M348 92H384M348 86V98M384 86V98" stroke="var(--ink)" stroke-width="1.5" fill="none"/>
+      <g font-size="13" ${mono} fill="var(--ink)"><text x="444" y="37">1 h 24</text><text x="392" y="97">1 h 04</text></g>
+      <text x="190" y="126" font-size="12" fill="var(--muted)">${tx('ch.cap')}</text>`);
+    set('ch-deep', 'c1.aria', `
+      <text x="0" y="28" font-size="14" fill="var(--muted)">${tx('c1.last')}</text>
+      <text x="320" y="28" font-size="14" fill="var(--muted)" text-anchor="middle">${tx('c1.usual')}</text>
+      <rect x="0" y="44" width="440" height="32" rx="16" fill="var(--surface-2)"/>
+      <rect x="280" y="44" width="80" height="32" fill="var(--band)" stroke="var(--line-strong)" stroke-dasharray="3 3"/>
+      <rect x="0" y="44" width="232" height="32" rx="16" fill="var(--m-deep)"/>
+      <text x="232" y="104" font-size="16" ${mono} fill="var(--ink)" text-anchor="middle">58 min</text>
+      <g font-size="12" ${mono} fill="var(--muted)"><text x="0" y="138">0</text><text x="440" y="138" text-anchor="end">110 min</text></g>`);
+    set('ch-rhr', 'c3.aria', `
+      <g ${mono} font-size="11" fill="var(--muted)">
+        <line x1="30" x2="440" y1="30" y2="30" stroke="var(--line)"/><text x="0" y="34">64</text>
+        <line x1="30" x2="440" y1="70" y2="70" stroke="var(--line)"/><text x="0" y="74">60</text>
+        <line x1="30" x2="440" y1="110" y2="110" stroke="var(--line)"/><text x="0" y="114">56</text>
+      </g>
+      <path d="${path(30, 30, 440, i => 30 + (64 - ((i < 11 ? 62 : 58) + Math.sin(i * 1.7) * 1.1 + noise(i) * .8)) * 10)}" fill="none" stroke="var(--m-hr)" stroke-width="2.2" stroke-linejoin="round"/>
+      <line x1="185" x2="185" y1="16" y2="118" stroke="var(--line-strong)" stroke-dasharray="3 4"/>
+      <text x="192" y="20" font-size="12" ${mono} fill="var(--ink)">${tx('c3.mark')}</text>`);
+    const days = [...tx('c4.days')];
+    set('ch-week', 'c4.aria', [6.67, 7.3, 7.4, 7.2, 7.5, 7.65, 7.55].map((h, i) => {
+      const x = 18 + i * 60, hgt = (h - 5.5) * 44;
+      return `<rect x="${x}" y="${f(106 - hgt)}" width="36" height="${f(hgt)}" rx="6" fill="var(--m-deep)" opacity="${i === 0 ? 1 : .38}"/><text x="${x + 18}" y="124" text-anchor="middle" font-size="12" fill="var(--muted)" ${mono}>${days[i]}</text>`;
+    }).join('') + `<text x="36" y="${f(106 - (6.67 - 5.5) * 44 - 8)}" text-anchor="middle" font-size="12" fill="var(--ink)" ${mono}>6 h 40</text>`);
+    const nights = [5.4, 5.8, 6.0, 6.1, 6.2, 6.3, 6.35, 6.45, 6.6, 7.3, 7.6, 5.9, 6.7, 6.9, 7.0, 7.1, 7.2, 7.4, 7.5, 7.7, 7.8, 8.0, 8.2, 6.8, 7.05, 7.35, 7.9, 6.95, 8.4, 7.15];
+    set('ch-strip', 'a2.aria', `
+      <line x1="20" x2="510" y1="46" y2="46" stroke="var(--line)"/>
+      <line x1="208" x2="208" y1="14" y2="66" stroke="var(--line-strong)" stroke-dasharray="3 4"/>
+      <text x="214" y="18" font-size="12" fill="var(--ink)" ${mono}>6 h 30</text>
+      ${nights.map((h, i) => { const x = f(20 + (h - 5) / 4 * 490), y = 46 + ((i * 7) % 5 - 2) * 6;
+        return i < 11 ? `<circle cx="${x}" cy="${y}" r="6" fill="#7fa7e0"/>` : `<circle cx="${x}" cy="${y}" r="5" fill="none" stroke="var(--line-strong)" stroke-width="1.5"/>`; }).join('')}
+      <g font-size="12" fill="var(--muted)" ${mono}><text x="20" y="88">5 h</text><text x="285" y="88" text-anchor="middle">7 h</text><text x="510" y="88" text-anchor="end">9 h</text></g>`);
+    $('strip-legend').innerHTML = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#7fa7e0;vertical-align:-1px"></span> ${tx('a2.tired')} &nbsp; <span style="display:inline-block;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--line-strong);vertical-align:-1px"></span> ${tx('a2.rest')}`;
+    set('ch-hrv', 'a3.aria', `
+      <rect x="0" y="54" width="520" height="30" fill="var(--band)"/>
+      <text x="6" y="78" font-size="11" fill="var(--muted)" ${mono}>${tx('a3.usual')}</text>
+      <path d="${path(40, 0, 520, i => 91 - ((i < 24 ? 38 : 45) + Math.sin(i * 1.3) * 2.4 + noise(i + 3) * 1.6 - 38) * 4.6)}" fill="none" stroke="var(--m-hrv)" stroke-width="2.2" stroke-linejoin="round"/>
+      <line x1="312" x2="312" y1="6" y2="112" stroke="var(--line-strong)" stroke-dasharray="3 4"/>
+      <text x="318" y="16" font-size="12" fill="var(--ink)" ${mono}>${tx('a3.mark')}</text>`);
+  }
+
+  // Pestañas del dashboard, con datos de ejemplo.
+  const PANEL = {
+    hoy: () => `<svg viewBox="0 0 440 210" role="img" aria-label="${tx('hoy.title')} ${tx('hoy.sub')}">
+        <rect width="440" height="210" rx="12" fill="var(--surface-2)"/>
+        <text x="22" y="42" font-size="18" fill="var(--ink)" font-weight="500">${tx('hoy.title')}</text>
+        <text x="22" y="66" font-size="14" fill="var(--muted)">${tx('hoy.sub')}</text>
+        <g ${mono}><text x="22" y="124" font-size="30" fill="var(--ink)">7 h 40</text><text x="170" y="124" font-size="30" fill="var(--ink)">57</text><text x="318" y="124" font-size="30" fill="var(--ink)">2</text></g>
+        <g font-size="13" fill="var(--muted)"><text x="22" y="148">${tx('hoy.sleep')}</text><text x="170" y="148">${tx('hoy.rhr')}</text><text x="318" y="148">${tx('hoy.cof')}</text></g>
+        <rect x="22" y="172" width="396" height="8" rx="4" fill="var(--line)"/><rect x="22" y="172" width="300" height="8" rx="4" fill="var(--m-steps)"/>
+        <text x="22" y="200" font-size="12" fill="var(--muted)">${tx('hoy.rec')}</text></svg>`,
+    sueno: () => {
+      // Noche normal: cuatro ciclos tranquilos; el profundo pesa al principio y el REM al final.
+      const seg = [[2, 15], [3, 60], [2, 20], [1, 15], [2, 25], [3, 40], [2, 25], [1, 25], [2, 40], [3, 15], [2, 25], [1, 35], [0, 5], [2, 60], [1, 55], [2, 50], [0, 10]];
+      const col = ['var(--m-awake)', 'var(--m-rem)', 'var(--m-light)', 'var(--m-deep)'], lab = tx('sl.st');
+      const total = seg.reduce((a, x) => a + x[1], 0), X = m => 110 + m / total * 330, yc = s => 24 + s * 38;
+      let m = 0, d = '', bars = '';
+      seg.forEach(([s, len], i) => { d += `${i ? 'L' : 'M'}${f(X(m))} ${yc(s)}H${f(X(m + len))}`; bars += `<rect x="${f(X(m))}" y="${yc(s) - 8}" width="${f(X(m + len) - X(m))}" height="16" rx="3" fill="${col[s]}"/>`; m += len; });
+      return `<svg viewBox="0 0 440 210" role="img" aria-label="${tx('p.sueno')}">
+        ${lab.map((l, i) => `<text x="0" y="${yc(i) + 4}" font-size="13" fill="var(--muted)">${l}</text><line x1="110" x2="440" y1="${yc(i)}" y2="${yc(i)}" stroke="var(--line)" stroke-dasharray="2 4"/>`).join('')}
+        <path d="${d}" fill="none" stroke="var(--line-strong)" stroke-width="1.5"/>${bars}
+        <g font-size="12" fill="var(--muted)" ${mono}><text x="110" y="196">22:45</text><text x="${f(X(255))}" y="196" text-anchor="middle">03:00</text><text x="440" y="196" text-anchor="end">07:25</text></g></svg>`;
+    },
+    salud: () => {
+      const v = tx('vit'), dom = [[57, 55, 60, 50, 66], [44, 38, 47, 30, 54], [14.2, 13, 15, 11, 17]];
+      return `<div class="vitals" role="img" aria-label="${tx('p.salud')}">${v.map(([n, val, sub], i) => {
+        const [x, lo, hi, a, b] = dom[i], P = y => f((y - a) / (b - a) * 100) + '%';
+        return `<div class="vrow"><span class="vn">${n}</span><span class="vs" aria-hidden="true"><i class="vl"></i><i class="vb" style="left:${P(lo)};width:${f((hi - lo) / (b - a) * 100)}%"></i><i class="vd" style="left:${P(x)}"></i></span><span class="vv mono">${val}</span><span class="vsub">${sub}</span></div>`;
+      }).join('')}</div>`;
+    },
+    actividad: () => {
+      let bars = '';
+      for (let h = 0; h < 24; h++) {
+        const s = h < 7 ? 0 : h === 18 ? 3600 : h === 8 || h === 14 ? 900 : h > 22 ? 0 : 300 + (h * 137) % 500, hgt = s / 3600 * 140;
+        bars += `<rect x="${f(h * 18.3)}" y="${f(175 - hgt)}" width="13" height="${f(Math.max(hgt, 2))}" rx="3" fill="var(--m-steps)" opacity="${h === 18 ? 1 : .55}"/>`;
+      }
+      return `<svg viewBox="0 0 440 210" role="img" aria-label="${tx('p.actividad')}">${bars}
+        <g font-size="12" fill="var(--muted)" ${mono}><text x="0" y="198">00</text><text x="219" y="198" text-anchor="middle">12</text><text x="440" y="198" text-anchor="end">24</text></g>
+        <text x="440" y="20" font-size="14" fill="var(--ink)" text-anchor="end" ${mono}>${tx('act.steps')}</text></svg>`;
+    },
+    rutina: () => {
+      // Día tipo: a qué horas sueles apuntar cada cosa; cada pico es una costumbre, con su hora.
+      const rows = [['var(--m-caffeine)', [[8.5, .9, 1], [17, .8, .7]]], ['var(--m-water)', [[9.5, 1.4, .6], [13, 1.4, .8], [19.5, 1.6, .6]]],
+        ['var(--m-cig)', [[13.25, .8, .8], [21.25, .8, 1]]], ['var(--m-alcohol)', [[20.75, .9, 1]]]], names = tx('rut.rows');
+      const X = h => 80 + (h - 6) / 18 * 360;
+      let o = [6, 12, 18, 24].map(h => `<line x1="${X(h)}" x2="${X(h)}" y1="8" y2="200" stroke="var(--line)"/><text x="${X(h)}" y="224" font-size="12" fill="var(--muted)" ${mono} text-anchor="${h === 6 ? 'start' : h === 24 ? 'end' : 'middle'}">${String(h).padStart(2, '0')}:00</text>`).join('');
+      rows.forEach(([c, peaks], i) => {
+        const base = 54 + i * 48, pts = [];
+        for (let h = 6; h <= 24; h += .1) pts.push(f(X(h)) + ' ' + f(base - 26 * peaks.reduce((a, [m, sd, w]) => a + w * Math.exp(-((h - m) ** 2) / (2 * sd * sd)), 0)));
+        o += `<text x="0" y="${base - 4}" font-size="13" fill="var(--ink)">${names[i]}</text><path d="M${X(6)} ${base}L${pts.join('L')}L${X(24)} ${base}Z" fill="${c}" fill-opacity=".35" stroke="${c}" stroke-width="1.6"/>`;
+        peaks.filter(p => p[2] >= .7).forEach(([m]) => { o += `<text x="${f(X(m))}" y="${base - 31}" font-size="12" fill="var(--muted)" ${mono} text-anchor="middle">${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}</text>`; });
+      });
+      return `<svg viewBox="0 0 440 240" role="img" aria-label="${tx('p.rutina')}">${o}</svg>`;
+    }
+  };
+  const panel = $('panel'), tabs = [...document.querySelectorAll('[role="tab"]')];
+  let current = 'hoy';
+  const show = k => {
+    current = k;
+    panel.innerHTML = `<div><h3>${tx('tab.' + k)}</h3><p>${tx('p.' + k)}</p></div>${PANEL[k]()}`;
+    tabs.forEach(b => { const on = b.id === 'tab-' + k; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
+    panel.setAttribute('aria-labelledby', 'tab-' + k);
+  };
+  tabs.forEach((b, i) => {
+    b.addEventListener('click', () => show(b.id.slice(4)));
+    b.addEventListener('keydown', e => {
+      const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      const n = tabs[(i + d + tabs.length) % tabs.length];
+      n.focus(); show(n.id.slice(4));
+    });
+  });
+
+  // Textos del idioma activo; los gráficos y las pestañas se redibujan con él.
+  function apply() {
+    document.documentElement.lang = lang;
+    document.querySelectorAll('[data-t]').forEach(n => { n.textContent = tx(n.dataset.t); });
+    document.querySelectorAll('[data-th]').forEach(n => { n.innerHTML = tx(n.dataset.th); });
+    document.querySelectorAll('[data-t-aria]').forEach(n => n.setAttribute('aria-label', tx(n.dataset.tAria)));
+    document.querySelectorAll('[data-t-alt]').forEach(n => n.setAttribute('alt', tx(n.dataset.tAlt)));
+    document.querySelectorAll('.typing').forEach(b => b.classList.remove('typing'));
+    const lb = $('lang-btn'); lb.textContent = tx('lang.btn'); lb.title = tx('lang.title'); lb.setAttribute('aria-label', lb.title);
+    charts();
+    show(current);
+    vignettes.forEach(v => { v.box.setAttribute('aria-label', tx(v.alt)); v.update(v.still); });
+    endFace(405);
+    frame(true);
+  }
+  $('lang-btn').addEventListener('click', () => {
+    lang = lang === 'es' ? 'en' : 'es';
+    try { localStorage.setItem('ht.landing.lang', lang); } catch (e) { /* sin almacenamiento: vale para esta visita */ }
+    apply();
+  });
+  apply();
+
+  // Las respuestas de Claude aparecen palabra a palabra al llegar a ellas; el texto completo ya está en la página.
+  if (!reduce && 'IntersectionObserver' in window) {
+    const words = p => {
+      const out = [];
+      const walk = n => [...n.childNodes].forEach(c => {
+        if (c.nodeType !== 3) return walk(c);
+        const frag = document.createDocumentFragment();
+        c.textContent.split(/(\s+)/).forEach(w => {
+          if (!w) return;
+          if (/^\s+$/.test(w)) return frag.append(w);
+          const sp = document.createElement('span'); sp.className = 'w'; sp.textContent = w; frag.append(sp); out.push(sp);
+        });
+        c.replaceWith(frag);
+      });
+      walk(p);
+      return out;
+    };
+    const play = async bubble => {
+      const ws = [...bubble.querySelectorAll('[data-type]')].flatMap(words);
+      bubble.classList.add('typing');
+      for (const w of ws) { if (!w.isConnected) break; w.classList.add('in'); await new Promise(r => setTimeout(r, 26)); }
+      bubble.classList.remove('typing');
+    };
+    const io = new IntersectionObserver(entries => entries.forEach(en => {
+      if (en.isIntersecting) { io.unobserve(en.target); play(en.target); }
+    }), { threshold: .3 });
+    document.querySelectorAll('.msg.ai .bubble').forEach(b => io.observe(b));
+  }
+
+})();
+</script>
+</body>
+</html>
