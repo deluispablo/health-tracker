@@ -1,6 +1,6 @@
 <title>Health Tracker</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<script type="application/json" id="mcp-manifest">{"servers":[{"server":"Health Tracker","tools":["health_status","health_daily","health_sleep","health_workouts","health_trackers","health_profile","health_log_event","health_delete_event","health_intraday","health_sql","health_periods","health_findings","health_scan"]}]}</script>
+<script type="application/json" id="mcp-manifest">{"servers":[{"server":"Health Tracker","tools":["health_status","health_daily","health_sleep","health_workouts","health_trackers","health_profile","health_log_event","health_delete_event","health_intraday","health_sql","health_periods","health_findings","health_scan","health_refresh"]}]}</script>
 <script>
 try {
   const theme = localStorage.getItem('ht.theme');
@@ -143,6 +143,9 @@ try {
   /* ---- sync chip and language toggle ---- */
   .ht-sync { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 10px 0 8px; border-radius: var(--radius-full); background: var(--surface-2); color: var(--muted); font-size: 12px; line-height: 16px; font-weight: var(--w-strong); }
   .ht-sync .ht-mono { color: var(--ink); }
+  .ht-sync-row { display: inline-flex; align-items: center; gap: 2px; }
+  #refresh-btn[aria-disabled="true"] { cursor: default; }
+  #refresh-btn:hover:not([aria-disabled="true"]) { background: var(--surface-2); color: var(--ink); }
   .ht-sync-dot { width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--m-steps); flex: none; }
   .ht-sync.is-never .ht-sync-dot { background: none; box-shadow: inset 0 0 0 2px var(--muted); }
   .ht-sync.is-stale { background: var(--attention-container); color: var(--on-attention-container); }
@@ -403,7 +406,7 @@ try {
       <div class="undo-slot"><div id="undo"></div></div>
     </div>
       <div class="top-r">
-        <span id="sync" class="ht-sync" hidden></span>
+        <span class="ht-sync-row"><span id="sync" class="ht-sync" hidden></span><button type="button" id="refresh-btn" class="ht-icon-btn"></button></span>
         <div class="ht-settings">
           <button type="button" id="theme-btn" class="ht-cycle"></button>
           <button type="button" id="lang-btn" class="ht-cycle"></button>
@@ -569,6 +572,10 @@ try {
     'undo.undoFailed': ["Couldn't undo: {x} at {t}", 'No se ha podido deshacer: {x} a las {t}'],
     'undo.undoLabel': ['Undo {x} at {t}', 'Deshacer {x} de las {t}'],
     'sync.never': ['Not synced yet', 'Aún sin sincronizar'],
+    'sync.refresh': ['Refresh data', 'Actualizar datos'],
+    'sync.refreshing': ['Refreshing…', 'Actualizando…'],
+    'sync.wait': ['Wait {n} s', 'Espera {n} s'],
+    'sync.refreshFail': ["Couldn't refresh", 'No se pudo actualizar'],
     'u.ms': ['ms', 'ms'],
     'u.pct': ['%', '%'],
     'u.c': ['°C', '°C'],
@@ -1403,13 +1410,13 @@ try {
   async function readOnce(name) {
     const s = S[name];
     if (!connector || stopped || s.busy || s.halted) return;
-    const token = s.token, issued = { gen: writeGen, after: writeAt }; s.busy = true; render();
+    const token = s.token, issued = { gen: writeGen, after: writeAt }, mine = {}; s.busy = mine; render();   // busy is owned by this read: a token bump must not leave it set
     try {
       const r = await connector.callTool(SERVER, TOOLS[name], s.input ?? inputOf(name), FRESH);
       if (token === s.token && !stopped) receive(name, r, Date.now(), issued);
     } catch (e) {
       if (e?.code === 'user_changed') stopAll(); else if (token === s.token && !stopped) fail(name, e);
-    } finally { if (token === s.token) s.busy = false; if (!stopped) render(); }
+    } finally { if (s.busy === mine) s.busy = false; if (!stopped) render(); }
   }
   /* Calendar rollover updates the shared day when its own rule says so. */
   function setDate(d) {
@@ -1455,12 +1462,35 @@ try {
   async function refreshTrackers(name = 'trackers') {
     const s = S[name]; if (!connector || stopped || s.halted || (name === 'trackersNow' && dayDate === viewDate)) return;
     s.token++; s.unsubscribe?.(); s.unsubscribe = null;
+    s.busy = false;   // a Retry superseded by this token has its reply dropped: free its button now
     const token = s.token, issued = { gen: writeGen, after: writeAt };
     s.gen = writeGen; s.wat = writeAt;   // this source's own invalidation: older replies are stale for it alone
     try { const r = await connector.callTool(SERVER, TOOLS[name], inputOf(name), FRESH); if (token === s.token && !stopped) receive(name, r, Date.now(), issued); }
     catch (e) { if (e?.code === 'user_changed') return stopAll(); if (token === s.token && !stopped) fail(name, e); }
     if (token === s.token && !stopped && !s.halted) subscribe(name);   // a later refresh of this source changes the token
   }
+  /* RF2: pull the last day from Google, then re-read every source loaded so far (any tab) through refreshTrackers:
+     its token drops older replies, last-good data stays and inputs keep the selected day. Throttle and errors only speak in the chip for 3 s. */
+  let refreshing = false, refreshNote = null, refreshTimer = null;
+  async function refreshAll() {
+    if (refreshing || !connector || stopped || pageLevel()) return;
+    refreshing = true; refreshNote = null; clearTimeout(refreshTimer); renderHeader();
+    let note = null;
+    try {
+      const p = (await connector.callTool(SERVER, 'health_refresh', {}))?.payload;
+      if (stopped) return;
+      if (p?.throttled) note = { text: t('sync.wait', { n: Math.max(1, Math.ceil(Number(p.retry_after_s) || 0)) }) };
+      else await Promise.all(Object.keys(S).filter((n) => (S[n].unsubscribe || S[n].data) && !S[n].halted).map((n) => refreshTrackers(n)));
+    } catch (e) {
+      if (e?.code === 'user_changed') return stopAll();
+      note = { text: t('sync.refreshFail'), bad: true };
+    } finally { refreshing = false; }
+    if (stopped) return;
+    refreshNote = note;
+    if (note) { say(note.text); refreshTimer = setTimeout(() => { refreshNote = null; if (!stopped) renderHeader(); }, 3000); }
+    render();
+  }
+  $('refresh-btn').addEventListener('click', refreshAll);
   /* One write: the queue calls this for each tap in order; a throw keeps the write in Q.failed with its Retry. */
   async function send(w) {
     if (stopped || !connector) return;
@@ -1539,8 +1569,14 @@ try {
     const sync = $('sync'), s = L.syncLabel(pageLevel() || S.status.halted ? null : S.status.data, lang);
     sync.hidden = s.kind === 'hidden';
     sync.className = 'ht-sync is-' + s.kind;
-    const m = /^(.*?)(\d{2}:\d{2})$/.exec(s.text);
-    sync.replaceChildren(h('span', { class: 'ht-sync-dot', 'aria-hidden': 'true' }), m ? h('span', {}, h('span', { class: 'sync-p', text: m[1] }), h('span', { class: 'ht-mono', text: m[2] })) : h('span', { text: s.text }));
+    const m = /^(.*?)(\d{2}:\d{2})$/.exec(s.text), off = !connector || pageLevel(), say1 = off ? null : refreshing ? t('sync.refreshing') : refreshNote?.text;
+    if (say1) { sync.hidden = false; sync.className = 'ht-sync is-' + (refreshNote?.bad && !refreshing ? 'stale' : s.kind === 'hidden' ? 'never' : s.kind); }
+    sync.replaceChildren(h('span', { class: 'ht-sync-dot', 'aria-hidden': 'true' }), say1 ? h('span', { text: say1 }) : m ? h('span', {}, h('span', { class: 'sync-p', text: m[1] }), h('span', { class: 'ht-mono', text: m[2] })) : h('span', { text: s.text }));
+    const rb = $('refresh-btn');
+    rb.hidden = pageLevel(); rb.title = t('sync.refresh'); rb.setAttribute('aria-label', rb.title);
+    rb.setAttribute('aria-disabled', String(off || refreshing));
+    if (refreshing) rb.setAttribute('aria-busy', 'true'); else rb.removeAttribute('aria-busy');
+    rb.innerHTML = refreshing ? SPIN : icon('retry', 'ht-ico-sm');
     renderDayNav();
   }
   /* Shared title and day stepper: "Today", "Yesterday" or the date; the next button stops at the calendar day. */
