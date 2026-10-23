@@ -22,9 +22,9 @@ WORKER = Path(__file__).resolve().parents[3] / "worker"
 
 def shrink(directory, day, counts):
     """Return why the export looks truncated against the newest previous manifest, or None."""
-    for table in ("event", "metric_minute"):
-        if not counts.get(table):
-            return f"Rejected: {table} has 0 rows"
+    # Events can legitimately be empty; only a drop against a previous manifest rejects them.
+    if not counts.get("metric_minute"):
+        return "Rejected: metric_minute has 0 rows"
     names = sorted((
         path.name for path in directory.glob("health-tracker-*.json")
         if re.fullmatch(r"health-tracker-\d{4}-\d{2}-\d{2}\.json", path.name)
