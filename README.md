@@ -9,340 +9,535 @@
 
 **Your Pixel Watch data in your own Cloudflare D1 database, queryable from any MCP client, with a live dashboard and one-tap logging from the watch.**
 
+[![CI](https://github.com/deluispablo/health-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/deluispablo/health-tracker/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Wear OS](https://img.shields.io/badge/Wear%20OS-6%2B-4285F4?logo=wearos&logoColor=white)](docs/watch.md)
 
 </div>
 
-Health Tracker is a single-user health pipeline. One Cloudflare Worker receives Google Health API change notifications, syncs your Pixel Watch metrics into D1 (SQLite), precomputes daily summaries and serves everything as a remote MCP server behind OAuth 2.1. Connect it to an MCP client such as claude.ai and ask about your sleep, heart rate, HRV and activity, log coffee, cigarettes, alcohol, water, supplements or mood, and run n-of-1 analyses over your own history. A Pixel Watch face logs with one tap, and a five-tab dashboard shows the day, the night and what tends to go with what. It runs on Cloudflare Workers Paid.
+Health Tracker is a single-owner health pipeline. One Cloudflare Worker receives Google Health API v4 change notifications, syncs your Pixel Watch metrics into D1 (SQLite), precomputes daily summaries and serves everything as a remote MCP server behind OAuth 2.1. From an MCP client you ask about sleep, heart rate, HRV and activity, log coffee, cigarettes, alcohol, water, supplements and mood, and run n-of-1 analyses over your own history. A Pixel Watch face shows today's dial and logs with one tap, and a five-tab dashboard hosted as a claude.ai artifact shows the day, the night and what tends to go with what.
+
+<p align="center"><img src="docs/assets/watch/watch.png" width="100%" alt="The watch face with today's dial, the centre log menu, the mood ring and the supplements ring, on sample data"></p>
 
 ## Table of contents
 
-- [What works today](#what-works-today)
+- [Features](#features)
 - [Architecture](#architecture)
-- [MCP tools](#mcp-tools)
+  - [Request and data flows](#request-and-data-flows)
+  - [Routes and schedules](#routes-and-schedules)
+  - [Repository layout](#repository-layout)
+- [Getting started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [1. Google Cloud and the Health API](#1-google-cloud-and-the-health-api)
+  - [2. Cloudflare resources](#2-cloudflare-resources)
+  - [3. Configuration reference](#3-configuration-reference)
+  - [4. Migrate and deploy](#4-migrate-and-deploy)
+  - [5. Health consent and webhook subscriber](#5-health-consent-and-webhook-subscriber)
+  - [6. Connect an MCP client](#6-connect-an-mcp-client)
+  - [7. Build and install the watch](#7-build-and-install-the-watch)
+  - [8. Publish the dashboard](#8-publish-the-dashboard)
+  - [9. Schedule backups](#9-schedule-backups)
+- [MCP tools reference](#mcp-tools-reference)
+- [Watch](#watch)
 - [Dashboard](#dashboard)
-- [Deploy your own](#deploy-your-own)
 - [Data model](#data-model)
-- [Privacy & security](#privacy--security)
-- [Limits](#limits)
-- [What's next](#whats-next)
+- [Security and privacy](#security-and-privacy)
+- [Operations](#operations)
+- [Development](#development)
+- [Limits and costs](#limits-and-costs)
+- [Roadmap](#roadmap)
 - [FAQ](#faq)
 - [License](#license)
 
-## What works today
+## Features
 
-| Area | Status on `main` |
+| Area | What it does |
 |---|---|
-| Ingest | Google Health API v4 webhooks (authorization + ECDSA signature verified) queue changes; a 5-minute cron drains the whole queue oldest first within a time and statement budget; a daily 48 h reconcile repairs missed notifications and brings in workouts |
-| Metrics | Heart rate (per minute), hourly and daily steps (watch only; phone-estimated steps are ignored), resting HR, HRV (RMSSD), SpO2, respiratory rate, skin temperature deviation, active zone minutes, sleep sessions with stages, workouts |
+| Ingest | Google Health API v4 webhooks (authorization header and ECDSA P-256 signature verified) queue changed intervals; a 5-minute cron drains the queue oldest first within a 60 s and 800-statement budget; a daily 48 h reconcile repairs missed notifications and brings in workouts |
+| Metrics | Per-minute heart rate, hourly and daily steps (watch source only), resting HR, HRV (RMSSD), SpO2, respiratory rate, skin temperature deviation, active zone minutes, sleep sessions with stages, workouts |
 | Sleep | Sessions dated by wake day; short daytime sleep (under 3 h in bed, starting 09:00–19:59 local) is stored as a nap |
-| Daily summaries | Recomputed from the earliest changed date through the latest changed date's 28-day score tail (capped at today and 366 dates per batch); z-scores against a 28-day baseline and a heuristic readiness proxy |
+| Daily summaries | One row per day with vitals, sleep and activity, z-scores against a 28-day baseline and a heuristic readiness proxy; recomputed incrementally from the dates that changed |
+| Trackers | Coffee (caffeine), cigarettes, alcohol, water with a daily goal, supplements (melatonin, protein, creatine) and eight mood emotions; idempotent logging and undo by soft delete |
+| Analysis | Group comparisons with Welch 95% CIs, lagged correlations after AR(1) pre-whitening, weekly or monthly trends, read-only SQL over four views |
+| Insights | Ranked behavior → metric scans with confidence labels, streaks, change points, sustained behavior changes, mood weeks, anomalies, filtered contrasts, and saved findings that are rechecked on new days |
 | Connector | Remote MCP server (Streamable HTTP), OAuth 2.1 with PKCE, dynamic client registration and client ID metadata documents; Google sign-in limited to one email |
-| Trackers | Coffee (caffeine), cigarettes, alcohol, eight mood emotions, water with a daily goal, and supplements (melatonin, protein, creatine), from a catalog the watch and the dashboard read; safe retries with an idempotency key, undo by soft delete |
-| Watch | A Pixel Watch face with today's dial and a one-tap log menu, plus a tile for supplements; logging works offline and syncs later: [docs/watch.md](docs/watch.md) |
-| Analytics | Group comparisons with Welch CIs, lagged correlations after AR(1) pre-whitening, weekly/monthly trends, read-only SQL over views |
-| Insights | Ranked behavior → metric scans with confidence labels, streaks, change points, sustained behavior changes, mood weeks and anomalies, filtered contrasts, and saved findings that are rechecked on new days |
-| Dashboard | Five tabs (Today, Sleep, Health, Activity, Routine) with quick log, usual ranges and insight cards: [Dashboard](#dashboard) |
-| Profile | Birth year, sex, height, goals, max HR (measured or estimated) and dated weight history |
-| Operations | Watch-sync monitoring with alerts, 90-day retention for the audit and analysis logs, local export with a verified restore |
-| CI | Typecheck, lint and tests for the Worker; ruff and pytest for `py/` |
-
-<p align="center"><img src="docs/assets/watch/watch.png" width="100%" alt="The watch face with today's dial, the centre log menu, the mood ring and the supplements ring, on sample data"></p>
+| Watch | Wear OS face with today's dial, a one-tap log menu (coffee, cigarette, drink, water, mood, supplements) and offline queueing with safe retries |
+| Dashboard | Five tabs (Today, Sleep, Health, Activity, Routine) with quick log, usual ranges and insight cards, in English and Spanish, light and dark |
+| Profile | Birth year, sex, height, goals, measured or estimated max HR and dated weight history |
+| Operations | Health and freshness report with alerts, 90-day retention for audit and analysis logs, local export with a verified restore |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    W[Pixel Watch] -- Bluetooth --> A[Google Health app]
-    A -- sync --> G[Google Health cloud]
-    G -- webhook signal --> K
-    K -- list / reconcile / rollUp --> G
-    subgraph CF[Cloudflare]
-        K[Worker - TypeScript]
-        D[(D1 - SQLite)]
-        V[(KV - OAuth grants, Google access-token cache)]
-        K <--> D
-        K <--> V
+    PW["Pixel Watch"] -- Bluetooth --> GA["Google Health app"]
+    GA -- sync --> GC["Google Health cloud"]
+    GC -- "webhook (signed)" --> WK
+    WK -- "list / reconcile / rollUp" --> GC
+    subgraph CF["Cloudflare"]
+        WK["Worker (TypeScript)"]
+        D1[("D1 (SQLite)")]
+        KV[("KV: OAuth grants, Google access-token cache")]
+        WK <--> D1
+        WK <--> KV
     end
-    K -- MCP over HTTPS --> C[MCP client]
-    C -- dashboards call tools --> K
-    P[Mac: Python / uv] -- weekly export --> D
+    MC["MCP client"] -- "MCP over HTTPS, OAuth 2.1" --> WK
+    DA["Dashboard artifact"] -- "tool calls via the connector" --> MC
+    WA["Watch app"] -- "GET /watch/today, POST /watch/log" --> WK
+    PY["Python export (uv)"] -- "wrangler d1 export" --> D1
 ```
 
-| Entry point | What it does |
-|---|---|
-| `POST /webhooks/google` | Checks the authorization header, verifies the ECDSA P-256 signature, queues the interval in `sync_pending`, answers 204 |
-| Cron `*/5 * * * *` | Drains the queue oldest first (heart rate up to one day per item via 60 s `rollUp`, following its pages; at most one item older than 24 h per tick) within a 60 s and 800-statement budget, and upserts into D1; samples the watch's last sync every 30 min; recomputes dirty daily summaries. Ticks with an empty queue call Google only for the 30-minute watch sample |
-| Cron `30 4 * * *` (UTC) | Queues the 48 h reconcile, recomputes the last week of tracker totals, deletes expired OAuth states and audit and analysis-log rows older than 90 days |
-| `/mcp` | Stateless MCP server behind the OAuth provider (scope `health:read`) |
-| `/authorize`, `/oauth/google/callback` | Connector consent and Google sign-in (allowlisted email only) |
-| `/google/connect`, `/google/callback` | One-time Google Health consent; stores the encrypted refresh token |
-| `GET /watch/today` | Today's sleep, workouts, logs, water, tracker catalog and 15-minute heart rate for the watch face and tile, behind the `WATCH_TOKEN` bearer |
-| `POST /watch/log` | One log from the watch (any active tracker in the watch catalog) with an idempotency key, behind the same bearer; `DELETE` with the same key undoes it |
-| `/`, `/privacy`, `/terms`, `/favicon.ico` | Static home, privacy and terms pages (the Google OAuth consent screen links to them) and the brand icon, which MCP clients show next to the connector |
+### Request and data flows
 
-Freshness depends first on how often the watch syncs to the Google Health app (minutes, sometimes hours), then on the 5-minute cron and the queue backlog. Details: [docs/architecture.md](docs/architecture.md).
+1. **Sync.** The watch syncs to the Google Health app, which uploads to the Google Health cloud.
+2. **Notify.** Google calls `POST /webhooks/google`. The Worker checks the authorization header, verifies the signature, queues the changed interval in `sync_pending` and answers `204`. Payloads only name intervals; data is always re-read from Google.
+3. **Drain.** Every 5 minutes the cron reads the queue oldest first and fetches each interval from the Google Health API (heart rate through 60 s `rollUp`, daily metrics through `listDaily` or `dailyRollUp`, sleep and exercise through `reconcile`). Each item's writes, dirty-date marks and queue removal share one atomic D1 batch, so a failure stores nothing and the item is retried.
+4. **Summarize.** The same tick recomputes `daily_summary` from the earliest dirty date through the latest one's 28-day score tail, capped at today and at 366 dates per run.
+5. **Reconcile.** At 04:30 UTC the daily cron queues a 48 h re-read of every type, rebuilds the last eight days of tracker totals and deletes expired OAuth states and audit and analysis-log rows older than 90 days.
+6. **Query.** MCP clients call `health_*` tools on `/mcp`. Tools read and write D1 only; Google is never called during a tool call.
+7. **Log.** Tracker events arrive from `health_log_event` or the watch's `POST /watch/log`; both insert the event and rebuild that day's `tracker_daily` row in one batch.
+
+Freshness depends first on how often the watch syncs to the Google Health app (minutes, sometimes hours), then on the 5-minute cron and the queue backlog.
+
+### Routes and schedules
+
+| Entry point | Auth | What it does |
+|---|---|---|
+| `POST /webhooks/google` | `WEBHOOK_SECRET` header and Google signature | Queues changed intervals; a bounded `{"type":"verification"}` handshake returns `200` |
+| `*/5 * * * *` cron | n/a | Drains the queue (at most one heart-rate item older than 24 h per tick, each covering up to one day), samples the watch's last sync every 30 min, recomputes dirty daily summaries. With an empty queue, Google is called only for the 30-minute watch sample |
+| `30 4 * * *` cron (UTC) | n/a | Queues the 48 h reconcile, rebuilds eight days of tracker totals, applies retention |
+| `/mcp` | OAuth bearer, scope `health:read` | Stateless Streamable HTTP MCP server with 19 tools |
+| `/authorize`, `/oauth/token`, `/oauth/register` | n/a | OAuth 2.1 provider: consent, token and dynamic client registration, plus its `/.well-known/` metadata |
+| `/oauth/google/callback` | Google sign-in | Completes connector sign-in; only `ALLOWED_EMAIL` is accepted |
+| `GET /google/connect`, `GET /google/callback` | Google sign-in | One-time Google Health consent; stores the encrypted refresh token for `ALLOWED_EMAIL` only |
+| `GET /watch/today` | `WATCH_TOKEN` bearer | Today's sleep, workouts, logs, water, tracker catalog and 15-minute heart rate for the watch |
+| `POST /watch/log`, `DELETE /watch/log` | `WATCH_TOKEN` bearer | Logs or undoes one watch tap by idempotency key |
+| `/`, `/privacy`, `/terms`, `/favicon.ico` | public | Static home, privacy and terms pages (in Spanish, linked from the Google consent screen) and the icon MCP clients show |
+
+The deep reference for ingest, rollups, the Google client and each tool is [docs/architecture.md](docs/architecture.md).
+
+### Repository layout
 
 | Path | Content |
 |---|---|
-| `worker/` | The Worker (TypeScript, strict), D1 migrations and tests |
-| `py/` | Offline tooling (uv, Python 3.12+): backup export and restore check |
-| `dashboards/` | The dashboard: a shell page (`health-tracker.html`) and one module per tab (`tabs/*.js`) that call the MCP tools |
-| `wear/` | Wear OS watch face and its companion app: [docs/watch.md](docs/watch.md) |
-| `docs/` | Architecture reference |
+| `worker/src/index.ts` | Entry point; wraps the app in the OAuth provider |
+| `worker/src/app.ts` | HTTP routing and both cron handlers |
+| `worker/src/auth/` | Google Health consent and connector sign-in |
+| `worker/src/ingest/` | Webhook, queue drain and daily reconcile |
+| `worker/src/google/` | Google Health API client with token cache and retries |
+| `worker/src/rollup/` | Daily summary and tracker totals |
+| `worker/src/mcp/` | MCP server and the 19 tools (`tools/insights/` holds the insight engine) |
+| `worker/src/watch.ts` | Watch endpoints |
+| `worker/migrations/` | D1 schema, `0001`–`0015` |
+| `worker/test/` | Vitest suites running in the Workers runtime |
+| `py/` | Weekly backup export with restore check (uv, Python 3.12+) |
+| `wear/` | Wear OS companion app (`app`) and Watch Face Format face (`watchface`) |
+| `dashboards/` | Dashboard shell `health-tracker.html` and tab modules `tabs/*.js` |
+| `docs/` | [Architecture](docs/architecture.md), [watch](docs/watch.md), [operations](docs/operations.md) and brand assets |
 
-## MCP tools
+## Getting started
 
-Nineteen tools. Twelve are read-only; seven write (including exploration logs).
-
-| Tool | Access | Returns |
-|---|---|---|
-| `health_status` | read | Stream freshness, watch last sync, queue counts, Google connection, 14-day HR coverage, alerts |
-| `health_daily` | read | Daily summary rows (1–90 days) with units and coverage, including tracker totals and per-mood counts |
-| `health_intraday` | read | Heart rate at 1 min (max 3 h window), 5 min or 1 h; steps at 1 h |
-| `health_sleep` | read | Sleep sessions, naps and stages (up to 31 days) |
-| `health_workouts` | read | Workouts with duration, avg HR, max HR (from minute heart rate), kcal, AZM and distance (up to 31 days) |
-| `health_trend` | read | Weekly or monthly aggregates with sample SD and z-score vs the range baseline (1–365 days) |
-| `health_compare` | read | Outcome means by behavior group (e.g. caffeine bins vs sleep) with Welch 95% CIs; default lag 1 day (1–365 days) |
-| `health_correlate` | read | Lagged correlations after AR(1) pre-whitening; lags 0–7, default up to 3 (1–365 days) |
-| `health_trackers` | read | Active trackers, the day's exact totals and up to 50 events |
-| `health_profile` | read | Profile, age, goals, measured or estimated max HR, latest 90 dated weights |
-| `health_sql` | read | One `SELECT`/`WITH` over `v_daily`, `v_events`, `v_sleep`, `v_workouts`; query up to 4,000 chars; result up to 200 rows and 20,000 chars of row JSON |
-| `health_log_event` | insert | Logs one tracker event (time from 7 days ago to 5 minutes ahead, optional note; pass an idempotency key for safe retries) and returns the day total |
-| `health_delete_event` | soft delete | Undoes a logged event by its `event.id`; the row is kept with `deleted_at` |
-| `health_set_profile` | profile write | Partial profile update; weight is upserted per date (2000-01-01 to local today) |
-| `health_scan` | analysis log write | Ranked behavior and planned metric comparisons with confidence labels (default 120 days, max 180) |
-| `health_periods` | analysis log write | Streak comparisons, CUSUM changes, sustained behavior changes (cigarettes, caffeine, alcohol, water), mood weeks and anomalies |
-| `health_contrast` | analysis log write | Filtered group comparisons; filter dates are clipped to start/end |
-| `health_findings` | finding write | List, save, recheck or retire canonical comparisons; confirmation uses new days |
-| `health_context` | read | Static playbook, labels, units, ROPEs and physiology priors (≤9,000 characters) |
-
-Notes:
-
-- All tools, including the seven writes, use the single OAuth scope `health:read`.
-- Tracker ids: `caffeine` (mg, default 80), `alcohol` (g, default 13), `cigarettes` (count, default 1), `water` (ml, default 250), `melatonin` (mg, default 1), `protein` (g, default 30), `creatine` (g, default 5), and `mood_genial`, `mood_bien`, `mood_tranquilo`, `mood_cansado`, `mood_estresado`, `mood_ansioso`, `mood_triste`, `mood_enfadado` (count, 1 per event; several per day allowed). Daily mood counts are columns of `health_daily` / `v_daily`; individual mood events are in `v_events`.
-- `GET /watch/today` includes `water: {ml, goal_ml}` and ordered `trackers: [{id, name, unit, value, surface, today}]`. `today` sums stored values for count and amount trackers, and returns the latest value for scales (0 when empty). Legacy `totals`/`counts` still add count units and count amount/scale events. Watch catalog entries require non-NULL `default_value` and `surface` (`face` or `tile`) and no `archived_at`; hidden trackers retain historical events and totals. See [watch API details](docs/watch.md).
-- `health_compare`, `health_correlate` and `health_trend` accept dates in 2000–2099. Their behaviors are `cigarettes`, `alcohol_g` and `caffeine_mg`; mood columns are not in their allowlists (use `health_sql`). Results are associational, not causal, and include the sample size and a caveat.
-- Insight tools (`health_scan`, `health_periods`, `health_contrast`) use separate selections: behaviors `cigarettes`, `caffeine`, `alcohol`, `mood_negative`, `mood_tired`, `water`, `melatonin`, `protein`, `creatine`, `workout`, `steps`, `short_sleep`; metrics include sleep, activity, physiology and individual/grouped mood outcomes. Melatonin uses the 3 h before-bed window. Scan also accepts `timings`; filter `metrics`/`timings` to reach planned M1–M8 rows beyond the unfiltered top 10. Acute `hr_delta` rows cover only the last 28 days ending at `end`. `health_context` lists units, timings and interpretation rules.
-- `health_profile` defaults to 7000 steps, 450 sleep minutes and `water_goal_ml` 2000 ml when goals are unset, and estimates max HR as round(208 − 0.7 × age) when only the birth year is known. `health_set_profile` accepts integer `water_goal_ml` from 500–6000. Only the birth year is stored, never a full birth date.
-- Each executed tool call is audited on a best-effort basis (arguments, outcome, duration); profile tools record field names only. Calls refused by schema validation are not audited.
-
-## Dashboard
-
-The dashboard reads live data through the MCP connector of the client that hosts it. It is built for claude.ai artifacts and looks for a connector named `Health Tracker`. `dashboards/health-tracker.html` is the shell (header, quick log, shared charts and insight cards) and each tab is a module in `dashboards/tabs/`.
-
-| Tab | What it shows |
-|---|---|
-| Today | The 24-hour dial with sleep, workouts, logs and heart rate; recovery and vitals; steps against the goal; the day's totals and timeline |
-| Sleep | The night with its hypnogram and logs before bed, stages against your usual range, recent nights, sleep by weekday and what may have played a part |
-| Health | Last night's vitals against your usual range, 30/90-day trends, today's heart rate and its response around each log, and saved findings |
-| Activity | Steps today and by hour, your usual day, the 30-day trend, active minutes per week, workouts and what changes your activity |
-| Routine | Your days hour by hour, first times of the day, what leads to what (e.g. waking → first cigarette), water, supplements and mood |
-
-- **Quick log:** one tap for coffee, cigarette, alcohol and water (with a goal ring); mood and supplements open a picker. Every log can be undone, and taps are saved in order with a retry if one fails.
-- **Usual ranges:** strips show your p25–p75 band and median over the previous 28 days; a value is flagged only outside p10–p90. With few days of data a card says so instead of drawing conclusions.
-- **Insights:** cards built on `health_periods`, `health_scan` and `health_findings` say what goes with what, with how sure the comparison is, and never claim causes.
-- **Layout:** English and Spanish, light, dark and automatic themes, phone, tablet and desktop layouts, keyboard and screen-reader support.
-
-Until tonight's sleep syncs, Sleep and Today show the previous night and say so. Nights are named by the evening they start ("night of Thu 22" ends on Friday morning).
-
-## Deploy your own
+Deploying your own instance takes one Cloudflare account, one Google Cloud project and a Pixel Watch. Each deployment serves one owner.
 
 ### Prerequisites
 
 | Requirement | Notes |
 |---|---|
-| Cloudflare account | `wrangler` logged in; a custom domain for the Worker (`https://<your-domain>`) |
-| Node.js and npm | For `worker/` |
-| uv and Python 3.12+ | For `py/` |
-| Google Cloud project | Google Health API enabled; OAuth client (Web); consent screen External and In production |
-| Google Health app | Pixel Watch paired and syncing |
-| gcloud CLI | Authenticated; used for the webhook subscriber and secret rotation |
-
-The Health consent requests four read-only scopes: `googlehealth.activity_and_fitness.readonly`, `googlehealth.health_metrics_and_measurements.readonly`, `googlehealth.sleep.readonly` and `googlehealth.settings.readonly`, plus `openid email`.
-
-### 1. Create resources and configure
+| Cloudflare account on Workers Paid | A domain on Cloudflare for the Worker (`https://<your-domain>`) |
+| Node.js (LTS) and npm | For `worker/`; `wrangler` comes from its `devDependencies` |
+| uv and Python 3.12+ | For the backup export in `py/` |
+| Google Cloud project and gcloud CLI | gcloud authenticated; used for the webhook subscriber and its secret rotation |
+| Pixel Watch paired with the Google Health app | The data source |
+| JDK 17 and Android SDK (platform 36, build-tools 36.0.0) | Only for the watch; see [docs/watch.md](docs/watch.md) |
 
 ```sh
-cd worker
-npm install
-npx wrangler d1 create health-tracker
-npx wrangler kv namespace create OAUTH_KV
+git clone https://github.com/deluispablo/health-tracker.git
+cd health-tracker/worker
+npm ci
+npx wrangler login
 ```
 
-Copy `worker/wrangler.production.example.jsonc` to `worker/wrangler.production.jsonc` (git-ignored, so your domain and resource ids stay out of the repo) and set the D1 `database_id`, the KV `id`, the custom-domain route and these `vars`:
+Run the commands in steps 2–5 from `worker/`.
 
-| Var | Value |
+### 1. Google Cloud and the Health API
+
+1. In your Google Cloud project, enable the Google Health API.
+2. Configure the OAuth consent screen as **External** and publish it **In production**. Use `https://<your-domain>/` as the home page, `/privacy` as the privacy policy and `/terms` as the terms of service.
+3. Create an OAuth client of type **Web application** with these authorized redirect URIs:
+   - `https://<your-domain>/google/callback` (Health consent)
+   - `https://<your-domain>/oauth/google/callback` (connector sign-in)
+4. Keep the client ID and secret for [step 3](#3-configuration-reference).
+
+The Health consent requests these four read-only scopes plus `openid email`, with offline access:
+
+| Scope |
+|---|
+| `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly` |
+| `https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly` |
+| `https://www.googleapis.com/auth/googlehealth.sleep.readonly` |
+| `https://www.googleapis.com/auth/googlehealth.settings.readonly` |
+
+### 2. Cloudflare resources
+
+```sh
+npx wrangler d1 create health-tracker
+npx wrangler kv namespace create OAUTH_KV
+cp wrangler.production.example.jsonc wrangler.production.jsonc
+```
+
+`wrangler.production.jsonc` is git-ignored, so your domain and resource ids stay out of the repository; `wrangler.jsonc` is for local tests only. Fill in:
+
+| Field | Value |
 |---|---|
-| `USER_TZ` | Your IANA time zone, e.g. `Europe/Madrid`; local dates and tracker days use it |
-| `PUBLIC_ORIGIN` | `https://<your-domain>` |
+| `routes[0].pattern` | `<your-domain>` (custom domain) |
+| `d1_databases[0].database_id` | Id printed by `wrangler d1 create`; keep the binding `DB` |
+| `kv_namespaces[0].id` | Id printed by `wrangler kv namespace create`; keep the binding `OAUTH_KV` |
+| `vars` | See [vars](#vars) |
 
-### 2. Secrets
+The example already sets both cron triggers, observability and the `global_fetch_strictly_public` compatibility flag, which client ID metadata documents need.
+
+### 3. Configuration reference
+
+#### Vars
+
+| Var | Required | Example | Purpose |
+|---|---|---|---|
+| `USER_TZ` | yes | `Europe/Madrid` | IANA time zone for local dates, tracker days, the watch and the analysis calendars |
+| `PUBLIC_ORIGIN` | yes | `https://<your-domain>` | OAuth issuer, endpoints and protected-resource metadata |
+
+#### Secrets
 
 Set each with `npx wrangler secret put <NAME> --config wrangler.production.jsonc`. Never commit values.
 
-| Name | Purpose |
-|---|---|
-| `ALLOWED_EMAIL` | The only Google account allowed to sign in; also shown as the contact on `/privacy` and `/terms` |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client (connector sign-in and Health consent) |
-| `TOKEN_ENC_KEY` | Base64 of exactly 32 random bytes; AES-256-GCM key for the stored refresh token |
-| `WEBHOOK_SECRET` | Webhook authorization value, including the `Bearer ` prefix (at least 16 characters) |
-| `WEBHOOK_SECRET_PREV` | Only during a [rotation](#rotating-the-webhook-secret) |
-| `WATCH_TOKEN` | Bearer token for the watch app's `/watch/today` and `/watch/log`; it can only log the watch's trackers (at least 32 characters) |
+| Secret | Required | Format | Purpose |
+|---|---|---|---|
+| `ALLOWED_EMAIL` | yes | Google account email | The only account that can sign in or store a Health token; shown as the contact on `/privacy` and `/terms` |
+| `GOOGLE_CLIENT_ID` | yes | OAuth client id | Connector sign-in and Health consent |
+| `GOOGLE_CLIENT_SECRET` | yes | OAuth client secret | Connector sign-in and Health consent |
+| `TOKEN_ENC_KEY` | yes | Base64 of exactly 32 random bytes (`openssl rand -base64 32`) | AES-256-GCM key for the stored Google refresh token |
+| `WEBHOOK_SECRET` | yes | `Bearer <random>`, at least 16 characters (`printf 'Bearer '; openssl rand -hex 32`) | Expected `Authorization` header on webhooks; the endpoint returns `503` while it is missing or shorter |
+| `WEBHOOK_SECRET_PREV` | no | Same as `WEBHOOK_SECRET` | Previous value, accepted only during a [rotation](docs/operations.md#rotate-the-webhook-secret) |
+| `WATCH_TOKEN` | for the watch | At least 32 characters (`openssl rand -base64 32`) | Bearer for `/watch/today` and `/watch/log`; both return `401` while it is shorter |
 
-### 3. Migrate and deploy
+### 4. Migrate and deploy
 
 ```sh
 npx wrangler d1 migrations apply DB --config wrangler.production.jsonc --remote
 npx wrangler deploy --config wrangler.production.jsonc
 ```
 
-### 4. Google consent and webhook subscriber
+Apply migrations before any deploy that adds one. Open `https://<your-domain>/` to check that the Worker answers.
 
-1. Add both redirect URIs to the Google OAuth client: `https://<your-domain>/google/callback` and `https://<your-domain>/oauth/google/callback`.
-2. Open `https://<your-domain>/google/connect` and grant consent with the allowlisted account.
-3. Create a Google Health API webhook subscriber (see the [Google Health API docs](https://developers.google.com/health)) with endpoint `https://<your-domain>/webhooks/google` and endpoint authorization equal to `WEBHOOK_SECRET`. Subscribe to the metric and sleep types; workouts arrive through the daily reconcile. Note the subscriber ID you choose; the rotation commands below read it from `SUBSCRIBER`.
-4. Call `health_status` once connected: it shows the Google connection, queue and watch sync.
+### 5. Health consent and webhook subscriber
 
-### 5. Connect an MCP client
+1. Open `https://<your-domain>/google/connect` and grant consent with the `ALLOWED_EMAIL` account. The callback stores the encrypted refresh token, and returns `400 Missing scopes` if any of the four scopes was not granted.
+2. Create a Google Health API webhook subscriber (see the [Google Health API docs](https://developers.google.com/health)) with endpoint `https://<your-domain>/webhooks/google` and endpoint authorization equal to `WEBHOOK_SECRET`. Subscribe to `heart-rate`, `steps`, `daily-resting-heart-rate`, `sleep`, `daily-heart-rate-variability`, `daily-oxygen-saturation`, `daily-respiratory-rate`, `daily-sleep-temperature-derivations` and `active-zone-minutes`; `exercise` arrives through the daily reconcile. Note the subscriber id: [rotation](docs/operations.md#rotate-the-webhook-secret) needs it.
+3. Data appears after the next watch sync and cron tick. History starts at consent plus the 48 h reconcile window; there is no bulk backfill.
+
+### 6. Connect an MCP client
 
 | Client | How |
 |---|---|
-| claude.ai (web, desktop, Android) | Add a custom connector with `https://<your-domain>/mcp` and sign in with the allowlisted Google account. Add it from web or desktop, then use it on Android. Name it `Health Tracker` so the dashboards find it |
-| Other MCP clients | Clients supporting remote Streamable HTTP and OAuth 2.1 with PKCE |
+| claude.ai (web, desktop, Android) | Add a custom connector with URL `https://<your-domain>/mcp` and sign in with the allowlisted Google account. Name it `Health Tracker`, the name the dashboard looks for. Add it from web or desktop, then use it on Android |
+| Other MCP clients | Any client with remote Streamable HTTP and OAuth 2.1 with PKCE, through dynamic client registration or a client ID metadata document |
 
-An unauthenticated request to `/mcp` returns `401` with a `WWW-Authenticate` header pointing at the protected-resource metadata, which clients use for discovery.
+An unauthenticated request to `/mcp` returns `401` with a `WWW-Authenticate` header pointing at the protected-resource metadata, which clients use for discovery. Call `health_status` once connected: it shows the Google connection, the queue and the watch sync.
 
-### 6. Dashboard and backups
+### 7. Build and install the watch
 
-- Publish `dashboards/health-tracker.html` as an artifact in the client where the connector is enabled, with the five files in `dashboards/tabs/` served next to it as `tabs/<tab>.js`. The page asks once for permission to use the connector's tools.
-- Backup: `uv run --directory py python src/health_tracker/export.py` from the repo root. It uses your logged-in `wrangler`, writes a SQL and JSON pair to `~/health-tracker-backups`, verifies a local restore and keeps the last eight pairs. Nothing in the repo schedules it. Two ways to run it weekly:
-  - **cron or launchd**, for example `0 10 * * 0 cd /path/to/health-tracker && uv run --directory py python src/health_tracker/export.py`;
-  - **a scheduled job with a check:** run the same command, then compare each table's row count in the new manifest (`health-tracker-YYYY-MM-DD.json`) with the previous one and warn when a table shrinks or `metric_minute` and `daily_summary` stop growing (a sign of broken sync). Never print or log wrangler's output: it can include a short-lived download URL for the whole database.
+This is a summary; the toolchain, pairing and troubleshooting are in [docs/watch.md](docs/watch.md).
 
-### Development
+1. Set the `WATCH_TOKEN` secret ([step 3](#3-configuration-reference)).
+2. Create `wear/local.properties` (git-ignored):
+
+   | Key | Required | Purpose |
+   |---|---|---|
+   | `sdk.dir` | yes | Android SDK path |
+   | `watchToken` | yes | Same value as `WATCH_TOKEN`; the build fails when it is blank |
+   | `watchBaseUrl` | yes | `https://<your-domain>`; must start with `https://` |
+   | `userTz` | no | Java zone id matching `USER_TZ`; defaults to `Europe/Madrid`; an invalid zone fails the build |
+
+3. Pair the watch over wireless debugging, then build, install and select the face:
+
+   ```sh
+   cd wear
+   ./gradlew :app:installDebug :watchface:installDebug
+   adb shell am broadcast -a com.google.android.wearable.app.DEBUG_SURFACE \
+     --es operation set-watchface --es watchFaceId com.deluispablo.healthtracker.watchface
+   ```
+
+### 8. Publish the dashboard
+
+1. Publish `dashboards/health-tracker.html` as a claude.ai artifact from an account where the `Health Tracker` connector is enabled.
+2. Publish the five tab files next to it at `tabs/hoy.js`, `tabs/sueno.js`, `tabs/salud.js`, `tabs/actividad.js` and `tabs/rutina.js`; the shell loads them with relative `<script src>` tags.
+3. Open the artifact and allow its use of the connector's tools once.
+
+The dashboard assumes `Europe/Madrid`. If your `USER_TZ` differs, change `window.HTLogic.USER_TZ` in `health-tracker.html` before publishing.
+
+### 9. Schedule backups
+
+From the repository root, with `wrangler` logged in and the `worker/` dependencies installed:
 
 ```sh
-(cd worker && npm ci && npm run typecheck && npm run lint && npm test)
-(cd py && uv run ruff check . && uv run pytest -q)
+uv run --directory py python src/health_tracker/export.py              # writes to ~/health-tracker-backups
+uv run --directory py python src/health_tracker/export.py --out <dir>  # or to another directory
 ```
+
+The export dumps D1 with `wrangler d1 export`, restores the dump into an in-memory SQLite database, checks the required tables, writes a `health-tracker-YYYY-MM-DD.sql` and `.json` manifest pair (SHA-256, size and row count per table) and keeps the last eight pairs. It exits `1` on any failure. Nothing in the repository schedules it; see [Operations](#operations).
+
+## MCP tools reference
+
+Nineteen tools. All use the single OAuth scope `health:read`, including the writes. Dates are local `YYYY-MM-DD` in `USER_TZ`, and ranges are inclusive.
+
+| Tool | Access | Returns | Input limits |
+|---|---|---|---|
+| `health_status` | read | Stream freshness, watch last sync, queue counts, Google connection, 14-day HR coverage, alerts | none |
+| `health_daily` | read | Daily summary rows with units and coverage, including cigarette, alcohol, caffeine and per-mood totals | 1–90 dates; optional metric list |
+| `health_intraday` | read | Heart rate avg/min/max at `1m`, `5m` or `1h`; steps at `1h` | One date in 2000–2099; optional `from`/`to` (`HH:MM`); at most 150 points and 20,000 JSON characters, with a `truncated` flag |
+| `health_sleep` | read | Sleep sessions, naps and stages | 1–31 dates |
+| `health_workouts` | read | Workouts with duration, average and max HR (from minute heart rate), kcal, AZM and distance | 1–31 dates |
+| `health_trackers` | read | Active trackers with units, defaults and limits, the day's exact totals and up to 50 events | One date |
+| `health_profile` | read | Profile, age, goals, measured or estimated max HR, latest 90 dated weights | none |
+| `health_trend` | read | Weekly or monthly aggregates with sample SD and z-score against the range baseline | 1–365 dates in 2000–2099 |
+| `health_compare` | read | Outcome means by behavior group with Welch 95% CIs | 1–365 dates; lag 0–7 (default 1); 1–5 bins |
+| `health_correlate` | read | Lagged Pearson r after AR(1) pre-whitening | 1–365 dates; `max_lag` 0–7 (default 3) |
+| `health_sql` | read | One `SELECT` or `WITH` over `v_daily`, `v_events`, `v_sleep`, `v_workouts` | Query up to 4,000 characters; result up to 200 rows, 800 cells and 20,000 characters of row JSON |
+| `health_context` | read | Static playbook, labels, units, ROPEs and physiology priors | none; output up to 9,000 characters |
+| `health_log_event` | insert | One tracker event and the day's total | `at` from 7 days ago to 5 minutes ahead; note up to 280 code points; idempotency key of 8–64 `[A-Za-z0-9_-]` |
+| `health_delete_event` | soft delete | Undoes an event by its `event.id`; the row keeps `deleted_at` | `event_id` of 1–80 characters |
+| `health_set_profile` | profile write | Partial profile update; weight upserted per date | See [profile fields](#profile-fields) |
+| `health_scan` | analysis log write | Ranked behavior and planned metric comparisons with confidence labels | Up to 180 days (default 120); `limit` 1–10 |
+| `health_periods` | analysis log write | Streaks, CUSUM changes, sustained behavior changes, mood weeks and anomalies | Up to 180 days (default 120) |
+| `health_contrast` | analysis log write | Two filtered groups compared; filter dates are clipped to the range | Up to 180 days; up to 4 AND conditions per group |
+| `health_findings` | finding write | `list` (up to 20), `save`, `recheck` or `retire` saved comparisons; confirmation uses only days after saving | Statement of 1–500 code points |
+
+### Tracker catalog
+
+| Id | Unit | Type | Default | Limits | On the watch |
+|---|---|---|---|---|---|
+| `caffeine` | mg | amount | 80 | 1–1000 | menu button |
+| `cigarettes` | u | count | 1 | 1–20 | menu button |
+| `alcohol` | g | amount | 13 | 1–200 | menu button |
+| `water` | ml | amount | 250 | 50–2000 | menu button |
+| `melatonin` | mg | amount | 1 | 0.1–10 | supplements ring |
+| `protein` | g | amount | 30 | 5–100 | supplements ring |
+| `creatine` | g | amount | 5 | 1–20 | supplements ring |
+| `mood_genial`, `mood_bien`, `mood_tranquilo`, `mood_cansado`, `mood_estresado`, `mood_ansioso`, `mood_triste`, `mood_enfadado` | u | count | 1 | 1–1 | mood ring |
+
+The table shows the seeded values; `health_trackers` returns the current ones. Several moods per day are allowed. Daily mood counts are columns of `health_daily` and `v_daily`; individual events are in `v_events`.
+
+### Analysis and insight inputs
+
+- `health_compare` behaviors: `cigarettes`, `alcohol_g`, `caffeine_mg` (default bins `[5, 10]`, `[20, 40]`, `[200, 400]`). Outcomes: `rhr`, `hrv_rmssd`, `ln_rmssd`, `resp_rate`, `spo2_avg`, `skin_temp_dev`, `sleep_min`, `sleep_eff`, `deep_min`, `rem_min`, `sleep_latency_min`, `steps`, `azm`, `readiness_proxy`. Behavior on day D pairs with the outcome on D + lag, so the default lag of 1 matches sleep's wake date.
+- Insight behaviors (`health_scan`, `health_periods`, `health_contrast`): `cigarettes`, `caffeine`, `alcohol`, `water`, `melatonin`, `protein`, `creatine`, `mood_negative`, `mood_tired`, `workout`, `steps`, `short_sleep`. Metrics cover sleep, activity, physiology and individual or grouped mood outcomes. Behavior days run from 05:00 to 05:00 local. `health_context` lists every id, timing, unit and rule.
+- Confidence labels are returned in Spanish: `sólido`, `probable`, `indicio`, `sin_diferencia`, `sin_datos`, `cambio`. Results are associational, not causal, and include sample sizes.
+
+### Profile fields
+
+| Field | Accepted |
+|---|---|
+| `birth_year` | Integer from 1920 to the current local year; only the year is stored |
+| `sex` | `female`, `male` or `null` to clear |
+| `height_cm`, `weight_kg` | 100–250 cm and 30–300 kg, rounded to 0.1 |
+| `date` | Weight date from 2000-01-01 to local today; defaults to today |
+| `step_goal`, `sleep_goal_min`, `water_goal_ml` | Integers in 1000–50000, 240–720 and 500–6000; unset goals read as 7000, 450 and 2000 |
+| `max_hr` | Measured, integer in 120–230; otherwise estimated as round(208 − 0.7 × age) |
+| `smoker` | Boolean |
+
+Each executed tool call is audited on a best-effort basis (arguments, outcome, duration); profile tools record field names only. Calls refused by schema validation are not audited.
+
+## Watch
+
+The `wear/` project has two modules, sideloaded with ADB:
+
+| Module | What it is |
+|---|---|
+| `app` | Companion app: fetches `GET /watch/today` hourly, renders the dial to an image, serves it as a complication and hosts the log menu |
+| `watchface` | Resource-only Watch Face Format v4 face: bezel, 24-hour and minute hands, the dial image and four editable edge complications |
+
+- **Requirements:** Wear OS 6 or later. Built for a 41 mm Pixel Watch 3; other round watches should work.
+- **Dial:** today's sleep, workouts, logs and 15-minute heart rate on a 24-hour ring. It fades when the data is more than three hours old.
+- **Log menu:** tap the centre of the face for six buttons. Coffee, cigarette, drink and water log with one tap; mood and supplements open a ring of choices. Water shows progress towards `water_goal_ml`.
+- **Offline and safe retries:** each tap is queued on the watch with a random idempotency key and sent to `POST /watch/log` when online. An undo button takes back the last watch log for 15 minutes.
+- **Token scope:** `WATCH_TOKEN` can read today's dial data and log or undo only trackers in the watch catalog. Watch logs use their own id prefix, so the token cannot replay or undo a log made through MCP.
+
+The build, pairing, endpoint contract, troubleshooting and preview-image procedure are in [docs/watch.md](docs/watch.md).
+
+## Dashboard
+
+The dashboard reads live data through the MCP connector of the client that hosts it. `dashboards/health-tracker.html` is the shell (header, quick log, shared charts, insight cards, copy and theme), and each tab is a module in `dashboards/tabs/` that registers itself with `HT.registerTab`.
+
+| Tab | File | What it shows |
+|---|---|---|
+| Today | `tabs/hoy.js` | The 24-hour dial with sleep, workouts, logs and heart rate; recovery and vitals; steps against the goal; the day's totals and timeline |
+| Sleep | `tabs/sueno.js` | The night with its hypnogram and logs before bed, stages against your usual range, recent nights, sleep by weekday and what may have played a part |
+| Health | `tabs/salud.js` | Last night's vitals against your usual range, 30- and 90-day trends, today's heart rate and its response around each log, and saved findings |
+| Activity | `tabs/actividad.js` | Steps today and by hour, your usual day, the 30-day trend, active minutes per week, workouts and what changes your activity |
+| Routine | `tabs/rutina.js` | Your days hour by hour, first times of the day, what leads to what, water, supplements and mood |
+
+- **Quick log:** one tap for coffee, cigarette, alcohol and water; mood and supplements open a picker. Every log can be undone, and taps are sent in order with a retry.
+- **Usual ranges:** strips show the p25–p75 band and median over the previous 28 days; a value is flagged only outside p10–p90. With few days of data a card says so.
+- **Insights:** cards built on `health_periods`, `health_scan` and `health_findings` say what goes with what and how sure the comparison is, without claiming causes.
+- **Layout:** English and Spanish; light, dark and automatic themes; phone, tablet and desktop; keyboard and screen-reader support.
+- **Tools used:** the page declares 13 tools in its `mcp-manifest` block: the read tools except `health_trend`, `health_compare`, `health_correlate` and `health_context`, plus `health_log_event`, `health_delete_event`, `health_scan`, `health_periods` and `health_findings`.
+
+Nights are named by the evening they start ("night of Thu 22" ends on Friday morning). Until tonight's sleep syncs, Sleep and Today show the previous night and say so.
 
 ## Data model
 
-Event, sample and session times are epoch seconds UTC, with `tz_offset_min` on rows that need a local date; daily tables store `local_date` only. Schema: `worker/migrations/0001`–`0015`.
+Event, sample and session times are epoch seconds UTC, with `tz_offset_min` on rows that need a local date; daily tables store `local_date`. Schema: [`worker/migrations/`](worker/migrations), `0001`–`0015`.
 
 | Table | Content |
 |---|---|
 | `metric_def` | Metric catalog (unit, aggregation) |
 | `metric_minute` | Per-minute heart rate and hourly steps (`steps_h`) |
-| `metric_hour` | Hourly table, created but not written yet |
+| `metric_hour` | Hourly table, created but not written |
 | `metric_daily` | Daily values: steps, resting HR, HRV, SpO2, respiratory rate, skin temperature, AZM |
 | `sleep_session`, `sleep_stage` | Sleep sessions (with nap flag) and stages |
 | `workout` | Exercise sessions |
-| `daily_summary` | One row per day: vitals, sleep, activity, z-scores, readiness proxy (tracker and mood totals are joined in by `v_daily`) |
-| `tracker`, `event`, `tracker_daily` | Tracker catalog (default value, watch surface `face` or `tile`, order, archive date), logged events (soft-deleted via `deleted_at`), daily totals |
-| `finding`, `finding_check`, `analysis_log` | Saved insight findings, their rechecks, and the log of exploration runs (kept 90 days) |
+| `daily_summary` | One row per day: vitals, sleep, activity, z-scores, readiness proxy |
+| `tracker`, `event`, `tracker_daily` | Tracker catalog (default, limits, watch surface, order, archive date), events (soft-deleted via `deleted_at`) and daily totals |
+| `finding`, `finding_check`, `analysis_log` | Saved findings, their rechecks, and the log of exploration runs (kept 90 days) |
 | `profile`, `weight_log` | Owner profile and dated weights; not reachable from `health_sql` |
-| `sync_pending`, `sync_state`, `rollup_dirty`, `rollup_seq` | Ingest queue, per-type sync state, dates awaiting recompute |
-| `secret_blob`, `oauth_state` | Encrypted Google refresh token, short-lived consent state |
-| `audit_log` | Tool and auth audit records, kept 90 days |
+| `sync_pending`, `sync_state` | Ingest queue and per-type sync state, including the watch's last sync |
+| `rollup_dirty`, `rollup_seq` | Dates awaiting summary recompute and their version sequence |
+| `secret_blob`, `oauth_state` | Encrypted Google refresh token and 10-minute consent state |
+| `audit_log` | Tool and sign-in audit records, kept 90 days |
 
-Read-only views for `health_sql`: `v_daily`, `v_events` (live events only), `v_sleep`, `v_workouts`.
+Read-only views for `health_sql`: `v_daily` (summary plus tracker and mood totals), `v_events` (live events only), `v_sleep` and `v_workouts`.
 
-## Privacy & security
+## Security and privacy
+
+### Threat model
+
+| Entry point or asset | Threat | Mitigation |
+|---|---|---|
+| `/mcp` | Someone else connects a client | OAuth 2.1 with PKCE; Google sign-in must return a verified `ALLOWED_EMAIL`; other accounts are refused and audited |
+| Connector tokens | A client token leaks | The OAuth provider owns token lifetimes and refresh rotation; grants can be deleted from `OAUTH_KV`. No tool hard-deletes data |
+| Webhook | Forged or replayed notifications | Header compared as SHA-256 digests in constant time before the body is read, then ECDSA P-256 signature verified before parsing. Payloads only name intervals; data is always re-read from Google |
+| Google refresh token | Theft from D1 or a backup | Encrypted with AES-256-GCM under `TOKEN_ENC_KEY`, which exists only as a Worker secret; never returned by any tool or logged |
+| `WATCH_TOKEN` | Extracted from the watch build | Can read today's dial and log or undo watch-catalog trackers only; compared in constant time; rotate by resetting the secret and rebuilding the app |
+| `health_sql` | Injection or exfiltration | Lexical and parser guards allow one `SELECT` over four views and declared CTEs; profile tables are denied; output is capped |
+| Event notes | Prompt injection through stored text | Notes are returned marked as untrusted; `health_sql` sets `notes_untrusted` when a returned column is named `note` |
+| `/google/connect` | Anyone can start consent | Only a verified `ALLOWED_EMAIL` identity can store a token; state is single-use and expires in 10 minutes |
+
+Out of scope: a compromised Cloudflare or Google account, and the retention policies of the MCP clients you connect.
+
+### Privacy
 
 | Topic | Approach |
 |---|---|
-| Where data lives | Your Cloudflare account: health data, events, sync state and audit log in D1; connector grants and cached Google access tokens in KV (`OAUTH_KV`) |
-| Google tokens | Refresh token encrypted with AES-256-GCM in D1; never returned by any tool |
-| Webhook | Authorization header compared against SHA-256 digests in constant time before reading the body, then ECDSA P-256 signature verified before parsing. Only exception: an authorized verification handshake of at most 64 bytes containing exactly `{"type":"verification"}` |
-| Access | OAuth 2.1 with PKCE; Google sign-in restricted to `ALLOWED_EMAIL`, any other account is refused |
-| Tool writes | Insert one event, soft-delete one event, update the profile. No hard deletes, no other writes |
-| SQL tool | Lexical and parser guards allow one `SELECT` over the four views and declared CTEs; profile tables are denied |
-| Untrusted text | Tracker tools mark event notes as untrusted; `health_sql` sets `notes_untrusted` only when a returned column is named `note` |
-| Audit | Executed tool calls and connector sign-in grants/refusals are audited on a best-effort basis; profile audits keep field names only; rows older than 90 days are deleted |
-| Backups | D1 Time Travel keeps 30 days on Workers Paid at the time of writing ([Cloudflare docs](https://developers.cloudflare.com/d1/reference/time-travel/)). The weekly export writes to `~/health-tracker-backups`, verifies a local restore and keeps eight backup pairs. Protect these files as health data |
+| Where data lives | Your Cloudflare account: health data, events, sync state and audit log in D1; connector grants and the cached Google access token in KV |
+| Tool writes | Insert one event, soft-delete one event, update the profile, save or retire findings, and append analysis logs. Health data has no delete tool |
+| Audit | Executed tool calls and sign-in grants and refusals, best effort; profile audits keep field names only; 90-day retention |
+| Backups | D1 Time Travel keeps 30 days on Workers Paid at the time of writing ([Cloudflare docs](https://developers.cloudflare.com/d1/reference/time-travel/)). Local exports contain every table, including the encrypted token; protect them as health data |
 | Data sent to clients | Tool results go to whichever MCP client you query. Review its retention and training settings, and keep unrelated connectors out of health chats |
 
-This is a personal project, not a medical device, and not medical or legal advice.
+This is a personal project, not a medical device, and not medical advice.
 
-**Revoking access.** Remove the app at [Google account permissions](https://myaccount.google.com/permissions); ingestion stops at the next token refresh. Disconnect the connector in each MCP client and delete its grant records from `OAUTH_KV` (`npx wrangler kv key delete --binding OAUTH_KV --remote --config wrangler.production.jsonc <key>`). Already-issued connector access tokens remain valid until they expire. Revocation does not delete stored data or backups.
+## Operations
 
-### Rotating the webhook secret
+| Task | How |
+|---|---|
+| Check health | Call `health_status`; see the alerts below |
+| Read logs | `npx wrangler tail --config wrangler.production.jsonc`; Workers observability is enabled in the config |
+| Back up weekly | Run the export from cron or launchd, or from a scheduled job that also compares row counts: [docs/operations.md](docs/operations.md#back-up-weekly) |
+| Rotate the webhook secret | 24-hour overlap through `WEBHOOK_SECRET_PREV`: [docs/operations.md](docs/operations.md#rotate-the-webhook-secret) |
+| Rotate the watch token | Set a new `WATCH_TOKEN`, update `watchToken` in `wear/local.properties`, rebuild and reinstall the app |
+| Revoke access | [docs/operations.md](docs/operations.md#revoke-access) |
 
-While `WEBHOOK_SECRET_PREV` is set, both values are accepted. Keep the current value in a password manager and confirm it matches the subscriber before starting. If it is lost, set a fresh value in the Worker and the subscriber together and accept a short gap; the 04:30 UTC reconcile backfills it. Run from `worker/`, one step at a time, with shell tracing off. Do not start another rotation until step 5 is done.
+`health_status` alerts (messages are in Spanish):
 
-1. Generate the new value and save it as **pending** in the password manager:
+| Code | Raised when |
+|---|---|
+| `google_disconnected` | No Google refresh token is stored |
+| `no_data_48h` | No heart rate in the last 48 hours |
+| `no_sleep_48h` | Google is connected and no main sleep ended in the last 48 hours |
+| `queue_stuck` | Queue items have failed five times |
+| `daily_stale` | The latest daily summary is older than yesterday |
+| `watch_not_syncing` | Google is connected and the watch's last sync is missing or more than 24 hours old |
+| `hr_coverage_gap` | Three or more consecutive past days have at most one heart-rate minute |
 
-   ```sh
-   printf 'Bearer '; openssl rand -hex 32
-   ```
+### Troubleshooting
 
-2. Upload the **current** value as the previous one:
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Today's data is missing | The watch has not synced to the Google Health app | Open the Google Health app on the phone; check `watch_not_syncing` |
+| `google_disconnected` | No stored refresh token | Open `https://<your-domain>/google/connect` |
+| `queue_stuck` | Items failed five times, often after Google access expired or was revoked | Reconnect through `/google/connect`, which resets their attempts |
+| `daily_stale` | The cron is not running or fails | Check `wrangler tail` and that both cron triggers are deployed |
+| Webhooks return `503` | `WEBHOOK_SECRET` is unset or shorter than 16 characters, or Google's public keyset is unreachable | Set the secret; the keyset is fetched again on the next call |
+| `400 Missing scopes` on consent | A scope was unticked on the consent screen | Repeat `/google/connect` and grant all four |
+| The watch dial never appears | `watchToken` does not match `WATCH_TOKEN` (`401`) | Fix `wear/local.properties` and rebuild; more in [docs/watch.md](docs/watch.md#troubleshooting) |
+| The dashboard asks to turn on the connector | The connector is not named `Health Tracker` or is off | Rename or enable it in the client's connector settings and reopen the page |
 
-   ```sh
-   npx wrangler secret put WEBHOOK_SECRET_PREV --config wrangler.production.jsonc
-   ```
+## Development
 
-3. Upload the **pending** value:
+```sh
+# Worker
+cd worker
+npm ci
+npm run typecheck   # tsc --noEmit, strict
+npm run lint        # eslint
+npm test            # vitest in the Workers runtime, then the CPU-budget suites serially
 
-   ```sh
-   npx wrangler secret put WEBHOOK_SECRET --config wrangler.production.jsonc
-   ```
+# Python
+cd py
+uv run ruff check .
+uv run pytest -q
 
-4. Set `NUM` to your Google Cloud project number, `SUBSCRIBER` to your subscriber ID, and PATCH the subscriber with the pending value (prompted without echo, sent through stdin). On **HTTP 2xx**, make the pending value current in the password manager.
+# Watch unit tests (need wear/local.properties)
+cd wear
+./gradlew :app:testDebugUnitTest
+```
 
-   ```sh
-   python3 -c 'import getpass, json; print(json.dumps({"endpointAuthorization": {"secret": getpass.getpass("Pending webhook secret: ")}}))' |
-     curl --fail-with-body --request PATCH \
-       "https://health.googleapis.com/v4/projects/${NUM}/subscribers/${SUBSCRIBER}?updateMask=endpointAuthorization" \
-       --header "Authorization: Bearer $(gcloud auth print-access-token)" \
-       --header "x-goog-user-project: ${NUM}" \
-       --header 'Content-Type: application/json' \
-       --data-binary @- --write-out '\nHTTP %{http_code}\n'
-   ```
+| Topic | Convention |
+|---|---|
+| CI | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs typecheck, lint and tests for `worker/`, and ruff and pytest for `py/`, on every push to `main` |
+| Commits | [Conventional Commits](https://www.conventionalcommits.org/), for example `feat(dashboard): …`, `fix(ingest): …`, `docs: …` |
+| Schema changes | A new numbered file in `worker/migrations/`; tests apply every migration to a local D1 |
+| Tests | `@cloudflare/vitest-plugin` runs suites in the Workers runtime against `wrangler.jsonc`; network calls are injected |
+| Python style | ruff with Google-style docstrings, line length 100 |
+| Watch face | Edit `wear/watchface/generate.py`, not the generated XML |
+| Local config | `worker/wrangler.production.jsonc` and `wear/local.properties` are git-ignored |
 
-5. **24 hours after step 4 succeeded**, remove the previous value:
-
-   ```sh
-   npx wrangler secret delete WEBHOOK_SECRET_PREV --config wrangler.production.jsonc
-   ```
-
-On any failed or uncertain step, stop and retry that same step with the same saved values. Never repeat step 2 after step 3. Never run step 5 before step 4 has succeeded and 24 hours have passed.
-
-## Limits
+## Limits and costs
 
 | Limit | Detail |
 |---|---|
-| Freshness | Watch sync to the Google Health app, then the 5-minute cron, which drains the queue within its time budget (historical heart rate one day per tick); an item that fails five times stops retrying until Google is reconnected, while the daily reconcile re-reads the last 48 h |
-| Missing metrics | Readiness, Sleep Score and stress are not ingested (not offered by the [Google Health API](https://developers.google.com/health) at the time of writing); `readiness_proxy` is a local heuristic (`0.5·z_ln_rmssd − 0.3·z_rhr + 0.2·z_sleep`) |
-| Plan | Workers Paid. The Free plan's 10 ms CPU per invocation and 50 D1 queries per invocation are too tight ([Cloudflare limits](https://developers.cloudflare.com/workers/platform/limits/)): measured in production over one hour, MCP calls took p50 166 ms CPU (mostly cold starts; 3–27 ms warm) and cron ticks p50 20 ms. D1 and KV stay within their included usage for one person |
-| Intraday | Heart rate from the Google Health source only; 1-minute reads cover at most 3 hours per call |
+| Plan | Workers Paid ([pricing](https://developers.cloudflare.com/workers/platform/pricing/)). The Free plan's 10 ms CPU and 50 D1 queries per invocation are too tight ([limits](https://developers.cloudflare.com/workers/platform/limits/)) |
+| Measured CPU | Over one hour in production: MCP calls p50 166 ms (mostly cold starts; 3–27 ms warm), cron ticks p50 20 ms |
+| D1 and KV | Within the plan's included usage for one person |
+| Freshness | Watch sync, then the 5-minute cron with its 60 s budget; historical heart rate drains one day per tick |
+| Retries | An item that fails five times stops retrying until Google is reconnected; the daily reconcile re-reads the last 48 h |
+| Missing metrics | Readiness, Sleep Score and stress are not offered by the Google Health API at the time of writing; `readiness_proxy` is a local heuristic (`0.5·z_ln_rmssd − 0.3·z_rhr + 0.2·z_sleep`) |
+| History | Starts at consent plus the reconcile window; no bulk backfill |
 | Analysis | Single person, observational data: associations, not causes |
-| History | Data starts at Google consent plus what the reconcile window reaches; there is no bulk historical backfill |
 | Users | One owner per deployment |
 
-## What's next
+## Roadmap
 
-- A public landing page that presents the project and lets anyone see the product without connecting their own data.
+- A public landing page that lets anyone see the product.
 
 ## FAQ
 
-**Does it need a paid plan?** Yes, Cloudflare Workers Paid; D1 and KV stay within its included usage for one person. See [Limits](#limits).
+**Does it need a paid plan?** Yes, Cloudflare Workers Paid. See [Limits and costs](#limits-and-costs).
 
 **Which MCP clients work?** Clients with remote Streamable HTTP and OAuth 2.1 with PKCE, such as claude.ai, which also hosts the dashboard.
 
-**Can someone else read my data?** Only the allowlisted Google account can complete the connector sign-in. Data is in your Cloudflare account and goes to the MCP clients you connect.
+**Can someone else read my data?** Only the allowlisted Google account can complete the connector sign-in. Data stays in your Cloudflare account and goes to the MCP clients you connect.
 
 **Can a client delete my data?** No. The only removal is a soft delete of a logged tracker event; health data has no delete tool.
 
-**Why is today's data missing?** Usually the watch has not synced yet; a missing Google connection, failed queue items or a backlog are other causes. `health_status` shows each, and raises `watch_not_syncing` when Google is connected and the last watch sync is missing or more than 24 hours old.
+**Why is today's data missing?** Usually the watch has not synced yet. `health_status` shows the Google connection, failed queue items and the watch's last sync.
 
-**Does it work with other watches?** It is built for the Pixel Watch through the Google Health API.
+**Does it work with other watches?** Data comes from the Pixel Watch through the Google Health API. The watch face needs Wear OS 6 on a round watch.
+
+**Can I use another time zone?** Yes. Set `USER_TZ`, `userTz` in `wear/local.properties` and the dashboard's `USER_TZ` to the same zone.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+Released under the [MIT License](LICENSE). Third-party notices for the watch are in [wear/THIRD_PARTY_NOTICES.md](wear/THIRD_PARTY_NOTICES.md).
