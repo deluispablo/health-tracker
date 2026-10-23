@@ -109,7 +109,7 @@ async function androidSdk(c) {
 
 async function tools(c) {
   if (c.flags.watch) await androidSdk(c); // fail before anything is changed
-  if (Number(c.io.nodeVersion.split(".")[0]) < 20) fail("Node.js 20 or newer is needed. Install the current LTS from nodejs.org, then run npm run setup again.");
+  if (Number(c.io.nodeVersion.split(".")[0]) < 22) fail("Node.js 22 or newer is needed. Install the current LTS from nodejs.org, then run npm run setup again.");
   const whoami = async () => {
     const r = await wrangler(c, ["whoami", "--json"]);
     const who = r.code === 0 ? parse(r.stdout, "wrangler whoami") : null;
