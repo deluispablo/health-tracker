@@ -77,8 +77,8 @@
     }
     const days = per.map((v) => v.length >= 3 ? { bed: med(v.map((x) => x[0])), wake: med(v.map((x) => x[1])), dur: med(v.map((x) => x[2])), n: v.length } : null);
     const valid = [0, 1, 2, 3, 4, 5, 6].filter((i) => days[i]);
-    const few = per.filter((v) => v.length).length < 4;   // FU1 ruling a: a weekday has data with 1 night; under 4 such weekdays, no Todos claim
-    if (!valid.length) return few ? { days, counts: per.map((v) => v.length), few, lateClear: false, shortClear: false } : { learning: true, n: all.length, need: 21, counts: per.map((v) => v.length) };
+    const few = valid.length < 4;   // FU5: only weekdays that show a value (3+ nights) count; under 4 of them, no Todos claim
+    if (!valid.length) return { days, counts: per.map((v) => v.length), few, lateClear: false, shortClear: false };
     const half = (k) => { const r = L.typicalRange({ columns: ['local_date', 'bed', 'dur'], rows: all }, k, date); return r.learning != null ? Infinity : (r.high - r.low) / 2; };
     const late = valid.reduce((a, i) => days[i].bed > days[a].bed ? i : a), short = valid.reduce((a, i) => days[i].dur < days[a].dur ? i : a);
     return { days, counts: per.map((v) => v.length), late, short, few,
@@ -250,7 +250,7 @@
         out.length ? t('su.ph.out', { x: out.map(([k, fl]) => t('su.st.' + k).toLowerCase() + ' ' + t('su.' + fl)).join(', ') }) : known ? t('su.ph.ok') : null].filter(Boolean);
       return [line(lead.join(' '), 'hx-lead'), sub.length ? line(sub.join(' ')) : null];
     })();
-    const sum = h('section', { class: 'hx-sum' }, h('p', { class: 'met-l', text: date === ctx.today && !(fb && s) ? t('su.last') : t('su.nightOf', { d: fmt.wday(nd, lang) }) }), sumBody,
+    const sum = h('section', { class: 'hx-sum' }, h('p', { class: 'met-l', text: date === ctx.today && !(fb && s) ? t('su.last') : t('su.nightOf', { d: fmt.wday(L.shiftDate(nd, -1), lang) }) }), sumBody,
       fb && !sumGate ? line(t('su.wait'), s ? 'hx-sub' : 'hx-lead') : null, sl.stale('suSleep'));
 
     /* 2. Clave: value, strip (band p25–p75, scale padded by the band width) and "habitual". */
@@ -268,7 +268,9 @@
     const key = h('section', { class: 'hx-key' }, slGate() ?? (!s && !fb ? line(t('su.none')) : [   // fallback without a night: the rows with — and their usual (ruling c)
       krow(t('su.k.asleep'), 'minutes_asleep', hm, (r) => hm(r.low) + '–' + hm(r.high), times ? t('su.span', times) + ' · ' : ''),
       krow(t('su.k.eff'), 'efficiency', pct, (r) => num(r.low) + '–' + pct(r.high)),
-      krow(t('su.k.lat'), 'latency_min', hm, (r) => num(r.low) + '–' + num(r.high) + (lang === 'es' ? ' min' : 'm'))]));
+      // FU5 ruling c: no row when every main night from nd − 28 to nd has latency 0 or missing (the watch then records none)
+      tbl.rows.some((r) => r[0] >= L.shiftDate(nd, -28) && r[0] <= nd && finite(r[3]) && r[3] !== 0)
+        ? krow(t('su.k.lat'), 'latency_min', hm, (r) => num(r.low) + '–' + num(r.high) + (lang === 'es' ? ' min' : 'm')) : null]));
 
     /* Hypnogram rows (sleep.py hyp()); x in night minutes. Returns the markup and the phases as marks {x0, x1, y, tip} in viewBox units. */
     const hyp = (g, X, H0) => {
@@ -407,7 +409,6 @@
     const drawWeek = () => {
       if (!nights) return weekBox.replaceChildren(nGate() ?? line(t('su.partial')));
       const w = suWeek(nights, date);
-      if (w.learning) return weekBox.replaceChildren(HT.ins.learning(ctx, w.n, w.need, { unit: 'nights' }));
       const sel = HT.sel.get('sueno:wk') ?? null, d = sel == null ? null : w.days[sel];
       const text = sel != null ? (d ? t('su.wk.sel', { d: names[sel], a: hh(d.bed + 1080), b: hh(d.wake + 1080), x: hm(d.dur), n: d.n }) : t('su.wk.few', { d: names[sel], n: w.counts[sel] }))
         : w.lateClear || w.shortClear ? t(w.lateClear && w.shortClear ? 'su.wk.both' : w.lateClear ? 'su.wk.late' : 'su.wk.short',
@@ -458,7 +459,7 @@
       const key = (st, k) => h('span', {}, h('i', { style: st }), k);
       diaBox.replaceChildren(seg,
         h('div', { class: 'sx-rows', role: 'img', 'aria-label': t('su.dia.aria', { n: span }) + ' ' + text }, d.rows.map((r) => h('div', { class: 'sx-d' + (r.date === date ? ' is-today' : '') },
-          h('span', { class: 'sx-dd', text: fmt.wday(r.date, lang) }),
+          h('span', { class: 'sx-dd', text: fmt.wday(L.shiftDate(r.date, -1), lang) }),   // the night by its evening (FU5)
           h('div', { class: 'sx-dt' }, band('sx-win', 'i'), r.bed != null && r.wake != null && r.wake > r.bed ? h('i', { class: 'sx-db', style: 'left:' + pos(r.bed) + '%;width:' + r1(pos(r.wake) - pos(r.bed)) + '%' }) : null),
           h('span', { class: 'sx-dv', text: r.dur != null ? hm(r.dur) : '—' }))),
           h('div', { class: 'sx-d sx-ax' }, h('span', {}), h('div', { class: 'sx-axl' }, AXIS.map((a) => h('span', { text: a }))), h('span', {}))),

@@ -242,7 +242,7 @@
         h('span', { class: 'hx-s' }, sub[0], flag ? [' · ', h('b', { class: 'hx-up', text: t('sa.' + flag) })] : null, clinic ? ' · ' + clinic : null));
     };
     const vState = () => vs.state('vitals', 4);   // a fresh box per card: one element cannot sit in several cards
-    const vitC = card('hx-key hx-vit', t('sa.vit.t'), hasVit ? t('ins.night', { d: L.fmt.wday(night, lang) }) : null, vst ? [vState()] : hasVit ? [...VORD.map(vitRow), vs.stale('vitals')] : [h('p', { class: 'hx-sub', text: t('sa.noVit') })]);
+    const vitC = card('hx-key hx-vit', t('sa.vit.t'), hasVit ? t('ins.night', { d: L.fmt.wday(L.shiftDate(night, -1), lang) }) : null, vst ? [vState()] : hasVit ? [...VORD.map(vitRow), vs.stale('vitals')] : [h('p', { class: 'hx-sub', text: t('sa.noVit') })]);
 
     // 3. Tendencia
     const metric = HT.sel.get('salud:metric') ?? 'hrv_rmssd', span = HT.sel.get('salud:days') ?? 30, mark = HT.sel.get('salud:mark') ?? null;

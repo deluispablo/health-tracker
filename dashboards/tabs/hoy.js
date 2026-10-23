@@ -394,7 +394,7 @@ function render(ctx) {
     const bed = cell('bedtime_local', sd), wake = cell('waketime_local', sd), steps = val('steps'), azm = val('azm');
     const times = L.localMinutes(bed) != null && L.localMinutes(wake) != null ? hm(L.localMinutes(bed)) + ' → ' + hm(L.localMinutes(wake)) : null;
     const sRow = row(t('hoy.key.sleep'), fin(sMin) && sR.learning == null ? strip(sR.low, sR.high, sMin) : null, fin(sMin) ? dh(sMin, lang) : '—',
-      [fb && fin(sMin) ? t('ins.night', { d: fmt.wday(sd, lang) }) : null, times, usualDur(sR)].filter(Boolean).join(' · '));
+      [fb && fin(sMin) ? t('ins.night', { d: fmt.wday(L.shiftDate(sd, -1), lang) }) : null, times, usualDur(sR)].filter(Boolean).join(' · '));
     const wait = fb ? h('p', { class: 'hx-note', text: t('hoy.key.wait') }) : null;
     const bar = fin(steps) ? h('div', { class: 'hx-bar', 'aria-hidden': 'true' }, h('i', { style: 'width:' + pc(Math.min(1, steps / goal)) }), isNow ? h('b', { class: 'hx-tick', style: 'left:' + pc(L.expectedSteps(end, goal) / goal) }) : null) : null;
     const pTxt = pace && isNow ? (pace.k === 'at' ? t('hoy.key.at') : t('hoy.key.' + pace.k, { n: n0(pace.d) })) : null;
@@ -508,7 +508,7 @@ function render(ctx) {
 
   /* 4 Recuperación (C1: the night the values belong to) */
   const recCard = (() => {
-    const st = S.daily.state('rec', 3), sub = st ? null : t('ins.night', { d: fmt.wday(night, lang) });
+    const st = S.daily.state('rec', 3), sub = st ? null : t('ins.night', { d: fmt.wday(L.shiftDate(night, -1), lang) });   // a night is named by its evening (FU5)
     if (st) return card('hx-rec', t('hoy.rec.title'), null, st);
     const r = (m) => L.typicalRange(daily, m, night);
     /* R2.10: the verdict, each row's usual range and the other vitals learn separately; the night's values always show. */
