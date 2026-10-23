@@ -121,7 +121,7 @@ export async function healthStatus(db: D1Database, { now, tz }: { now: number; t
     }
   }
   return {
-    now_local,
+    now_local, tz,
     streams: [
       ...metrics.map((row) => stream(`metric:${row.metric}`, row.ts, row.tz_offset_min)),
       stream("sleep", sleep?.ts ?? null, sleep?.tz_offset_min),

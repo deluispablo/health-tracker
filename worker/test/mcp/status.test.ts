@@ -92,7 +92,7 @@ describe("T10d AC1 health_status", () => {
   it("returns exactly the empty-database shape with ordered Spanish alerts", async () => {
     const out = await readStatus(env.DB, options);
     expect(out).toEqual({
-      now_local: "2026-10-21T10:00",
+      now_local: "2026-10-21T10:00", tz: "Europe/Madrid",
       streams: [{ stream: "sleep", latest_local: null, age_hours: null }, { stream: "daily", latest_local: null, age_hours: null },
         { stream: "watch", latest_local: null, age_hours: null }],
       queue: { pending: 0, stuck: 0, oldest_received_local: null },
@@ -117,7 +117,7 @@ describe("T10d AC1 health_status", () => {
       (source_id, start_ts, end_ts, tz_offset_min, local_date, updated_at)
       VALUES ('night', ?, ?, 120, '2026-10-21', 1)`).bind(NOW - 36000, NOW - 7200).run();
     expect(await readStatus(env.DB, options)).toEqual({
-      now_local: "2026-10-21T10:00",
+      now_local: "2026-10-21T10:00", tz: "Europe/Madrid",
       streams: [
         { stream: "metric:hr", latest_local: "2026-10-21T09:58", age_hours: 0 },
         { stream: "sleep", latest_local: "2026-10-21T08:00", age_hours: 2 },

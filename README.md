@@ -215,7 +215,7 @@ The example already sets both cron triggers, observability and the `global_fetch
 
 | Var | Required | Example | Purpose |
 |---|---|---|---|
-| `USER_TZ` | yes | `Europe/Madrid` | IANA time zone for local dates, tracker days, the watch and the analysis calendars |
+| `USER_TZ` | yes | `Europe/Madrid` | Fallback IANA time zone for local dates, tracker days and the analysis calendars. The zone is automatic: the watch reports its own on every sync and the Worker follows it; this value applies until the first report and whenever the stored zone is missing or invalid |
 | `PUBLIC_ORIGIN` | yes | `https://<your-domain>` | OAuth issuer, endpoints and protected-resource metadata |
 
 #### Secrets
@@ -268,7 +268,6 @@ This is a summary; the toolchain, pairing and troubleshooting are in [docs/watch
    | `sdk.dir` | yes | Android SDK path |
    | `watchToken` | yes | Same value as `WATCH_TOKEN`; the build fails when it is blank |
    | `watchBaseUrl` | yes | `https://<your-domain>`; must start with `https://` |
-   | `userTz` | no | Java zone id matching `USER_TZ`; defaults to `Europe/Madrid`; an invalid zone fails the build |
 
 3. Pair the watch over wireless debugging, then build, install and select the face:
 
@@ -285,7 +284,7 @@ This is a summary; the toolchain, pairing and troubleshooting are in [docs/watch
 2. Publish the five tab files next to it at `tabs/hoy.js`, `tabs/sueno.js`, `tabs/salud.js`, `tabs/actividad.js` and `tabs/rutina.js`; the shell loads them with relative `<script src>` tags.
 3. Open the artifact and allow its use of the connector's tools once.
 
-The dashboard assumes `Europe/Madrid`. If your `USER_TZ` differs, change `window.HTLogic.USER_TZ` in `health-tracker.html` before publishing.
+The dashboard follows the zone `health_status` reports (automatic from the watch); `Europe/Madrid` applies only until the status loads.
 
 ### 9. Schedule backups
 
@@ -300,7 +299,7 @@ The export dumps D1 with `wrangler d1 export`, restores the dump into an in-memo
 
 ## MCP tools reference
 
-Twenty tools. All use the single OAuth scope `health:read`, including the writes. Dates are local `YYYY-MM-DD` in `USER_TZ`, and ranges are inclusive.
+Twenty tools. All use the single OAuth scope `health:read`, including the writes. Dates are local `YYYY-MM-DD` in the owner's current zone (automatic from the watch, `USER_TZ` as fallback), and ranges are inclusive.
 
 | Tool | Access | Returns | Input limits |
 |---|---|---|---|
@@ -551,7 +550,7 @@ cd wear
 
 **Does it work with other watches?** Data comes from the Pixel Watch through the Google Health API. The watch face needs Wear OS 6 on a round watch.
 
-**Can I use another time zone?** Yes. Set `USER_TZ`, `userTz` in `wear/local.properties` and the dashboard's `USER_TZ` to the same zone.
+**Can I use another time zone?** It is automatic: the watch reports its zone on every sync and the Worker, the dashboard and the watch follow it, within about an hour of a change. Days already stored keep the zone they were lived in. `USER_TZ` (`Europe/Madrid` by default) is only the fallback.
 
 ## License
 

@@ -138,14 +138,16 @@ describe("GET /watch/today", () => {
   });
 
   it("rejects an unset token and a token without the Bearer prefix, without touching the database", async () => {
-    const noDb = new Proxy({}, { get: () => { throw new Error("database touched"); } }) as D1Database;
+    let accesses = 0;
+    const noDb = new Proxy({}, { get: () => { accesses++; throw new Error("database touched"); } }) as D1Database;
     const call = (authorization: string, token?: string) => route(
-      new Request("https://example.com/watch/today", { headers: { authorization } }),
+      new Request("https://example.com/watch/today", { headers: { authorization, "x-time-zone": "Australia/Sydney" } }),
       { ...appEnv(), DB: noDb, WATCH_TOKEN: token as string }, { fetch, now: () => NOW, sleep: () => Promise.resolve() });
     for (const res of await Promise.all([call("Bearer undefined"), call("Bearer "), call(TOKEN, TOKEN), call(`bearer ${TOKEN}`, TOKEN)])) {
       expect(res.status).toBe(401);
       expect(await res.text()).toBe("");
     }
+    expect(accesses).toBe(0);
   });
 });
 

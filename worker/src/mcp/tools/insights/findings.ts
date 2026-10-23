@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validZone } from "../../../app";
 import type { FamilyRow, FindingsEvaluator, RowKey, RowRef, StoredRef } from "./types";
 
 export function canonicalJson(value: unknown): string {
@@ -125,7 +126,7 @@ export async function healthFindings(db: D1Database, args: { action: string; id?
     const row = byKey(family.rows, ref.key);
     if (row === null) throw new RangeError("row not in origin family");
     if (canonicalJson(ref.cutpoints ?? null) !== canonicalJson(row.ref?.cutpoints ?? null)) throw new RangeError("cutpoints differ from origin family");
-    const stored: StoredRef = { ...ref, resolved: family.resolved, mode: deriveMode(ref) };
+    const stored: StoredRef = { ...ref, resolved: family.resolved, mode: deriveMode(ref), tz: evaluator.tz };
     const record = await db.prepare(`INSERT INTO finding (saved_at, statement, ref, ref_hash, result) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(ref_hash) DO UPDATE SET status = 'active' RETURNING *, ${testCount},
       (SELECT verdict FROM finding_check WHERE finding_id = finding.id ORDER BY checked_at DESC LIMIT 1) AS last_verdict,
@@ -151,7 +152,8 @@ export async function healthFindings(db: D1Database, args: { action: string; id?
   let fresh: FamilyRow | null = null;
   let verdict: Verdict | "reproduced" | "changed";
   if (ref.mode === "historical") {
-    fresh = byKey((await evaluator.family(ref.origin, { range: ref.resolved, nowSec: Math.floor(record.saved_at / 1000) })).rows, ref.key);
+    fresh = byKey((await evaluator.family(ref.origin, { range: ref.resolved, nowSec: Math.floor(record.saved_at / 1000),
+      ...(validZone(ref.tz) ? { tz: ref.tz } : {}) })).rows, ref.key);
     verdict = historicalVerdict(saved, fresh);
   } else {
     const range = evaluator.newDataRange(record.saved_at);

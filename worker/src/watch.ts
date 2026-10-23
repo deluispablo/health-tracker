@@ -1,3 +1,4 @@
+import { validZone, withStoredTz } from "./app";
 import type { AppEnv } from "./app";
 import { dateTimeFormat } from "./lib/time";
 import { healthSleep } from "./mcp/tools/sleep";
@@ -20,8 +21,9 @@ async function authorized(request: Request, env: AppEnv): Promise<boolean> {
 }
 
 /** Logs one tap from the watch (POST) or undoes one (DELETE); the idempotency key makes retries safe. */
-export async function handleWatchLog(request: Request, env: AppEnv, now: number): Promise<Response> {
-  if (!await authorized(request, env)) return new Response(null, { status: 401 });
+export async function handleWatchLog(request: Request, rawEnv: AppEnv, now: number): Promise<Response> {
+  if (!await authorized(request, rawEnv)) return new Response(null, { status: 401 });
+  const env = await withStoredTz(rawEnv);
   if (request.method === "DELETE") {
     const body = await request.json().catch(() => null) as { idempotency_key?: unknown } | null;
     const key = watchKey(body?.idempotency_key);
@@ -53,8 +55,17 @@ export async function handleWatchLog(request: Request, env: AppEnv, now: number)
   }
 }
 
-export async function handleWatchToday(request: Request, env: AppEnv, now: number): Promise<Response> {
-  if (!await authorized(request, env)) return new Response(null, { status: 401 });
+export async function handleWatchToday(request: Request, rawEnv: AppEnv, now: number): Promise<Response> {
+  if (!await authorized(request, rawEnv)) return new Response(null, { status: 401 });
+  let env = await withStoredTz(rawEnv);
+  const reported = request.headers.get("x-time-zone");
+  if (validZone(reported)) {
+    // Compared with the stored raw value, so a report equal to the fallback still replaces a missing or invalid row.
+    await env.DB.prepare(`INSERT INTO profile (key, value, updated_at) VALUES ('tz', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      WHERE profile.value IS NOT excluded.value`).bind(JSON.stringify(reported), now).run();
+    env = { ...env, USER_TZ: reported };
+  }
 
   const parts = dateTimeFormat("en-US", {
     timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",

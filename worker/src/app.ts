@@ -44,7 +44,22 @@ function localToday(tz: string, now: number): string {
   return ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
 }
 
-export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps): Promise<void> {
+export function validZone(tz: unknown): tz is string {
+  if (typeof tz !== "string" || tz === "") return false;
+  try { dateTimeFormat("en-US", { timeZone: tz }); return true; } catch { return false; }
+}
+
+/** The zone the watch reported (profile `tz`) replaces the wrangler default; a missing, invalid or unreadable row keeps it. */
+export async function withStoredTz<E extends Pick<AppEnv, "DB" | "USER_TZ">>(env: E): Promise<E> {
+  try {
+    const row = await env.DB.prepare("SELECT value FROM profile WHERE key = 'tz'").first<{ value: string }>();
+    const tz: unknown = row ? JSON.parse(row.value) : null;
+    return validZone(tz) ? { ...env, USER_TZ: tz } : env;
+  } catch { return env; }
+}
+
+export async function handleScheduled(cron: string, rawEnv: AppEnv, deps: AppDeps): Promise<void> {
+  const env = await withStoredTz(rawEnv);
   const now = deps.now();
   const today = localToday(env.USER_TZ, now);
   if (cron === "30 4 * * *") {

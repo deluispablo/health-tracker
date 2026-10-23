@@ -17,6 +17,7 @@ export function createEvaluator(db: D1Database, deps: { nowSec: number; tz: stri
     }
   };
   return {
+    tz: deps.tz,
     validateOrigin(input) {
       if (input === null || typeof input !== "object" || Array.isArray(input)) throw new RangeError("origin must be an object.");
       const origin = input as Record<string, unknown>;
@@ -41,8 +42,9 @@ export function createEvaluator(db: D1Database, deps: { nowSec: number; tz: stri
     },
     family(origin, opts) {
       const nowSec = opts.nowSec ?? deps.nowSec;
-      const range = opts.range ?? rangeFromOrigin(origin.args, nowSec, deps.tz);
-      return evaluate(origin, { ...deps, nowSec, range });
+      const tz = opts.tz ?? deps.tz;
+      const range = opts.range ?? rangeFromOrigin(origin.args, nowSec, tz);
+      return evaluate(origin, { ...deps, tz, nowSec, range });
     },
     async single(ref, range) {
       const family = await evaluate(ref.origin, { ...deps, range, only: ref.key, cutpoints: ref.cutpoints });

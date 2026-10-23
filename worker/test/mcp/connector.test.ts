@@ -780,9 +780,9 @@ describe("T39 tool description contract", () => {
       health_contrast: ["filter dates are clipped to start/end", "Widen start/end", "sin_datos as no difference"],
       health_findings: ["list", "save", "recheck", "retire", "untrusted"],
       health_context: ["9000 characters", "no data read", "ROPEs", "physiology"],
-      health_profile: ["90 dated weights", "7000 steps", "450 minutes", "2000 ml", "water_goal_ml", "USER_TZ", "health_set_profile"],
+      health_profile: ["90 dated weights", "7000 steps", "450 minutes", "2000 ml", "water_goal_ml", "owner's current zone","health_set_profile"],
       health_set_profile: ["at least one field", "0.1", "local today", "1920", "100–250", "30–300", "1000–50000", "240–720", "water_goal_ml", "500–6000", "120–230", "health_profile", "midnight"],
-      health_status: ["14-day", "48 hours", "24 hours", "5 attempts", "data_lag", "over 3 hours", "USER_TZ", "YYYY-MM-DDTHH:MM", "health_daily"],
+      health_status: ["14-day", "48 hours", "24 hours", "5 attempts", "data_lag", "over 3 hours", "owner's current zone","YYYY-MM-DDTHH:MM", "health_daily"],
       health_refresh: ["last 24 hours", "Google", "25 s", "once per 120 s", "health_status"],
       health_daily: ["90 dates", "all metrics", "mood_", "count", "null", "health_trend", "health_compare", "health_correlate", "health_sql"],
       health_sleep: ["31 dates", "stages", "YYYY-MM-DDTHH:MM", "health_daily", "health_intraday"],
@@ -814,7 +814,7 @@ describe("T39 tool description contract", () => {
       for (const [field, argument] of Object.entries(schema.properties)) {
         expect(argument.description?.trim().length ?? 0, `${tool.name}.${field}`).toBeGreaterThan(0);
         if (["start", "end", "date"].includes(field) && tool.name !== "health_set_profile" && !INSIGHT_NAMES.includes(tool.name)) {
-          expect(argument.description, `${tool.name}.${field}`).toMatch(/Required.*Infer.*USER_TZ.*Europe\/Madrid.*do not ask/);
+          expect(argument.description, `${tool.name}.${field}`).toMatch(/Required.*Infer.*current zone.*do not ask/);
         }
       }
     }
@@ -945,7 +945,7 @@ describe("AC3 stateless read tools and audit", () => {
       const part = (name: string) => parts.find((p) => p.type === name)?.value ?? "";
       const today = `${part("year")}-${part("month")}-${part("day")}`;
       const expected = {
-        now_local: `${today}T${part("hour")}:${part("minute")}`,
+        now_local: `${today}T${part("hour")}:${part("minute")}`, tz: connectorEnv.USER_TZ,
         streams: [{ stream: "sleep", latest_local: null, age_hours: null }, { stream: "daily", latest_local: null, age_hours: null },
           { stream: "watch", latest_local: null, age_hours: null }],
         queue: { pending: 0, stuck: 0, oldest_received_local: null },
@@ -969,6 +969,22 @@ describe("AC3 stateless read tools and audit", () => {
       clock.mockRestore();
     }
   });
+
+  it.each([["Australia/Sydney", "2026-11-02T01:30", "2026-11-02"], [null, "2026-11-01T15:30", "2026-11-01"]])(
+    "uses the stored zone %s for health_status and logged events through the /mcp handler", async (zone, nowLocal, date) => {
+      google();
+      if (zone) await env.DB.prepare("INSERT INTO profile (key, value, updated_at) VALUES ('tz', ?, 1)").bind(JSON.stringify(zone)).run();
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-01T14:30:00Z"));
+      try {
+        const token = await accessToken();
+        const status = await rpc(token, "tools/call", { name: "health_status", arguments: {} });
+        expect(status.result?.structuredContent).toMatchObject({ now_local: nowLocal, tz: zone ?? "Europe/Madrid" });
+        const logged = await rpc(token, "tools/call", { name: "health_log_event", arguments: { tracker_id: "caffeine" } });
+        expect(logged.result?.structuredContent).toMatchObject({ event: { local_date: date } });
+      } finally {
+        clock.mockRestore();
+      }
+    });
 
   it("describes the valid values of every argument so clients need not guess", async () => {
     google();
@@ -1944,7 +1960,7 @@ describe("T35 AC4 owner profile connector", () => {
     const db = new Proxy(env.DB, { get(target, property) {
       if (property === "batch" && name === "health_set_profile") return () => Promise.reject(new Error("private profile sentinel"));
       if (property === "prepare") return (sql: string) => {
-        if (/FROM profile/.test(sql)) throw new Error("private profile sentinel");
+        if (/FROM profile/.test(sql) && !sql.includes("'tz'")) throw new Error("private profile sentinel");
         return target.prepare(sql);
       };
       const value: unknown = Reflect.get(target, property);
@@ -1989,7 +2005,7 @@ describe("insight tool contracts", () => {
       const msg = await rpc(token, "tools/call", { name, arguments: args }, 1, { ...connectorEnv, DB: db });
       expect(msg.error).toBeUndefined();
       expect(msg.result?.isError, JSON.stringify(msg.result?.content)).not.toBe(true);
-      expect(count, name).toBe(statements);
+      expect(count, name).toBe(statements + 1); // the zone lookup
       const result = msg.result?.structuredContent as Record<string, unknown>;
       for (const key of ["range", "excluded", "truncated", "tests", "tests_last_24h"]) expect(result, `${name}.${key}`).toHaveProperty(key);
       expect(JSON.stringify(result).length).toBeLessThanOrEqual(20000);

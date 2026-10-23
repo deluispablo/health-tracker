@@ -15,6 +15,7 @@ const row = (changes: Partial<FamilyRow> = {}): FamilyRow => ({ ref: reference()
   consistent_blocks: null, binary: false, rope: 2, kind: "behavior", ...changes });
 function fake() {
   return {
+    tz: "Europe/Madrid",
     validateOrigin: vi.fn((value: unknown) => value as Origin),
     family: vi.fn<FindingsEvaluator["family"]>(() => Promise.resolve({ rows: [row()], resolved, tests: 1, excluded: {}, tests_last_24h: 0, extra: {} })),
     single: vi.fn<FindingsEvaluator["single"]>(() => Promise.resolve(row())),
@@ -181,7 +182,7 @@ describe("verdicts", () => {
     evaluator.family.mockResolvedValue({ rows: [row({ ref, diff: 5 })], resolved, tests: 1, excluded: {}, tests_last_24h: 0, extra: {} });
     expect(await call({ action: "recheck", id })).toMatchObject({ verdict: "reproduced", diff_saved: 4, diff_new: 5 });
     const savedAt = (await env.DB.prepare("SELECT saved_at FROM finding WHERE id = ?").bind(id).first<{ saved_at: number }>())?.saved_at ?? NaN;
-    expect(evaluator.family).toHaveBeenLastCalledWith(ref.origin, { range: resolved, nowSec: Math.floor(savedAt / 1000) });
+    expect(evaluator.family).toHaveBeenLastCalledWith(ref.origin, { range: resolved, nowSec: Math.floor(savedAt / 1000), tz: "Europe/Madrid" });
     evaluator.family.mockResolvedValue({ rows: [], resolved, tests: 0, excluded: {}, tests_last_24h: 0, extra: {} });
     expect(await call({ action: "recheck", id })).toMatchObject({ verdict: "changed", diff_new: null });
     expect(await checks()).toHaveLength(2);
@@ -202,7 +203,7 @@ describe("verdicts", () => {
     const { id } = finding(await save(ref));
     await call({ action: "recheck", id });
     expect(evaluator.newDataRange).toHaveBeenCalledWith(nowMs);
-    expect(evaluator.single).toHaveBeenCalledWith({ ...ref, mode: "prospective", resolved }, newRange);
+    expect(evaluator.single).toHaveBeenCalledWith({ ...ref, mode: "prospective", resolved, tz: "Europe/Madrid" }, newRange);
     expect((Date.parse(newRange.end) - Date.parse(newRange.start)) / 86400000 + 1).toBe(180);
   });
   it("retries a checked_at collision once with +1 ms", async () => {

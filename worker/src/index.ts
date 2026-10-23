@@ -1,5 +1,5 @@
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
-import { handleScheduled, route } from "./app";
+import { handleScheduled, route, withStoredTz } from "./app";
 import type { AppDeps, ConnectorEnv } from "./app";
 import { login } from "./auth/login";
 
@@ -14,7 +14,7 @@ let provider: OAuthProvider<ConnectorEnv> | undefined;
 export default {
   fetch(request, env, ctx): Promise<Response> {
     provider ??= new OAuthProvider<ConnectorEnv>({
-      apiRoute: "/mcp", apiHandler: { fetch: async (request, env, ctx) => (await import("./mcp/server")).mcp(request, env, ctx) },
+      apiRoute: "/mcp", apiHandler: { fetch: async (request, env, ctx) => (await import("./mcp/server")).mcp(request, await withStoredTz(env), ctx) },
       authorizeEndpoint: `${env.PUBLIC_ORIGIN}/authorize`, tokenEndpoint: `${env.PUBLIC_ORIGIN}/oauth/token`,
       clientRegistrationEndpoint: `${env.PUBLIC_ORIGIN}/oauth/register`,
       scopesSupported: ["health:read"], requiredScopes: ["health:read"], clientIdMetadataDocumentEnabled: true,

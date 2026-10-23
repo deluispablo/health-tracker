@@ -33,7 +33,7 @@ export type Origin = { tool: "health_scan"; args: ScanOriginArgs } | { tool: "he
 export interface RowKey { kind: "behavior" | "acute" | "period" | "metric"; behavior?: BehaviorId | AcuteTracker; exposure?: { metric: ExposureMetric; side: "high" | "low" | "filter" }; planned_id?: string; timing: string; metric: MetricId }
 export interface Cutpoints { lo: number; hi: number }
 export interface RowRef { v: 1; origin: Origin; key: RowKey; cutpoints?: Cutpoints }
-export interface StoredRef extends RowRef { resolved: { start: string; end: string }; mode: "prospective" | "historical" }
+export interface StoredRef extends RowRef { resolved: { start: string; end: string }; mode: "prospective" | "historical"; tz?: string }
 
 export interface InsightRow { ref: RowRef | null; behavior?: string; exposure?: { metric: ExposureMetric; side: "high" | "low" | "filter" }; timing: string; metric: MetricId;
   n_a: number; n_b: number; mean_a: number | null; mean_b: number | null; diff: number | null; ci95: Interval | null; pct: number | null; p: number | null; q: number | null;
@@ -45,8 +45,9 @@ export interface FamilyResult { rows: FamilyRow[]; resolved: { start: string; en
   tests_last_24h: number; extra: Record<string, unknown> } // rows = full family, before ranking/truncation; extra = skipped, streaks, changes, mood_weeks, anomalies
 export interface Envelope { range: { start: string; end: string } | null; excluded: Record<string, number>; truncated: boolean; tests: number; tests_last_24h: number | null }
 export interface FindingsEvaluator {
+  tz: string;                                                                                 // the zone in effect
   validateOrigin(origin: unknown): Origin;                                                    // RangeError on any invalid origin
-  family(origin: Origin, opts: { range?: { start: string; end: string }; nowSec?: number }): Promise<FamilyResult>; // full family, no analysis_log write; nowSec replays an earlier clock
+  family(origin: Origin, opts: { range?: { start: string; end: string }; nowSec?: number; tz?: string }): Promise<FamilyResult>; // full family, no analysis_log write; nowSec replays an earlier clock
   single(ref: StoredRef, range: { start: string; end: string }): Promise<FamilyRow | null>;   // only the saved row, family of 1 (q = p), frozen cutpoints; null when the key cannot be evaluated on that range
   newDataRange(savedAtMs: number): { start: string; end: string } | null;                     // bday after saved_at's bday … last completed bday, clamped to 180 days; null when empty
 }
