@@ -98,9 +98,9 @@ function dirtyStatements(db: D1Database, first: string, last: string, sessions?:
 
 export async function drainSyncPending(
   env: DrainEnv, client: Pick<ReturnType<typeof createGoogleClient>, "rollUpHeartRate" | "rollUpSteps" | "dailyRollUp" | "listDaily" | "reconcile">,
-  opts: { now?: () => number } = {},
+  opts: { now?: () => number; deadlineMs?: number } = {},
 ): Promise<{ processed: number; failed: number }> {
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + (opts.deadlineMs ?? 60_000);
   const db = env.DB;
   const dateFormatter = dateTimeFormat("en-US", {
     timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",

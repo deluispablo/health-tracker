@@ -36,13 +36,17 @@ export interface ConnectorEnv extends AppEnv {
 
 const KEYSET_URL = "https://www.gstatic.com/googlehealthapi/webhooks/webhooks_public_keyset.json";
 
+const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+function localToday(tz: string, now: number): string {
+  const parts = dateTimeFormat("en-US", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now * 1000);
+  return ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
+}
+
 export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps): Promise<void> {
   const now = deps.now();
-  const parts = dateTimeFormat("en-US", {
-    timeZone: env.USER_TZ, year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(now * 1000);
-  const today = ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join("-");
-  const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+  const today = localToday(env.USER_TZ, now);
   if (cron === "30 4 * * *") {
     // Rows exhausted by a long Google outage get one fresh round of retries a day.
     await env.DB.prepare("UPDATE sync_pending SET attempts = 0 WHERE attempts >= 5").run();
@@ -99,6 +103,12 @@ export async function handleScheduled(cron: string, env: AppEnv, deps: AppDeps):
       }
     }
   }
+  await rollupDirty(env, now);
+}
+
+/** Recompute dirty dates (and today when missing) through today; the 5-minute cron and health_refresh share it. */
+export async function rollupDirty(env: Pick<AppEnv, "DB" | "USER_TZ">, now: number): Promise<void> {
+  const today = localToday(env.USER_TZ, now);
   const [, { results: dirty }, { results: existingToday }] = await env.DB.batch<{ local_date: string; version: number }>([
     env.DB.prepare(`DELETE FROM rollup_dirty WHERE (
       local_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'

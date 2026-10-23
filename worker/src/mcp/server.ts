@@ -8,6 +8,7 @@ import { ANALYSIS_NAMES, healthCorrelate } from "./tools/correlate";
 import { DAILY_COLUMNS, healthDaily } from "./tools/daily";
 import { healthIntraday } from "./tools/intraday";
 import { healthProfile, healthSetProfile } from "./tools/profile";
+import { healthRefresh } from "./tools/refresh";
 import { healthSleep } from "./tools/sleep";
 import { healthSql } from "./tools/sql";
 import { healthStatus } from "./tools/status";
@@ -75,6 +76,13 @@ function buildServer(env: ConnectorEnv, ctx: ExecutionContext): McpServer {
     inputSchema: z.object({}), annotations,
   }, (args) => call("health_status", args, () => healthStatus(env.DB, {
     now: Math.floor(Date.now() / 1000), tz: env.USER_TZ,
+  })));
+  server.registerTool("health_refresh", {
+    description: "Pull the last 24 hours from Google now instead of waiting for the 5-minute sync, then recompute daily summaries; no arguments. Takes up to about 25 s and runs at most once per 120 s (otherwise returns throttled with retry_after_s). Returns processed/failed queue items, pending items left for the next sync and latest_hr_local (newest stored heart-rate minute, YYYY-MM-DDTHH:MM). Use when health_status shows stale data or the owner asks for fresh numbers. Infer the need from context; do not ask the owner to confirm.",
+    inputSchema: z.object({}), annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }, (args) => call("health_refresh", args, () => healthRefresh(env, {
+    fetch: (input, init) => globalThis.fetch(input, init), now: () => Math.floor(Date.now() / 1000),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   })));
   server.registerTool("health_daily", {
     description: "Read daily health summaries, units and coverage for 1 to 90 dates inclusive. Omitted metrics returns all metrics; mood_* totals use count units (null when none logged). Dates are required, without server defaults. Use for daily values; health_trend for week/month summaries, health_compare for behavior groups, health_correlate for lagged associations, health_sql for custom queries. Infer dates/metrics from context and the owner's local today in USER_TZ; do not ask for resolvable values.",

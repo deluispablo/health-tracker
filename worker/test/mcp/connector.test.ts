@@ -390,6 +390,8 @@ describe("T39 tool description contract", () => {
       health_contrast: insightContract({ ...insightDatesContract, a: looseObjectContract, b: looseObjectContract, metrics: insightSelectionContract.metrics, timing: { type: "string" } }, ["a", "b"]),
       health_findings: insightContract({ action: { type: "string" }, id: { type: "number" }, statement: { type: "string" }, ref: looseObjectContract }, ["action"]),
       health_context: { inputSchema: { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", properties: {} }, annotations: { readOnlyHint: true, openWorldHint: false } },
+      health_refresh: { inputSchema: { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", properties: {} },
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true } },
       "health_profile": {
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -781,6 +783,7 @@ describe("T39 tool description contract", () => {
       health_profile: ["90 dated weights", "7000 steps", "450 minutes", "2000 ml", "water_goal_ml", "USER_TZ", "health_set_profile"],
       health_set_profile: ["at least one field", "0.1", "local today", "1920", "100–250", "30–300", "1000–50000", "240–720", "water_goal_ml", "500–6000", "120–230", "health_profile", "midnight"],
       health_status: ["14-day", "48 hours", "24 hours", "5 attempts", "data_lag", "USER_TZ", "YYYY-MM-DDTHH:MM", "health_daily"],
+      health_refresh: ["last 24 hours", "Google", "25 s", "once per 120 s", "health_status"],
       health_daily: ["90 dates", "all metrics", "mood_", "count", "null", "health_trend", "health_compare", "health_correlate", "health_sql"],
       health_sleep: ["31 dates", "stages", "YYYY-MM-DDTHH:MM", "health_daily", "health_intraday"],
       health_workouts: ["31 dates", "YYYY-MM-DDTHH:MM", "max_hr", "[start, end)", "null", "health_daily"],
@@ -878,7 +881,7 @@ describe("AC3 stateless read tools and audit", () => {
     expect(listed.error).toBeUndefined();
     expect(listed.result).toMatchObject({ ttlMs: 3600000, cacheScope: "private", resultType: "complete" });
     const tools = listed.result?.tools ?? [];
-    expect(tools).toHaveLength(19);
+    expect(tools).toHaveLength(20);
     expect(tools.filter(tool => tool.description.includes(INSIGHTS_PLAYBOOK)).map(tool => tool.name)).toEqual(["health_context"]);
     expect(tools.filter(tool => tool.description.includes("Catalogue ids (")).map(tool => tool.name)).toEqual(["health_context"]);
     for (const tool of tools.filter(tool => INSIGHT_NAMES.includes(tool.name) && tool.name !== "health_context")) {
@@ -886,17 +889,18 @@ describe("AC3 stateless read tools and audit", () => {
     }
   });
 
-  it("initializes and lists exactly nineteen described tools, with profile, log and delete writing", async () => {
+  it("initializes and lists exactly twenty described tools, with profile, log, delete and refresh writing", async () => {
     google();
     const token = await accessToken();
     await initialize(token);
     const msg = await rpc(token, "tools/list", {});
     expect(msg.error).toBeUndefined();
-    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_delete_event", "health_intraday", "health_log_event", "health_profile", "health_set_profile", "health_sleep", "health_sql", "health_status", "health_trackers", "health_trend", "health_workouts", ...INSIGHT_NAMES].sort());
+    expect(msg.result?.tools?.map((t) => t.name).sort()).toEqual(["health_compare", "health_correlate", "health_daily", "health_delete_event", "health_intraday", "health_log_event", "health_profile", "health_refresh", "health_set_profile", "health_sleep", "health_sql", "health_status", "health_trackers", "health_trend", "health_workouts", ...INSIGHT_NAMES].sort());
     for (const tool of msg.result?.tools ?? []) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.inputSchema).toMatchObject({ type: "object" });
-      expect(tool.annotations).toMatchObject(INSIGHT_NAMES.includes(tool.name) && tool.name !== "health_context" ? insightAnnotations : (tool.name === "health_log_event" || tool.name === "health_set_profile")
+      expect(tool.annotations).toMatchObject(INSIGHT_NAMES.includes(tool.name) && tool.name !== "health_context" ? insightAnnotations : tool.name === "health_refresh"
+        ? { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true } : (tool.name === "health_log_event" || tool.name === "health_set_profile")
         ? { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
         : tool.name === "health_delete_event"
           ? { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
@@ -1167,6 +1171,23 @@ describe("AC3 stateless read tools and audit", () => {
     expect(msg.result?.content?.[0].text).not.toBe("Unable to read health data");
     await toolAudit("health_trackers", args, 0, before);
     expect((await audit()).at(-1)?.error).toBe(msg.result?.content?.[0].text);
+  });
+
+  it("returns the generic error and failed audit from health_refresh when Google is disconnected, writing no queue or throttle", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    google();
+    const token = await accessToken();
+    await initialize(token);
+    await env.DB.prepare("DELETE FROM secret_blob").run();
+    const before = (await audit()).length;
+    const msg = await rpc(token, "tools/call", { name: "health_refresh", arguments: {} });
+    expect(msg.error).toBeUndefined();
+    expect(msg.result).toMatchObject({ isError: true, content: [{ type: "text", text: "Unable to read health data" }] });
+    expect(log).toHaveBeenCalledExactlyOnceWith("health_refresh", "Error");
+    await toolAudit("health_refresh", {}, 0, before);
+    expect((await audit()).at(-1)?.error).toBe("Unable to read health data");
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_pending").first("n")).toBe(0);
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM sync_state WHERE data_type = 'refresh'").first("n")).toBe(0);
   });
 
   it("returns the generic error and failed audit when a tracker insert fails", async () => {

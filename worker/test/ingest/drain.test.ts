@@ -345,6 +345,14 @@ describe("AC2 one 24-hour window per invocation", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("stops before the first row once the deadlineMs budget is spent and keeps the default otherwise", async () => {
+    await queue("heart-rate", at("2026-10-20T21:00:00Z"), at("2026-10-20T21:01:00Z"));
+    const { client, calls } = fakeClient();
+    expect(await drainSyncPending(drainEnv(), client, { deadlineMs: 0 })).toEqual({ processed: 0, failed: 0 });
+    expect(calls).toHaveLength(0);
+    expect(await drainSyncPending(drainEnv(), client)).toEqual({ processed: 1, failed: 0 });
+  });
+
   it("leaves rows of other data types untouched", async () => {
     await queue("weight", at("2026-10-20T00:00:00Z"), at("2026-10-20T08:00:00Z"));
     await queue("weight", at("2026-10-20T10:00:00Z"), at("2026-10-20T10:15:00Z"));
