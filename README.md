@@ -37,16 +37,13 @@ Health Tracker is a single-owner health pipeline. One Cloudflare Worker receives
   - [Routes and schedules](#routes-and-schedules)
   - [Repository layout](#repository-layout)
 - [Getting started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [1. Google Cloud and the Health API](#1-google-cloud-and-the-health-api)
-  - [2. Cloudflare resources](#2-cloudflare-resources)
-  - [3. Configuration reference](#3-configuration-reference)
-  - [4. Migrate and deploy](#4-migrate-and-deploy)
-  - [5. Health consent and webhook subscriber](#5-health-consent-and-webhook-subscriber)
-  - [6. Connect an MCP client](#6-connect-an-mcp-client)
-  - [7. Build and install the watch](#7-build-and-install-the-watch)
-  - [8. Publish the dashboard](#8-publish-the-dashboard)
-  - [9. Schedule backups](#9-schedule-backups)
+  - [1. Prerequisites](#1-prerequisites)
+  - [2. Google Cloud, by hand](#2-google-cloud-by-hand)
+  - [3. Run the setup](#3-run-the-setup)
+  - [4. Connect your MCP client (claude.ai)](#4-connect-your-mcp-client-claudeai)
+  - [5. Optional: the watch face](#5-optional-the-watch-face)
+  - [6. Optional: the dashboard](#6-optional-the-dashboard)
+  - [7. Optional: weekly backups](#7-optional-weekly-backups)
 - [MCP tools reference](#mcp-tools-reference)
 - [Watch](#watch)
 - [Dashboard](#dashboard)
@@ -150,152 +147,167 @@ The deep reference for ingest, rollups, the Google client and each tool is [docs
 
 ## Getting started
 
-Deploying your own instance takes one Cloudflare account, one Google Cloud project and a Pixel Watch. Each deployment serves one owner.
+This guide installs your own copy. You paste commands into a terminal; you do not need to write code. Plan for about 30 minutes. Each deployment serves one owner.
 
-### Prerequisites
+Steps 1 to 4 are required. Steps 5, 6 and 7 (the watch face, the dashboard and weekly backups) are **optional**: skip them and everything else still works.
 
-| Requirement | Notes |
-|---|---|
-| Cloudflare account on Workers Paid | A domain on Cloudflare for the Worker (`https://<your-domain>`) |
-| Node.js (LTS) and npm | For `worker/`; `wrangler` comes from its `devDependencies` |
-| uv and Python 3.12+ | For the backup export in `py/` |
-| Google Cloud project and gcloud CLI | gcloud authenticated; used for the webhook subscriber and its secret rotation |
-| Pixel Watch paired with the Google Health app | The data source |
-| JDK 17 and Android SDK (platform 36, build-tools 36.0.0) | Only for the watch; see [docs/watch.md](docs/watch.md) |
+Wherever you see `<your-domain>`, type the domain you will use, for example `health.example.com`.
+
+### 1. Prerequisites
+
+| You need | Needed for | Notes |
+|---|---|---|
+| A Cloudflare account on the Workers Paid plan, with a domain added to it | Required | The Worker will live at `https://<your-domain>` |
+| A Google Cloud project | Required | A free project is enough; create it at [console.cloud.google.com](https://console.cloud.google.com/) |
+| [Git](https://git-scm.com/downloads) | Required | To download the code; check with `git --version` |
+| [Node.js](https://nodejs.org/) 22 or newer (the LTS version) | Required | Check with `node --version` |
+| The [gcloud CLI](https://cloud.google.com/sdk/docs/install) | Required | Then run `gcloud auth login` once |
+| A Pixel Watch paired with the Google Health app | Required | It is the data source |
+| JDK 17 and the Android SDK (platform 36, build-tools 36.0.0) | Watch face only | See [docs/watch.md](docs/watch.md) |
+| [uv](https://docs.astral.sh/uv/) | Backups only | |
+
+Download the code once:
 
 ```sh
 git clone https://github.com/deluispablo/health-tracker.git
-cd health-tracker/worker
-npm ci
-npx wrangler login
+cd health-tracker
 ```
 
-Run the commands in steps 2–5 from `worker/`.
+### 2. Google Cloud, by hand
 
-### 1. Google Cloud and the Health API
+Google does not let a script do this part, so do it in the [Google Cloud console](https://console.cloud.google.com/) with your project selected.
 
-1. In your Google Cloud project, enable the Google Health API.
-2. Configure the OAuth consent screen as **External** and publish it **In production**. Use `https://<your-domain>/` as the home page, `/privacy` as the privacy policy and `/terms` as the terms of service.
-3. Create an OAuth client of type **Web application** with these authorized redirect URIs:
-   - `https://<your-domain>/google/callback` (Health consent)
-   - `https://<your-domain>/oauth/google/callback` (connector sign-in)
-4. Keep the client ID and secret for [step 3](#3-configuration-reference).
+1. **Enable the Google Health API.** Open APIs & Services, then Library, search for "Google Health API" and press **Enable**.
+2. **Set up the consent screen.** Open the menu, then **Google Auth Platform**. If it says it is not configured yet, press **Get started**.
+   - Under **Branding**: App name `Health Tracker`; where Google asks for a support or developer email, use yours. Then set:
+     - App home page: `https://<your-domain>/`
+     - Privacy policy link: `https://<your-domain>/privacy`
+     - Terms of service link: `https://<your-domain>/terms`
+     - Authorized domain: `<your-domain>` (if Google wants the main domain only, use that).
+   - Under **Audience**: User type **External**, then press **Publish app** so the status reads **In production**. In Testing, Google signs you out every 7 days.
+3. **Create the OAuth client.** Under **Google Auth Platform**, open **Clients**, then **Create client**.
+   - Application type: **Web application**. Name: `Health Tracker`.
+   - Under **Authorized redirect URIs** add both of these:
+     - `https://<your-domain>/google/callback`
+     - `https://<your-domain>/oauth/google/callback`
+   - Press **Create**.
+4. Copy the **client ID** and the **client secret** from the window that opens. You paste them in step 3.
 
-The Health consent requests these four read-only scopes plus `openid email`, with offline access:
+If a page looks different, Google has moved a menu; search the console for the page name.
 
-| Scope |
-|---|
-| `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly` |
-| `https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly` |
-| `https://www.googleapis.com/auth/googlehealth.sleep.readonly` |
-| `https://www.googleapis.com/auth/googlehealth.settings.readonly` |
+### 3. Run the setup
 
-### 2. Cloudflare resources
+From the folder you downloaded, install the script's tools once:
 
 ```sh
-npx wrangler d1 create health-tracker
-npx wrangler kv namespace create OAUTH_KV
-cp wrangler.production.example.jsonc wrangler.production.jsonc
+cd worker && npm ci
 ```
 
-`wrangler.production.jsonc` is git-ignored, so your domain and resource ids stay out of the repository; `wrangler.jsonc` is for local tests only. Fill in:
-
-| Field | Value |
-|---|---|
-| `routes[0].pattern` | `<your-domain>` (custom domain) |
-| `d1_databases[0].database_id` | Id printed by `wrangler d1 create`; keep the binding `DB` |
-| `kv_namespaces[0].id` | Id printed by `wrangler kv namespace create`; keep the binding `OAUTH_KV` |
-| `vars` | See [vars](#vars) |
-
-The example already sets both cron triggers, observability and the `global_fetch_strictly_public` compatibility flag, which client ID metadata documents need.
-
-### 3. Configuration reference
-
-#### Vars
-
-| Var | Required | Example | Purpose |
-|---|---|---|---|
-| `USER_TZ` | yes | `Europe/Madrid` | Fallback IANA time zone for local dates, tracker days and the analysis calendars. The zone is automatic: the watch reports its own on every sync and the Worker follows it; this value applies until the first report and whenever the stored zone is missing or invalid |
-| `PUBLIC_ORIGIN` | yes | `https://<your-domain>` | OAuth issuer, endpoints and protected-resource metadata |
-
-#### Secrets
-
-Set each with `npx wrangler secret put <NAME> --config wrangler.production.jsonc`. Never commit values.
-
-| Secret | Required | Format | Purpose |
-|---|---|---|---|
-| `ALLOWED_EMAIL` | yes | Google account email | The only account that can sign in or store a Health token; shown as the contact on `/privacy` and `/terms` |
-| `GOOGLE_CLIENT_ID` | yes | OAuth client id | Connector sign-in and Health consent |
-| `GOOGLE_CLIENT_SECRET` | yes | OAuth client secret | Connector sign-in and Health consent |
-| `TOKEN_ENC_KEY` | yes | Base64 of exactly 32 random bytes (`openssl rand -base64 32`) | AES-256-GCM key for the stored Google refresh token |
-| `WEBHOOK_SECRET` | yes | `Bearer <random>`, at least 16 characters (`printf 'Bearer '; openssl rand -hex 32`) | Expected `Authorization` header on webhooks; the endpoint returns `503` while it is missing or shorter |
-| `WEBHOOK_SECRET_PREV` | no | Same as `WEBHOOK_SECRET` | Previous value, accepted only during a [rotation](docs/operations.md#rotate-the-webhook-secret) |
-| `WATCH_TOKEN` | for the watch | At least 32 characters (`openssl rand -base64 32`) | Bearer for `/watch/today` and `/watch/log`; both return `401` while it is shorter |
-
-### 4. Migrate and deploy
+Then try a practice run first. It asks the same questions but changes nothing:
 
 ```sh
-npx wrangler d1 migrations apply DB --config wrangler.production.jsonc --remote
-npx wrangler deploy --config wrangler.production.jsonc
+npm run setup -- --dry-run
 ```
 
-Apply migrations before any deploy that adds one. Open `https://<your-domain>/` to check that the Worker answers.
+When it looks right, run the real thing:
 
-### 5. Health consent and webhook subscriber
+```sh
+npm run setup
+```
 
-1. Open `https://<your-domain>/google/connect` and grant consent with the `ALLOWED_EMAIL` account. The callback stores the encrypted refresh token, and returns `400 Missing scopes` if any of the four scopes was not granted.
-2. Create a Google Health API webhook subscriber (see the [Google Health API docs](https://developers.google.com/health)) with endpoint `https://<your-domain>/webhooks/google` and endpoint authorization equal to `WEBHOOK_SECRET`. Subscribe to `heart-rate`, `steps`, `daily-resting-heart-rate`, `sleep`, `daily-heart-rate-variability`, `daily-oxygen-saturation`, `daily-respiratory-rate`, `daily-sleep-temperature-derivations` and `active-zone-minutes`; `exercise` arrives through the daily reconcile. Note the subscriber id: [rotation](docs/operations.md#rotate-the-webhook-secret) needs it.
-3. Data appears after the next watch sync and cron tick. History starts at consent plus the 48 h reconcile window; there is no bulk backfill.
+You do not need to deploy anything beforehand. The script prints a heading for each step (`== tools`, `== ask`, and so on) and a line for what it does. If it was stopped, run it again: it reuses what it already created, skips the finished steps and continues where it stopped. It always runs the database update and the deploy again, which is harmless.
 
-### 6. Connect an MCP client
+The practice run (`--dry-run`) asks the same questions except the Google client secret: wrangler asks for that only in the real run.
 
-| Client | How |
+**The questions, in order:**
+
+1. Your domain, for example `health.example.com` (no `https://`).
+2. Your Google email.
+3. The Google OAuth client ID from step 2.
+4. It shows what you typed and what it is about to create, and asks `Continue with these values? [y/N]`. Type `y` and press Enter.
+5. Only if your Cloudflare login has several accounts: which account to use (type its number).
+6. `Use Google Cloud project <id>? [y/N]`, using the project gcloud has selected. Type `y`, or `n` and then type your Google Cloud project ID (the project ID is shown at the top of the Google Cloud console).
+7. Later, **wrangler** (Cloudflare's own tool) asks for your Google client secret. Paste it there and press Enter. Nothing shows on screen while you type; that is normal. The setup script never sees the secret and never saves it.
+
+Your domain, email, client ID, Cloudflare account and project ID are saved in `worker/setup.local.json`, a file that is not uploaded to Git. On a re-run it shows them and asks `Use these saved values and continue? [y/N]`.
+
+**The steps:**
+
+| Step | What you see |
 |---|---|
-| claude.ai (web, desktop, Android) | Add a custom connector with URL `https://<your-domain>/mcp` and sign in with the allowlisted Google account. Name it `Health Tracker`, the name the dashboard looks for. Add it from web or desktop, then use it on Android |
-| Other MCP clients | Any client with remote Streamable HTTP and OAuth 2.1 with PKCE, through dynamic client registration or a client ID metadata document |
+| `tools` | Checks Node.js (version 22 or newer), Cloudflare and gcloud. If Cloudflare is not logged in, it opens the login in your browser. If gcloud is not logged in, it stops and tells you to run `gcloud auth login`. |
+| `ask` | The questions above. |
+| `resources` | Creates the database and the storage in your Cloudflare account (or reuses ones that already exist) and writes `worker/wrangler.production.jsonc`. |
+| `secrets` | Stores your email, client ID and client secret, plus a key it generates, in Cloudflare. |
+| `deploy` | Updates the database and deploys the Worker, then waits until `https://<your-domain>/` answers. A new domain can take a few minutes to get its certificate; if the wait runs out, run the setup again. |
+| `connect` | Opens `https://<your-domain>/google/connect` in your browser. Sign in with your Google email and allow every permission. The script waits up to 10 minutes. |
+| `subscriber` | Tells Google where to send new health data, with a secret it generates and stores. |
+| `verify` | Checks that Google is connected and nothing is stuck. |
 
-An unauthenticated request to `/mcp` returns `401` with a `WWW-Authenticate` header pointing at the protected-resource metadata, which clients use for discovery. Call `health_status` once connected: it shows the Google connection, the queue and the watch sync.
+At the end you see:
 
-### 7. Build and install the watch
+```
+All set. Add this MCP connector URL in your client: https://<your-domain>/mcp
+```
 
-This is a summary; the toolchain, pairing and troubleshooting are in [docs/watch.md](docs/watch.md).
+It never deletes anything.
 
-1. Set the `WATCH_TOKEN` secret ([step 3](#3-configuration-reference)).
-2. Create `wear/local.properties` (git-ignored):
+**If a step fails,** the script says in plain words what went wrong and what to do, and stops. Fix that, then run `npm run setup` again.
 
-   | Key | Required | Purpose |
-   |---|---|---|
-   | `sdk.dir` | yes | Android SDK path |
-   | `watchToken` | yes | Same value as `WATCH_TOKEN`; the build fails when it is blank |
-   | `watchBaseUrl` | yes | `https://<your-domain>`; must start with `https://` |
+### 4. Connect your MCP client (claude.ai)
 
-3. Pair the watch over wireless debugging, then build, install and select the face:
+1. Open claude.ai in a browser (or the desktop app) and go to Settings, then Connectors.
+2. Add a custom connector. Name: `Health Tracker` (use exactly this name; the dashboard looks for it). URL: the address the script printed, `https://<your-domain>/mcp`.
+3. Sign in with the same Google email.
+4. In a new chat, ask "call health_status". It should show the Google connection as connected.
+
+Data appears after the watch next syncs to the Google Health app, from a few minutes to an hour. History starts from now plus the last 48 hours; older data is not imported. If nothing shows up, see [Troubleshooting](#troubleshooting).
+
+Add the connector from the web or desktop app first; it then works on Android too. Other assistants that support remote MCP servers with OAuth 2.1 also work.
+
+### 5. Optional: the watch face
+
+Skip this if you only want your data in the assistant. You need a Pixel Watch (Wear OS 6 or later), JDK 17, the Android SDK and about 20 more minutes.
+
+1. From `worker/`, run the setup with the watch option:
 
    ```sh
-   cd wear
+   npm run setup -- --watch
+   ```
+
+   It runs the same steps as step 3 (finished ones are skipped; the database update and deploy run again, which is harmless) and also stores a watch token in Cloudflare and writes `wear/local.properties` with the token, your address and the Android SDK path. It finds the SDK from `ANDROID_HOME`, from `ANDROID_SDK_ROOT`, or from a `sdk.dir` line already in `wear/local.properties`. If none is available it stops at the start and tells you so; set it (`export ANDROID_HOME=<your-android-sdk-folder>`) and run it again. Running it again keeps the same token.
+2. Pair the watch with your computer over wireless debugging, then build and install:
+
+   ```sh
+   cd ../wear
    ./gradlew :app:installDebug :watchface:installDebug
    adb shell am broadcast -a com.google.android.wearable.app.DEBUG_SURFACE \
      --es operation set-watchface --es watchFaceId com.deluispablo.healthtracker.watchface
    ```
 
-### 8. Publish the dashboard
+Pairing steps and troubleshooting are in [docs/watch.md](docs/watch.md).
 
-1. Publish `dashboards/health-tracker.html` as a claude.ai artifact from an account where the `Health Tracker` connector is enabled.
-2. Publish the five tab files next to it at `tabs/hoy.js`, `tabs/sueno.js`, `tabs/salud.js`, `tabs/actividad.js` and `tabs/rutina.js`; the shell loads them with relative `<script src>` tags.
-3. Open the artifact and allow its use of the connector's tools once.
+### 6. Optional: the dashboard
 
-The dashboard follows the zone `health_status` reports (automatic from the watch); `Europe/Madrid` applies only until the status loads.
+Skip this if you do not need the five-tab page. It runs inside claude.ai and reads your data through the connector. It needs a paid claude.ai plan with code execution and file creation turned on, so that artifacts can use connectors.
 
-### 9. Schedule backups
+1. Open this folder in the claude.ai desktop app's code workspace, with the `Health Tracker` connector turned on.
+2. Ask it: "Publish `dashboards/health-tracker.html` as an artifact, with the five files in `dashboards/tabs/` as supporting files under `tabs/`." The page loads them by those relative names, so they must be published together with it.
+3. Open the artifact and allow it to use the connector's tools once.
 
-From the repository root, with `wrangler` logged in and the `worker/` dependencies installed:
+### 7. Optional: weekly backups
+
+Skip this if Cloudflare's own 30-day history is enough for you. Install [uv](https://docs.astral.sh/uv/), then from `worker/`:
 
 ```sh
-uv run --directory py python src/health_tracker/export.py              # writes to ~/health-tracker-backups
-uv run --directory py python src/health_tracker/export.py --out <dir>  # or to another directory
+npm run backup:schedule
 ```
 
-The export dumps D1 with `wrangler d1 export`, restores the dump into an in-memory SQLite database, checks the required tables, writes a `health-tracker-YYYY-MM-DD.sql` and `.json` manifest pair (SHA-256, size and row count per table) and keeps the last eight pairs. An export that lost rows against the newest previous manifest (`event` has fewer rows, `metric_minute` dropped by more than 1 %, or `metric_minute` is empty) is kept as `health-tracker-YYYY-MM-DD.rejected.sql` and `.json`, nothing is pruned and the export exits `1`. It exits `1` on any other failure too. Nothing in the repository schedules it; see [Operations](#operations).
+On a Mac it installs and loads a weekly job (a LaunchAgent, Sunday at 10:00) and prints where the log is. On Linux it prints one line for you to add yourself with `crontab -e`; paste it there and save. Either way, copies go to `~/health-tracker-backups` and the log is `backup.log` in that folder. If the script says it cannot find `uv`, `node` or `npx`, install it and run the command again. Each backup holds all your health data, so keep that folder private.
+
+### More detail
+
+Every var, secret, config field, the webhook subscriber and the manual version of each setup step are in [docs/setup-reference.md](docs/setup-reference.md). Day-to-day tasks (logs, rotating secrets, backups, revoking access) are in [docs/operations.md](docs/operations.md).
 
 ## MCP tools reference
 
