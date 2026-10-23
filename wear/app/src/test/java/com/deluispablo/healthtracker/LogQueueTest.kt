@@ -124,3 +124,12 @@ class SendOutcomeTest {
         assertEquals(listOf(true, true, true, true, false, false, false), listOf(200, 201, 400, 409, 401, 500, -1).map { settled(it, false) })
     }
 }
+
+class UnsentTest {
+    @Test
+    fun onlyAnUnackedTapCountsAsUnsent() {
+        assertEquals(false, hasUnsent(emptyList()))
+        assertEquals(false, hasUnsent(listOf(Tap("a", "caffeine", 1, acked = 3), Tap("b", "water", 2, undo = true, acked = 4))))
+        assertEquals(true, hasUnsent(listOf(Tap("a", "caffeine", 1, acked = 3), Tap("b", "water", 2))))
+    }
+}

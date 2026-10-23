@@ -6,9 +6,11 @@ import android.graphics.Bitmap
 import android.util.Log
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
 import androidx.work.WorkerParameters
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -28,6 +30,8 @@ fun chooseCached(newJson: String?, oldJson: String?): DialData? =
 
 class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        // Before fetching: a refresh that throws must not leave unsent taps waiting for the next tap.
+        if (hasUnsent(synchronized(cacheLock) { readTaps(applicationContext) })) enqueueSend(applicationContext, ExistingWorkPolicy.KEEP)
         when (fetchToday(applicationContext)) {
             200 -> Result.success()
             // A rejected token will not fix itself by retrying.
@@ -96,6 +100,7 @@ private fun Bitmap.png(): ByteArray =
 // Readers never see a half-written file.
 internal fun writeAtomic(file: File, bytes: ByteArray) {
     val tmp = File(file.parentFile, "${file.name}.tmp")
-    tmp.writeBytes(bytes)
+    // Synced before the rename, so a power loss cannot leave an empty file in its place.
+    FileOutputStream(tmp).use { it.write(bytes); it.fd.sync() }
     if (!tmp.renameTo(file)) throw IOException("rename failed for ${file.name}")
 }

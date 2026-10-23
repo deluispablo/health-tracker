@@ -147,11 +147,20 @@ fun undoLast(ctx: Context) {
     send(ctx)
 }
 
+/** Whether any tap still waits for the Worker to take it. */
+fun hasUnsent(taps: List<Tap>) = taps.any { it.acked == null }
+
+// Enqueued before the redraw, so a failed render cannot leave a tap unsent.
 private fun send(ctx: Context) {
+    enqueueSend(ctx)
     refreshCache(ctx, null)
+}
+
+/** Queues [LogWorker]; KEEP lets the hourly check rely on a send already pending instead of chaining another. */
+fun enqueueSend(ctx: Context, policy: ExistingWorkPolicy = ExistingWorkPolicy.APPEND_OR_REPLACE) {
     WorkManager.getInstance(ctx).enqueueUniqueWork(
         "log-send",
-        ExistingWorkPolicy.APPEND_OR_REPLACE,
+        policy,
         OneTimeWorkRequestBuilder<LogWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)

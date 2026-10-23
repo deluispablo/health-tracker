@@ -155,6 +155,7 @@ class LogActivity : Activity() {
         screen.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
         val ctx = applicationContext
         thread { logTap(ctx, tracker) }
+        for (i in 0 until screen.childCount) screen.getChildAt(i).isEnabled = false
         finish()
     }
 
